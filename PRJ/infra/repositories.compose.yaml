@@ -1,0 +1,20 @@
+# Opt in to a trusted local repository root. Keep it separate from the application.
+services:
+  api:
+    environment:
+      LOCAL_REPOSITORY_ROOT: /repositories
+    volumes:
+      - type: bind
+        source: ${STUDIO_REPOSITORY_HOST_ROOT:?Set an absolute local repository root}
+        target: /repositories
+        read_only: true
+        bind: {create_host_path: false}
+  worker:
+    environment:
+      LOCAL_REPOSITORY_ROOT: /repositories
+    volumes:
+      - type: bind
+        source: ${STUDIO_REPOSITORY_HOST_ROOT:?Set an absolute local repository root}
+        target: /repositories
+        read_only: true
+        bind: {create_host_path: false}

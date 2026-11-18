@@ -1,0 +1,90 @@
+# GitHub Issue 승인 기반 실행 워크플로
+
+공개 소스에는 Issue 워크플로 엔진과 예제 설정이 포함됩니다. GitHub Issue 자동 실행 설정은 별도의 비공개 운영 환경에서 관리합니다.
+
+GitHub Issue에서 요구사항을 접수해 AI가 분석 계획을 댓글로 제시합니다. 저장소 `Write` 이상의 권한이 있는 사람은 `/plan <결정사항 또는 수정사항>`으로 계획을 바꾸고, 준비된 계획은 별도의 `/approve` 댓글로 승인할 수 있습니다. `/reject`는 거부 상태를 기록하고 종료합니다. PR 검토와 병합은 사람이 수행합니다.
+
+GitHub에서 실행하려면 먼저 [GitHub 저장소 설정 안내](specs/github_settings.md)를 따르세요. 상세 상태·복구와 보안 동작은 [Issue 승인 운영 안내](runtime/ISSUE_APPROVAL.md)에 정리되어 있습니다.
+
+## GitHub Issue 작업
+
+1. 신뢰하는 기본 브랜치에 `.github/workflows/issue-approval.yml`, 실행 모듈 및 대상 프로젝트 설정을 검토해 반영합니다.
+2. Repository Variables와 Secrets, Actions 권한, 전용 Linux runner, 사람 리뷰를 요구하는 Branch protection을 설정합니다. 세부 순서는 [GitHub 설정 안내](specs/github_settings.md)를 참고하세요.
+3. Issue를 등록하면 Actions가 제목과 본문을 읽고 계획을 작성합니다. 사용자 결정이 필요한 항목은 처음에 모아서 묻고, AI가 해당 질문에 맞는 `/plan` 답변 예시를 작성합니다. `received`와 `analyzing` 상태는 내부 기록에만 남습니다.
+4. `awaiting_plan`에서는 `/plan <결정사항>`으로 답합니다. 생략하거나 AI에 맡긴 세부사항은 AI가 합리적인 기본값을 선택해 계획에 적습니다. 실행에 꼭 필요한 결정이 남아 있으면 다시 질문하고, 계획이 준비되면 `awaiting_approval`로 이동합니다. 이 상태에서도 `/plan <수정사항>`으로 계획을 바꿀 수 있습니다.
+5. `awaiting_approval`에서 새 댓글에 `/approve`만 작성하면 실행합니다. 앞뒤 공백과 줄바꿈은 허용합니다. 거부하려면 `/reject`만 작성합니다.
+6. 승인된 Issue와 계획을 기존 실행 엔진에 전달해 코드를 생성하고, 프로젝트에 설정된 Unit/E2E 검증을 실행합니다. 검증과 게시 조건이 모두 통과하면 설정에 따라 Draft PR을 게시합니다. 코드를 최종 검토하고 병합하는 역할은 사람에게 있습니다.
+
+Issue 제목이나 본문이 바뀌면 기존 분석과 승인을 무효화합니다. 새 계획이 작성되면 다시 확인하고 승인해야 합니다. 실행이 중단된 상태는 중복 실행을 피하기 위해 자동 재시도하지 않습니다. 복구 방법은 [Issue 승인 운영 안내](runtime/ISSUE_APPROVAL.md)를 확인하세요.
+
+## GitHub 설정
+
+GitHub Actions workflow는 로컬 파일 `.github/workflows/issue-approval.yml`에 있습니다. 기본 브랜치에 해당 workflow가 반영되기 전에는 Issue 이벤트가 실행되지 않습니다. Actions job을 켜려면 아래 설정이 모두 필요합니다.
+
+- Repository Variables: `WORKFLOW_ISSUES_ENABLED=true`, `WORKFLOW_BASE_BRANCH`, `WORKFLOW_CONFIG_PATH`
+- Repository Secrets: `WORKFLOW_STATE_KEY`, `WORKFLOW_PUBLISH_TOKEN`
+- `self-hosted`, `linux`, `workflow-isolated` labels를 가진 전용 Linux runner와 Codex CLI, gh, Git, Python, Bubblewrap 및 프로젝트 테스트 도구
+- workflow 기본 `GITHUB_TOKEN`에 `contents: read`, `issues: write`; 게시용 토큰에는 저장소 Push/PR 생성 및 branch protection 조회 권한
+- 사람이 승인해야 하는 보호 Branch와 실제 Collaborator 권한 API 조회
+
+Repository Variables와 Secrets는 [GitHub 저장소 설정 안내](specs/github_settings.md), self-hosted runner 설치와 Codex 인증은 [GitHub runner 설정 안내](specs/github_runner.md)를 참고하세요.
+
+## 현재 대상 프로젝트
+
+프로젝트별 설정은 두 가지입니다. [prj.json](config/projects/prj.json)은 제품 `PRJ/`만 수정하도록 허용하고, [sandbox.json](config/projects/sandbox.json)은 `sandbox/` 아래 데모만 허용합니다. GitHub Issue 작업 대상은 Repository Variable `WORKFLOW_CONFIG_PATH`가 가리키는 설정으로 결정됩니다. PRJ 설정의 필수 백엔드 테스트는 PostgreSQL 서비스가 필요하므로 현재 격리 runner에서 서비스를 준비할 수 없다면 테스트 실패로 게시가 차단됩니다.
+
+현재 Issue PR 브랜치 형식은 `ai_feature/{date}/{approver}/{issue_title}`입니다. 날짜는 실행 시작일의 한국 시간(`YY.MM.DD`), 승인자는 GitHub login, 제목은 브랜치에 안전한 문자로 정리한 Issue 제목입니다. 수동 CLI 실행에는 `ai/{project_id}/{run_id}`를 사용합니다. 동일 브랜치가 이미 있으면 기존 작업을 덮어쓰지 않고 게시를 중단합니다.
+
+## 수동 실행
+
+GitHub Issue 연동 없이 로컬에서 작업을 실행할 수 있습니다. Python 3.12 이상과 설정에 선언된 실행·테스트 도구를 준비하고 저장소 루트에서 명령을 실행합니다.
+
+먼저 프로젝트 설정의 schema와 로컬 경로를 확인합니다.
+
+```bash
+python3 -B -m workflow.runtime.validate_config \
+  workflow/config/projects/sandbox.json \
+  --repo-root .
+```
+
+요청을 실행하고 Unit/E2E 검증까지 수행합니다. 게시 옵션 기본값은 `simulate`입니다.
+
+```bash
+python3 -B -m workflow.runtime.run \
+  --config workflow/config/projects/sandbox.json \
+  --repo-root . \
+  --task "계산기 입력 검증을 개선해줘"
+```
+
+`simulate`는 네트워크 Push와 실제 PR 생성을 하지 않습니다. 결과 JSON에 기록된 `result_path`를 `publish` 명령에 주면 별도 결과 폴더 안에 게시 준비물을 생성해 검토할 수 있습니다.
+
+```bash
+python3 -B -m workflow.runtime.publish \
+  --config workflow/config/projects/sandbox.json \
+  --repo-root . \
+  --result /private/ai-workflow-runs/<RUN_ID>/result.json
+```
+
+`publish` 기본 동작은 로컬 준비입니다. `run --publish-mode prepare`도 로컬 준비까지만 합니다. `run --publish-mode real` 또는 `publish --execute`를 선택하면 검증, 원격 저장소 권한과 Branch protection 확인 뒤 실제 Branch Push 및 PR 생성을 시도합니다. 준비가 되지 않았거나 실제 게시 권한이 불필요한 경우 이 옵션을 사용하지 마세요.
+
+## 로컬 테스트
+
+Workflow 런타임의 Mock 기반 테스트는 GitHub API, 실제 Push/PR 생성이나 Codex 호출 없이 실행합니다.
+
+```bash
+python3 -B -m unittest discover -s workflow/runtime/tests -p 'test_*.py'
+```
+
+## 주요 파일
+
+| 경로 | 용도 |
+| --- | --- |
+| `.github/workflows/issue-approval.yml` | GitHub Issue 및 승인 댓글 이벤트 |
+| `workflow/runtime/issue_workflow.py` | 분석, 상태 복구, 권한 확인, 사람 승인 처리 |
+| `workflow/runtime/orchestrator.py` | 기존 실행·검증 엔진과 게시 엔진 연결 |
+| `workflow/runtime/publish.py` | 검증 결과를 확인하고 브랜치/PR 준비·게시 |
+| `workflow/config/projects/prj.json` | 제품 `PRJ/` 프로젝트 설정 |
+| `workflow/config/projects/sandbox.json` | `sandbox/` 데모 프로젝트 설정 |
+| `workflow/specs/github_settings.md` | GitHub Variables, Secrets, runner 및 보호 규칙 설정 |
+| `workflow/runtime/ISSUE_APPROVAL.md` | 상태 관리, 복구, 운영 한계와 검증 근거 |
+| `workflow/runtime/PUBLISHING.md` | 로컬 준비, Branch·PR 규칙과 게시 조건 |

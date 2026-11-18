@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "configuration_status": "incomplete",
+  "project_id": "prj",
+  "repository": {
+    "provider": "github",
+    "owner": "JunSuHeo",
+    "name": "kosa_final"
+  },
+  "base_branch": "main",
+  "project_root": "PRJ",
+  "allowed_paths": ["PRJ/backend", "PRJ/frontend", "PRJ/docs"],
+  "design_documents": null,
+  "tests": {
+    "unit": [
+      {"id": "backend-unit", "required": true, "cwd": "PRJ/backend", "command": null},
+      {"id": "frontend-unit", "required": true, "cwd": "PRJ/frontend", "command": null}
+    ],
+    "e2e": [
+      {"id": "frontend-e2e", "required": true, "cwd": "PRJ/frontend", "command": null}
+    ]
+  },
+  "pr_policy": {
+    "target_branch": "main",
+    "allow_draft_on_failure": null,
+    "require_human_approval": true,
+    "allow_auto_merge": false
+  },
+  "execution": {
+    "instructions": null,
+    "environment": null,
+    "codex": {"version": null, "model": null, "timeout_seconds": null}
+  },
+  "notes": [
+    "Incomplete example only: intentionally rejected by validate_config.py. Do not activate by only renaming the file or setting configuration_status to ready.",
+    "Repository identifiers and main branch observed on 2026-11-13; recheck before registration. Proposed allowed_paths are restricted to observed directories and need owner approval.",
+    "Backend pyproject.toml declares Python >=3.12, pytest in the dev dependency group, and testpaths=tests. Candidate program=python, args=[-m, pytest] is not a confirmed Unit Test command; dependencies, environment and actual test classification remain unverified.",
+    "Frontend package.json declares TypeScript/Vite and no Unit Test runner or Unit Test script. Select or provide an approved Unit Test command separately.",
+    "Frontend package.json declares Playwright and test:e2e=playwright test. Candidate program=npm, args=[run, test:e2e] still needs dependency, browser, service and test-data environment verification; command remains null.",
+    "PRJ/docs exists but authoritative design documents were not selected. Replace design_documents with owner-approved existing repository-relative files.",
+    "Required test flags are a proposed policy for this example, not a verified PRJ policy. Confirm each flag and Draft policy, fill all null fields, and then set configuration_status to ready.",
+    "Manual execution additionally requires confirmed instruction paths, Linux environment tools, an installed and pinned Codex CLI version, an available model, and a 1..3600 second timeout. Codex was not found on the Windows or WSL PATH during implementation. Authentication must already be configured through the CLI's approved login method; no secrets belong here.",
+    "This configuration does not define Issue eligibility, credentials, runner setup, retries or log retention. Those contracts and permissions must be provided before future remote automation activation. No secrets belong in this file."
+  ]
+}

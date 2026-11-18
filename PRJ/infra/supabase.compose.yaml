@@ -1,0 +1,14 @@
+# Use together with compose.yaml and --env-file .env --env-file .env.supabase.
+x-supabase-backend: &supabase-backend
+  env_file: .env.supabase
+  environment:
+    DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env.supabase}
+  depends_on: !reset []
+
+services:
+  db:
+    profiles: [local-db]
+  api:
+    <<: *supabase-backend
+  worker:
+    <<: *supabase-backend

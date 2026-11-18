@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "configuration_status": "ready",
+  "project_id": "sandbox",
+  "repository": {
+    "provider": "github",
+    "owner": "JunSuHeo",
+    "name": "kosa_final"
+  },
+  "base_branch": "main",
+  "project_root": "sandbox",
+  "allowed_paths": ["sandbox"],
+  "design_documents": ["sandbox/manual-engine-demo/specs/design.md"],
+  "tests": {
+    "unit": [
+      {
+        "id": "calculator-unit",
+        "required": true,
+        "timeout_seconds": 30,
+        "run_if": "always",
+        "on_failure": "block",
+        "cwd": "sandbox/manual-engine-demo/tests/unit",
+        "command": {
+          "program": "python3",
+          "args": ["-B", "-m", "unittest", "discover", "-s", ".", "-v"]
+        }
+      }
+    ],
+    "e2e": [
+      {
+        "id": "calculator-e2e",
+        "required": true,
+        "timeout_seconds": 30,
+        "run_if": "always",
+        "on_failure": "block",
+        "cwd": "sandbox/manual-engine-demo/tests/e2e",
+        "command": {
+          "program": "python3",
+          "args": ["-B", "-m", "unittest", "discover", "-s", ".", "-v"]
+        }
+      }
+    ]
+  },
+  "pr_policy": {
+    "target_branch": "main",
+    "allow_draft_on_failure": false,
+    "require_human_approval": true,
+    "allow_auto_merge": false
+  },
+  "publishing": {
+    "remote": "origin",
+    "branch_template": "ai_feature/{date}/{approver}/{issue_title}",
+    "manual_branch_template": "ai/{project_id}/{run_id}",
+    "draft": true,
+    "commit_author": {
+      "name": "github-actions[bot]",
+      "email": "41898282+github-actions[bot]@users.noreply.github.com"
+    }
+  },
+  "execution": {
+    "instructions": ["sandbox/manual-engine-demo/AGENTS.md"],
+    "environment": {"platform": "linux", "required_programs": ["python3"]},
+    "codex": {"version": "0.169.0", "model": "gpt-6-luna", "timeout_seconds": 120}
+  },
+  "notes": [
+    "Sandbox configuration. Writes are scoped to sandbox; protected instructions, credentials and repository controls remain read-only.",
+    "The calculator unit and CLI end-to-end checks use Python's standard library and run without installing packages, network access or services.",
+    "Codex CLI 0.169.0 and gpt-6-luna were previously checked in WSL; each runner must provide the configured version and a logged-in account with model access.",
+    "Generated candidates stay in the engine's external workspace and are published only after configured checks pass."
+  ]
+}

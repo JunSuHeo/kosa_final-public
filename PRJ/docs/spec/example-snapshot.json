@@ -1,0 +1,1398 @@
+{
+  "prd": {
+    "roles": [
+      "개인 독서 기록 사용자"
+    ],
+    "title": "개인 독서 기록과 월별 회고를 위한 모바일 웹 서비스",
+    "sections": [
+      {
+        "id": "prd-definition",
+        "group": "개요",
+        "title": "한 줄 정의",
+        "content": "로그인 없이 현재 기기에 읽은 책과 인상 깊은 문장, 짧은 감상을 저장하고 기록에 지정한 날짜를 기준으로 월별 독서 기록을 돌아보는 모바일 웹 서비스다."
+      },
+      {
+        "id": "prd-goal",
+        "group": "개요",
+        "title": "제품 목표와 핵심 범위",
+        "content": "개인 사용자가 최소한의 입력으로 독서 경험을 남기고 월별 기록을 쉽게 다시 읽도록 한다. 핵심 범위는 책 제목 직접 입력을 통한 책 등록, 책에 연결된 독서 기록 작성과 수정, 월별 문장·감상 목록 및 기록 수 조회다. 커뮤니티, 결제, 로그인, 기기 간 동기화는 범위에서 제외한다."
+      },
+      {
+        "id": "prd-background",
+        "group": "개요",
+        "title": "기획 배경",
+        "content": "사용자는 읽은 책과 기억하고 싶은 문장, 짧은 감상을 개인적으로 보관하고 자신의 독서 습관을 월별로 돌아보고자 한다. 외부 책 검색이나 계정 생성 없이 직접 입력하고 현재 기기에 저장하는 방식으로 시작 부담을 줄인다. 기록이 여러 곳에 흩어지거나 회고가 어려울 수 있다는 문제는 사용자 검증이 필요한 가설이다."
+      },
+      {
+        "id": "prd-problem",
+        "group": "문제 및 해결 방안",
+        "title": "사용자 문제",
+        "content": "책 제목과 문장·감상의 연결이 불분명하면 나중에 어떤 책에서 남긴 기록인지 찾기 어렵다. 입력한 시점과 실제 독서한 날짜가 다르면 월별 회고가 왜곡될 수 있다. 개인 기록을 위해 로그인해야 하는 과정은 불필요한 부담이 될 수 있다."
+      },
+      {
+        "id": "prd-solution",
+        "group": "문제 및 해결 방안",
+        "title": "해결 방안과 기록 규칙",
+        "content": "책 등록 시 책 제목만 필수로 직접 입력한다. 독서 기록은 등록된 책을 선택하고 기록 날짜, 인상 깊은 문장, 짧은 감상을 입력해 저장한다. 기록 날짜는 필수이며 문장과 감상 중 하나 이상을 작성하도록 한다. 저장된 기록은 내용을 불러와 수정할 수 있다. 월별 조회는 생성 시각이 아닌 기록에 지정한 날짜를 기준으로 해당 월의 문장·감상 목록과 기록 수를 표시한다. 기록 날짜를 수정하면 해당 기록의 월별 소속과 집계도 함께 갱신한다."
+      },
+      {
+        "id": "prd-difference",
+        "group": "문제 및 해결 방안",
+        "title": "제품 설계의 차별점",
+        "content": "책 제목만 입력하는 간단한 등록 방식, 계정 없는 현재 기기 저장, 사용자가 지정한 날짜에 따른 월별 회고에 집중한다. 월별 기록 수는 읽은 책 수나 독서 일수가 아니라 저장된 독서 기록의 건수로 명확히 표시한다. 경쟁 서비스 대비 우위는 아직 검증되지 않았으며, 개인 기록의 간편함을 설계상 강조점으로 삼는다."
+      },
+      {
+        "id": "prd-target",
+        "group": "타겟 및 시나리오",
+        "title": "타겟 사용자와 사용 환경",
+        "content": "주요 사용자는 모바일 브라우저에서 읽은 책의 문장과 짧은 감상을 개인적으로 남기고 싶은 개인 독서 기록 사용자다. 동일 기기와 동일 브라우저에서 다시 방문해 기록을 확인하는 사용 환경을 기본으로 한다. 별도 관리자 역할이나 관리용 웹은 두지 않는다."
+      },
+      {
+        "id": "prd-scenario",
+        "group": "타겟 및 시나리오",
+        "title": "핵심 사용 시나리오",
+        "content": "1. 사용자는 책 제목을 직접 입력해 책을 등록한다. 공백뿐인 제목은 저장하지 않고 입력 오류를 안내한다.\n2. 등록된 책을 선택한 뒤 기록 날짜와 문장 또는 감상을 입력한다. 날짜 누락이나 문장·감상 모두 미입력 시 저장하지 않고 해당 입력을 안내한다. 기기 저장 성공 후 저장된 기록을 확인한다.\n3. 기존 기록을 열어 문장, 감상 또는 날짜를 수정하고 저장한다. 저장 실패 시 성공으로 표시하지 않으며 입력 내용을 유지해 재시도할 수 있게 한다.\n4. 사용자는 조회할 월을 선택해 해당 월의 기록 수와 책 제목이 함께 표시된 문장·감상 목록을 확인한다. 기록이 없으면 기록 수 0건과 빈 상태 안내를 표시한다. 날짜를 다른 월로 수정한 기록은 새 날짜의 월에서 조회된다."
+      },
+      {
+        "id": "prd-metrics",
+        "group": "성공과 리스크",
+        "title": "핵심 지표와 검증 기준",
+        "content": "핵심 지표는 첫 책 등록 완료율, 독서 기록 작성 완료율, 기록 수정 저장 성공률, 기록 작성 후 월별 조회 이용 비율이다. 로그인 없는 기기 저장 환경에서는 전체 사용자 수나 기기 간 재방문을 정확히 식별하기 어렵다. 초기에는 사용자 테스트로 완료 여부와 이탈 원인을 확인하며, 목표 수치는 검증 후 정한다. 출시 검수에서는 저장한 기록의 재방문 조회, 기록 날짜 기준 월별 목록·건수 일치, 날짜 수정 후 월별 집계 갱신, 빈 상태 및 저장 실패 안내를 확인한다."
+      },
+      {
+        "id": "prd-risks",
+        "group": "성공과 리스크",
+        "title": "주요 리스크와 대응",
+        "content": "브라우저 저장 데이터 삭제, 기기 변경, 다른 브라우저 사용 시 기존 기록을 이용하지 못할 수 있다. 첫 사용과 저장 관련 안내에서 현재 기기에만 저장되며 복구와 동기화를 제공하지 않는다는 점을 명확히 알린다. 브라우저 설정이나 저장 공간 문제로 저장이 실패할 수 있으므로 저장 결과를 확인한 뒤 완료를 표시하고 실패 시 재시도를 안내한다. 공유 기기에서는 다른 사람이 기록을 볼 수 있으므로 개인 기기 사용을 안내한다. 제목만으로 등록하므로 동명 도서 구분과 중복 등록이 어려울 수 있으며, 이번 범위에서는 외부 도서 식별 기능을 추가하지 않는다."
+      }
+    ],
+    "platforms": [
+      "모바일 웹"
+    ],
+    "assumptions": [
+      "독서 기록은 등록된 책 하나에 연결되며, 한 책에 여러 기록을 작성할 수 있다.",
+      "기록 날짜는 필수이고 최초 작성 시 현재 기기의 오늘 날짜를 기본값으로 제안하되 사용자가 변경할 수 있다.",
+      "인상 깊은 문장과 짧은 감상은 각각 선택 입력이며 둘 중 하나 이상을 입력해야 저장할 수 있다.",
+      "월별 기록 수는 해당 월에 지정된 날짜를 가진 독서 기록 건수이며 책 수나 독서 일수를 의미하지 않는다.",
+      "데이터는 현재 기기의 해당 브라우저에 저장한다. 구체적인 브라우저 저장 기술과 지원 환경은 구현 시 검증한다.",
+      "월별 목록은 기록 날짜가 최신인 순서로 표시하며 같은 날짜의 기록은 생성 순서가 최신인 항목부터 표시한다.",
+      "책 삭제, 기록 삭제, 데이터 내보내기와 가져오기는 요청된 핵심 범위에 포함하지 않는다."
+    ]
+  },
+  "flow": {
+    "edges": [
+      {
+        "id": "edge-start-notice",
+        "label": "서비스 열기",
+        "source": "node-start",
+        "target": "node-storage-notice"
+      },
+      {
+        "id": "edge-notice-list",
+        "label": "안내 후 책 목록 진입",
+        "source": "node-storage-notice",
+        "target": "node-book-list"
+      },
+      {
+        "id": "edge-list-register",
+        "label": "책 등록 선택 또는 등록된 책 없음",
+        "source": "node-book-list",
+        "target": "node-book-register"
+      },
+      {
+        "id": "edge-register-valid",
+        "label": "등록 버튼",
+        "source": "node-book-register",
+        "target": "node-book-valid"
+      },
+      {
+        "id": "edge-book-valid-save",
+        "label": "예",
+        "source": "node-book-valid",
+        "target": "node-book-save"
+      },
+      {
+        "id": "edge-book-invalid",
+        "label": "아니요: 제목 필수 안내",
+        "source": "node-book-valid",
+        "target": "node-book-error"
+      },
+      {
+        "id": "edge-book-save-result",
+        "label": "저장 결과 확인",
+        "source": "node-book-save",
+        "target": "node-book-result"
+      },
+      {
+        "id": "edge-book-success",
+        "label": "성공: 등록된 책 표시",
+        "source": "node-book-result",
+        "target": "node-book-list"
+      },
+      {
+        "id": "edge-book-failure",
+        "label": "실패: 완료 표시 안 함",
+        "source": "node-book-result",
+        "target": "node-book-error"
+      },
+      {
+        "id": "edge-book-retry",
+        "label": "제목 수정 또는 저장 재시도",
+        "source": "node-book-error",
+        "target": "node-book-register"
+      },
+      {
+        "id": "edge-register-cancel",
+        "label": "등록하지 않고 돌아가기",
+        "source": "node-book-register",
+        "target": "node-book-list"
+      },
+      {
+        "id": "edge-list-create",
+        "label": "책 선택 후 기록 작성",
+        "source": "node-book-list",
+        "target": "node-record-create"
+      },
+      {
+        "id": "edge-create-valid",
+        "label": "저장 버튼",
+        "source": "node-record-create",
+        "target": "node-create-valid"
+      },
+      {
+        "id": "edge-create-valid-save",
+        "label": "예",
+        "source": "node-create-valid",
+        "target": "node-create-save"
+      },
+      {
+        "id": "edge-create-invalid",
+        "label": "아니요: 해당 필드 오류 안내",
+        "source": "node-create-valid",
+        "target": "node-create-error"
+      },
+      {
+        "id": "edge-create-save-result",
+        "label": "저장 결과 확인",
+        "source": "node-create-save",
+        "target": "node-create-result"
+      },
+      {
+        "id": "edge-create-success",
+        "label": "성공: 저장한 기록 확인",
+        "source": "node-create-result",
+        "target": "node-record-detail"
+      },
+      {
+        "id": "edge-create-failure",
+        "label": "실패: 입력 내용 보존",
+        "source": "node-create-result",
+        "target": "node-create-error"
+      },
+      {
+        "id": "edge-create-retry",
+        "label": "입력 수정 또는 저장 재시도",
+        "source": "node-create-error",
+        "target": "node-record-create"
+      },
+      {
+        "id": "edge-create-back",
+        "label": "저장하지 않고 돌아가기",
+        "source": "node-record-create",
+        "target": "node-book-list"
+      },
+      {
+        "id": "edge-list-monthly",
+        "label": "월별 회고 선택: 이번 달 조회",
+        "source": "node-book-list",
+        "target": "node-monthly"
+      },
+      {
+        "id": "edge-month-change",
+        "label": "연도·월 변경: 지정 날짜 기준 재조회",
+        "source": "node-monthly",
+        "target": "node-monthly"
+      },
+      {
+        "id": "edge-month-detail",
+        "label": "목록의 기록 선택",
+        "source": "node-monthly",
+        "target": "node-record-detail"
+      },
+      {
+        "id": "edge-month-empty",
+        "label": "0건 안내 후 책 선택하여 기록 작성",
+        "source": "node-monthly",
+        "target": "node-book-list"
+      },
+      {
+        "id": "edge-month-books",
+        "label": "책 목록 이동",
+        "source": "node-monthly",
+        "target": "node-book-list"
+      },
+      {
+        "id": "edge-list-load",
+        "label": "책 목록 조회 결과 확인",
+        "source": "node-book-list",
+        "target": "node-load-result"
+      },
+      {
+        "id": "edge-month-load",
+        "label": "월별 조회 결과 확인",
+        "source": "node-monthly",
+        "target": "node-load-result"
+      },
+      {
+        "id": "edge-detail-load",
+        "label": "기록 상세 조회 결과 확인",
+        "source": "node-record-detail",
+        "target": "node-load-result"
+      },
+      {
+        "id": "edge-load-list-ok",
+        "label": "책 목록 성공: 빈 상태 또는 목록 표시",
+        "source": "node-load-result",
+        "target": "node-book-list"
+      },
+      {
+        "id": "edge-load-month-ok",
+        "label": "월별 조회 성공: 목록 또는 0건 표시",
+        "source": "node-load-result",
+        "target": "node-monthly"
+      },
+      {
+        "id": "edge-load-detail-ok",
+        "label": "상세 조회 성공: 저장 내용 표시",
+        "source": "node-load-result",
+        "target": "node-record-detail"
+      },
+      {
+        "id": "edge-load-fail",
+        "label": "조회 실패",
+        "source": "node-load-result",
+        "target": "node-load-error"
+      },
+      {
+        "id": "edge-load-retry-list",
+        "label": "책 목록 실패 시 해당 조회 재시도",
+        "source": "node-load-error",
+        "target": "node-book-list"
+      },
+      {
+        "id": "edge-load-retry-month",
+        "label": "월별 실패 시 선택 월 유지하여 재시도",
+        "source": "node-load-error",
+        "target": "node-monthly"
+      },
+      {
+        "id": "edge-load-retry-detail",
+        "label": "상세 실패 시 선택 기록 재조회",
+        "source": "node-load-error",
+        "target": "node-record-detail"
+      },
+      {
+        "id": "edge-load-missing",
+        "label": "상세 조회에서 기록 없음",
+        "source": "node-load-result",
+        "target": "node-record-unavailable"
+      },
+      {
+        "id": "edge-missing-month",
+        "label": "월별 목록으로 돌아가기",
+        "source": "node-record-unavailable",
+        "target": "node-monthly"
+      },
+      {
+        "id": "edge-detail-edit",
+        "label": "수정 버튼: 기존 값 불러오기",
+        "source": "node-record-detail",
+        "target": "node-record-edit"
+      },
+      {
+        "id": "edge-detail-month",
+        "label": "월별 회고로 이동",
+        "source": "node-record-detail",
+        "target": "node-monthly"
+      },
+      {
+        "id": "edge-edit-valid",
+        "label": "수정 저장 버튼",
+        "source": "node-record-edit",
+        "target": "node-edit-valid"
+      },
+      {
+        "id": "edge-edit-valid-save",
+        "label": "예",
+        "source": "node-edit-valid",
+        "target": "node-edit-save"
+      },
+      {
+        "id": "edge-edit-invalid",
+        "label": "아니요: 입력 오류 안내",
+        "source": "node-edit-valid",
+        "target": "node-edit-error"
+      },
+      {
+        "id": "edge-edit-save-result",
+        "label": "갱신 결과 확인",
+        "source": "node-edit-save",
+        "target": "node-edit-result"
+      },
+      {
+        "id": "edge-edit-success",
+        "label": "성공: 기존 기록만 갱신",
+        "source": "node-edit-result",
+        "target": "node-month-refresh"
+      },
+      {
+        "id": "edge-edit-failure",
+        "label": "실패: 기존 데이터 변경 안 함",
+        "source": "node-edit-result",
+        "target": "node-edit-error"
+      },
+      {
+        "id": "edge-edit-retry",
+        "label": "수정 입력 유지 후 재시도",
+        "source": "node-edit-error",
+        "target": "node-record-edit"
+      },
+      {
+        "id": "edge-refresh-detail",
+        "label": "변경된 상세 표시: 날짜 변경 시 월별 소속 반영",
+        "source": "node-month-refresh",
+        "target": "node-record-detail"
+      },
+      {
+        "id": "edge-edit-cancel",
+        "label": "저장하지 않고 돌아가기",
+        "source": "node-record-edit",
+        "target": "node-record-detail"
+      },
+      {
+        "id": "edge-month-end",
+        "label": "회고 마치기",
+        "source": "node-monthly",
+        "target": "node-end"
+      },
+      {
+        "id": "edge-detail-end",
+        "label": "기록 확인 마치기",
+        "source": "node-record-detail",
+        "target": "node-end"
+      },
+      {
+        "id": "edge-list-end",
+        "label": "이용 마치기",
+        "source": "node-book-list",
+        "target": "node-end"
+      }
+    ],
+    "nodes": [
+      {
+        "x": 0.0,
+        "y": 0.0,
+        "id": "node-start",
+        "type": "start",
+        "title": "모바일 웹 방문",
+        "section": "서비스 진입",
+        "feature_ids": []
+      },
+      {
+        "x": 320.0,
+        "y": 0.0,
+        "id": "node-storage-notice",
+        "type": "action",
+        "title": "현재 브라우저 저장 범위와 유실 위험 안내",
+        "section": "서비스 진입",
+        "feature_ids": [
+          "feat-storage-notice"
+        ]
+      },
+      {
+        "x": 640.0,
+        "y": 0.0,
+        "id": "node-book-list",
+        "type": "screen",
+        "title": "책 목록: 등록된 책 선택 또는 새 책 등록",
+        "section": "책 관리",
+        "feature_ids": [
+          "feat-book-list"
+        ]
+      },
+      {
+        "x": 960.0,
+        "y": 180.0,
+        "id": "node-book-register",
+        "type": "screen",
+        "title": "책 등록: 책 제목 필수 입력",
+        "section": "책 관리",
+        "feature_ids": [
+          "feat-book-create",
+          "feat-storage-notice"
+        ]
+      },
+      {
+        "x": 1280.0,
+        "y": 180.0,
+        "id": "node-book-valid",
+        "type": "decision",
+        "title": "공백을 제거한 책 제목이 있는가?",
+        "section": "책 관리",
+        "feature_ids": [
+          "feat-book-create"
+        ]
+      },
+      {
+        "x": 1600.0,
+        "y": 180.0,
+        "id": "node-book-save",
+        "type": "action",
+        "title": "책 저장 처리와 중복 요청 방지",
+        "section": "책 관리",
+        "feature_ids": [
+          "feat-book-create",
+          "feat-storage-result"
+        ]
+      },
+      {
+        "x": 1920.0,
+        "y": 180.0,
+        "id": "node-book-result",
+        "type": "decision",
+        "title": "책 저장에 성공했는가?",
+        "section": "책 관리",
+        "feature_ids": [
+          "feat-storage-result"
+        ]
+      },
+      {
+        "x": 1280.0,
+        "y": 360.0,
+        "id": "node-book-error",
+        "type": "action",
+        "title": "제목 입력 유지와 오류 안내",
+        "section": "책 관리",
+        "feature_ids": [
+          "feat-book-create",
+          "feat-storage-result"
+        ]
+      },
+      {
+        "x": 960.0,
+        "y": 540.0,
+        "id": "node-record-create",
+        "type": "screen",
+        "title": "기록 작성: 책 선택·날짜·문장·감상 입력",
+        "section": "기록 작성",
+        "feature_ids": [
+          "feat-record-create",
+          "feat-storage-notice"
+        ]
+      },
+      {
+        "x": 1280.0,
+        "y": 540.0,
+        "id": "node-create-valid",
+        "type": "decision",
+        "title": "책과 날짜가 유효하고 문장 또는 감상이 있는가?",
+        "section": "기록 작성",
+        "feature_ids": [
+          "feat-record-create"
+        ]
+      },
+      {
+        "x": 1600.0,
+        "y": 540.0,
+        "id": "node-create-save",
+        "type": "action",
+        "title": "새 기록 저장 처리와 중복 요청 방지",
+        "section": "기록 작성",
+        "feature_ids": [
+          "feat-record-create",
+          "feat-storage-result"
+        ]
+      },
+      {
+        "x": 1920.0,
+        "y": 540.0,
+        "id": "node-create-result",
+        "type": "decision",
+        "title": "새 기록 저장에 성공했는가?",
+        "section": "기록 작성",
+        "feature_ids": [
+          "feat-storage-result"
+        ]
+      },
+      {
+        "x": 1280.0,
+        "y": 720.0,
+        "id": "node-create-error",
+        "type": "action",
+        "title": "작성 입력 유지와 오류·재시도 안내",
+        "section": "기록 작성",
+        "feature_ids": [
+          "feat-record-create",
+          "feat-storage-result"
+        ]
+      },
+      {
+        "x": 640.0,
+        "y": 900.0,
+        "id": "node-monthly",
+        "type": "screen",
+        "title": "월별 회고: 연도·월 선택, 기록 수와 문장·감상 목록",
+        "section": "월별 조회",
+        "feature_ids": [
+          "feat-month-select",
+          "feat-month-records"
+        ]
+      },
+      {
+        "x": 320.0,
+        "y": 900.0,
+        "id": "node-load-result",
+        "type": "decision",
+        "title": "책 목록·월별 목록·기록 상세 조회에 성공했는가?",
+        "section": "조회 상태",
+        "feature_ids": [
+          "feat-book-list",
+          "feat-month-records",
+          "feat-record-detail"
+        ]
+      },
+      {
+        "x": 0.0,
+        "y": 1080.0,
+        "id": "node-load-error",
+        "type": "action",
+        "title": "조회 실패 안내: 빈 상태와 구분하고 재시도 제공",
+        "section": "조회 상태",
+        "feature_ids": [
+          "feat-book-list",
+          "feat-month-records",
+          "feat-record-detail"
+        ]
+      },
+      {
+        "x": 2240.0,
+        "y": 900.0,
+        "id": "node-record-detail",
+        "type": "screen",
+        "title": "기록 상세: 책 제목·날짜·문장·감상 확인",
+        "section": "기록 조회",
+        "feature_ids": [
+          "feat-record-detail"
+        ]
+      },
+      {
+        "x": 2560.0,
+        "y": 1080.0,
+        "id": "node-record-edit",
+        "type": "screen",
+        "title": "기록 수정: 기존 날짜·문장·감상 변경",
+        "section": "기록 수정",
+        "feature_ids": [
+          "feat-record-edit",
+          "feat-storage-notice"
+        ]
+      },
+      {
+        "x": 2880.0,
+        "y": 1080.0,
+        "id": "node-edit-valid",
+        "type": "decision",
+        "title": "날짜가 유효하고 문장 또는 감상이 있는가?",
+        "section": "기록 수정",
+        "feature_ids": [
+          "feat-record-edit"
+        ]
+      },
+      {
+        "x": 3200.0,
+        "y": 1080.0,
+        "id": "node-edit-save",
+        "type": "action",
+        "title": "기존 기록 갱신과 중복 저장 요청 방지",
+        "section": "기록 수정",
+        "feature_ids": [
+          "feat-record-edit",
+          "feat-storage-result"
+        ]
+      },
+      {
+        "x": 3520.0,
+        "y": 1080.0,
+        "id": "node-edit-result",
+        "type": "decision",
+        "title": "수정 저장에 성공했는가?",
+        "section": "기록 수정",
+        "feature_ids": [
+          "feat-storage-result"
+        ]
+      },
+      {
+        "x": 2880.0,
+        "y": 1260.0,
+        "id": "node-edit-error",
+        "type": "action",
+        "title": "기존 저장 기록 보존과 수정 입력 유지",
+        "section": "기록 수정",
+        "feature_ids": [
+          "feat-record-edit",
+          "feat-storage-result"
+        ]
+      },
+      {
+        "x": 3520.0,
+        "y": 900.0,
+        "id": "node-month-refresh",
+        "type": "action",
+        "title": "지정 날짜 기준 월별 목록·건수·정렬 갱신",
+        "section": "월별 조회",
+        "feature_ids": [
+          "feat-record-edit",
+          "feat-month-records"
+        ]
+      },
+      {
+        "x": 2240.0,
+        "y": 1260.0,
+        "id": "node-record-unavailable",
+        "type": "action",
+        "title": "기록을 찾을 수 없음 안내와 월별 목록 복귀",
+        "section": "기록 조회",
+        "feature_ids": [
+          "feat-record-detail"
+        ]
+      },
+      {
+        "x": 960.0,
+        "y": 1440.0,
+        "id": "node-end",
+        "type": "end",
+        "title": "독서 기록 작성 또는 월별 회고 종료",
+        "section": "이용 종료",
+        "feature_ids": []
+      }
+    ]
+  },
+  "screens": [
+    {
+      "id": "screen-book-list",
+      "title": "내 책 목록",
+      "blocks": [
+        {
+          "id": "block-books-heading",
+          "type": "heading",
+          "label": "내 책",
+          "content": "읽은 책을 선택해 문장과 감상을 기록하세요.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-books-notice",
+          "type": "text",
+          "label": "이 브라우저에만 저장",
+          "content": "로그인 없이 현재 기기의 이 브라우저에 저장됩니다. 브라우저 데이터 삭제나 기기 변경 시 기록을 이용하지 못할 수 있으며 복구·동기화를 제공하지 않습니다. 공유 기기에서는 다른 사람이 기록을 볼 수 있습니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-books-add",
+          "type": "button",
+          "label": "책 등록",
+          "content": "책 제목을 직접 입력해 등록합니다.",
+          "target_screen_id": "screen-book-register"
+        },
+        {
+          "id": "block-books-list",
+          "type": "list",
+          "label": "등록한 책",
+          "content": "저장된 책 제목을 항목별로 표시합니다. 선택한 책을 구분해 강조하며 같은 제목의 책도 별개 항목으로 표시합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-books-write",
+          "type": "button",
+          "label": "선택한 책에 기록",
+          "content": "책 선택 후 활성화됩니다. 작성 화면에 선택한 책을 전달합니다.",
+          "target_screen_id": "screen-record-create"
+        },
+        {
+          "id": "block-books-empty",
+          "type": "text",
+          "label": "아직 등록한 책이 없어요",
+          "content": "책이 없을 때 목록 대신 표시합니다. 위의 책 등록 버튼으로 시작하세요.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-books-error",
+          "type": "text",
+          "label": "책 목록을 불러오지 못했어요",
+          "content": "조회 실패 시 빈 목록 안내 대신 표시합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-books-retry",
+          "type": "button",
+          "label": "다시 불러오기",
+          "content": "조회 실패 시에만 표시하며 책 목록을 다시 조회합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-books-monthly",
+          "type": "navigation",
+          "label": "월별 회고",
+          "content": "이번 달의 기록 수와 문장·감상 목록을 확인합니다.",
+          "target_screen_id": "screen-monthly"
+        }
+      ],
+      "device": "mobile",
+      "node_id": "node-book-list"
+    },
+    {
+      "id": "screen-book-register",
+      "title": "책 제목으로 등록",
+      "blocks": [
+        {
+          "id": "block-register-heading",
+          "type": "heading",
+          "label": "책 등록",
+          "content": "책 제목만 입력하면 등록할 수 있어요.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-register-title",
+          "type": "input",
+          "label": "책 제목",
+          "content": "필수 입력. 읽은 책 제목을 직접 입력하세요. 앞뒤 공백을 제거한 값으로 저장합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-register-validation",
+          "type": "text",
+          "label": "책 제목을 입력해 주세요",
+          "content": "제목이 비어 있거나 공백뿐인 상태로 등록을 요청하면 입력란 아래에 표시합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-register-notice",
+          "type": "text",
+          "label": "현재 브라우저에 저장",
+          "content": "기기 간 동기화와 복구는 제공하지 않습니다. 동일 제목도 별개의 책으로 등록됩니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-register-save",
+          "type": "button",
+          "label": "등록하기",
+          "content": "검증과 기기 저장 성공 후 책 목록으로 이동해 등록 완료를 알립니다. 처리 중에는 ‘등록 중’으로 표시하고 중복 요청을 막습니다.",
+          "target_screen_id": "screen-book-list"
+        },
+        {
+          "id": "block-register-error",
+          "type": "text",
+          "label": "책을 저장하지 못했어요",
+          "content": "저장 실패 시에만 표시합니다. 제목을 유지하며 등록하기 버튼으로 재시도할 수 있습니다. 성공으로 표시하거나 이동하지 않습니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-register-back",
+          "type": "button",
+          "label": "돌아가기",
+          "content": "등록하지 않고 책 목록으로 돌아갑니다.",
+          "target_screen_id": "screen-book-list"
+        }
+      ],
+      "device": "mobile",
+      "node_id": "node-book-register"
+    },
+    {
+      "id": "screen-record-create",
+      "title": "독서 기록 작성",
+      "blocks": [
+        {
+          "id": "block-create-heading",
+          "type": "heading",
+          "label": "독서 기록 작성",
+          "content": "기억하고 싶은 문장이나 짧은 감상을 남겨 보세요.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-create-book",
+          "type": "input",
+          "label": "책 선택",
+          "content": "필수 선택. 등록된 책 목록을 제공합니다. 책 목록에서 선택한 책을 기본 선택하며 다른 등록된 책으로 변경할 수 있습니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-create-date",
+          "type": "input",
+          "label": "기록 날짜",
+          "content": "필수 날짜 입력. 현재 기기의 오늘 날짜가 기본값이며 변경할 수 있습니다. 이 날짜를 기준으로 월별 회고에 표시됩니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-create-quote",
+          "type": "input",
+          "label": "인상 깊은 문장",
+          "content": "여러 줄 입력. 문장과 감상 중 하나 이상을 작성하세요.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-create-thought",
+          "type": "input",
+          "label": "짧은 감상",
+          "content": "여러 줄 입력. 책을 읽고 든 생각을 적어 보세요.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-create-validation",
+          "type": "text",
+          "label": "입력 내용을 확인해 주세요",
+          "content": "검증 실패 시 해당 필드 아래에 ‘책을 선택해 주세요’, ‘유효한 날짜를 입력해 주세요’, ‘문장 또는 감상을 작성해 주세요’를 표시합니다. 공백뿐인 내용은 미입력으로 처리합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-create-notice",
+          "type": "text",
+          "label": "이 브라우저에만 저장",
+          "content": "브라우저 데이터 삭제나 기기 변경 시 기록을 이용하지 못할 수 있으며 복구·동기화는 제공하지 않습니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-create-save",
+          "type": "button",
+          "label": "기록 저장",
+          "content": "검증과 저장 성공 후 해당 기록 상세로 이동합니다. 처리 중에는 ‘저장 중’으로 표시하고 중복 요청을 막습니다.",
+          "target_screen_id": "screen-record-detail"
+        },
+        {
+          "id": "block-create-error",
+          "type": "text",
+          "label": "기록을 저장하지 못했어요",
+          "content": "저장 실패 시 모든 입력을 유지합니다. 기록 저장 버튼으로 재시도할 수 있으며 완료 화면으로 이동하지 않습니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-create-back",
+          "type": "button",
+          "label": "돌아가기",
+          "content": "저장하지 않고 책 목록으로 돌아갑니다.",
+          "target_screen_id": "screen-book-list"
+        }
+      ],
+      "device": "mobile",
+      "node_id": "node-record-create"
+    },
+    {
+      "id": "screen-monthly",
+      "title": "월별 독서 회고",
+      "blocks": [
+        {
+          "id": "block-month-heading",
+          "type": "heading",
+          "label": "월별 회고",
+          "content": "기록에 지정한 날짜를 기준으로 문장과 감상을 모아 봅니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-month-select",
+          "type": "input",
+          "label": "조회 연도·월",
+          "content": "최초 진입 시 이번 달을 선택합니다. 유효한 연도와 월로 변경하면 목록과 기록 수를 함께 갱신합니다. 유효하지 않은 값은 적용하지 않고 안내합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-month-count",
+          "type": "stat",
+          "label": "독서 기록 수",
+          "content": "선택한 월에 속한 기록 N건을 표시합니다. 읽은 책 수나 독서 일수가 아닌 기록 건수입니다. 조회 성공 시에만 표시합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-month-list",
+          "type": "list",
+          "label": "이달의 문장과 감상",
+          "content": "각 항목에 책 제목, 기록 날짜, 작성한 문장과 감상을 표시합니다. 날짜 최신순, 같은 날짜는 생성 순서 최신순으로 정렬합니다. 선택한 항목의 상세로 이동합니다.",
+          "target_screen_id": "screen-record-detail"
+        },
+        {
+          "id": "block-month-empty",
+          "type": "text",
+          "label": "이달에 남긴 기록이 없어요",
+          "content": "조회 성공 후 기록이 없으면 목록 대신 표시하고 기록 수는 0건으로 표시합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-month-create",
+          "type": "button",
+          "label": "책 선택하고 기록하기",
+          "content": "책 목록에서 기록할 책을 선택합니다.",
+          "target_screen_id": "screen-book-list"
+        },
+        {
+          "id": "block-month-error",
+          "type": "text",
+          "label": "월별 기록을 불러오지 못했어요",
+          "content": "조회 실패 시 목록과 건수 대신 표시합니다. 실패를 0건으로 표시하지 않고 선택한 연도·월을 유지합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-month-retry",
+          "type": "button",
+          "label": "다시 불러오기",
+          "content": "조회 실패 시 선택한 연도와 월로 재시도합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-month-books",
+          "type": "navigation",
+          "label": "내 책",
+          "content": "등록된 책 목록으로 이동합니다.",
+          "target_screen_id": "screen-book-list"
+        }
+      ],
+      "device": "mobile",
+      "node_id": "node-monthly"
+    },
+    {
+      "id": "screen-record-detail",
+      "title": "독서 기록 상세",
+      "blocks": [
+        {
+          "id": "block-detail-heading",
+          "type": "heading",
+          "label": "독서 기록",
+          "content": "저장된 기록 내용을 확인합니다. 작성·수정 직후에는 저장 성공 안내를 함께 표시합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-detail-book",
+          "type": "text",
+          "label": "책 제목",
+          "content": "이 기록에 연결된 책 제목을 표시합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-detail-date",
+          "type": "text",
+          "label": "기록 날짜",
+          "content": "저장된 기록 날짜를 연·월·일로 표시합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-detail-quote",
+          "type": "card",
+          "label": "인상 깊은 문장",
+          "content": "저장된 문장을 줄바꿈과 함께 표시합니다. 내용이 없으면 ‘작성한 문장이 없어요’로 표시합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-detail-thought",
+          "type": "card",
+          "label": "짧은 감상",
+          "content": "저장된 감상을 줄바꿈과 함께 표시합니다. 내용이 없으면 ‘작성한 감상이 없어요’로 표시합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-detail-edit",
+          "type": "button",
+          "label": "기록 수정",
+          "content": "현재 기록의 날짜, 문장과 감상이 채워진 수정 화면으로 이동합니다. 기록 조회 성공 시에만 표시합니다.",
+          "target_screen_id": "screen-record-edit"
+        },
+        {
+          "id": "block-detail-error",
+          "type": "text",
+          "label": "기록을 확인할 수 없어요",
+          "content": "조회 실패 시 내용 대신 오류를 표시합니다. 기록이 없는 경우에는 ‘기록을 찾을 수 없어요’를 표시하고 월별 회고로 돌아가도록 안내합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-detail-retry",
+          "type": "button",
+          "label": "다시 불러오기",
+          "content": "조회 오류일 때만 표시하며 선택한 기록을 다시 조회합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-detail-monthly",
+          "type": "button",
+          "label": "월별 회고로",
+          "content": "월별 회고로 이동합니다. 수정된 기록의 날짜는 해당 월의 목록과 건수에 반영됩니다.",
+          "target_screen_id": "screen-monthly"
+        }
+      ],
+      "device": "mobile",
+      "node_id": "node-record-detail"
+    },
+    {
+      "id": "screen-record-edit",
+      "title": "독서 기록 수정",
+      "blocks": [
+        {
+          "id": "block-edit-heading",
+          "type": "heading",
+          "label": "기록 수정",
+          "content": "기존 기록의 날짜, 문장과 감상을 수정합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-edit-book",
+          "type": "text",
+          "label": "책 제목",
+          "content": "연결된 책 제목을 읽기 전용으로 표시합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-edit-date",
+          "type": "input",
+          "label": "기록 날짜",
+          "content": "기존 날짜가 채워진 필수 날짜 입력입니다. 다른 월로 변경하면 이전 월에서 제외되고 변경한 월에서 조회됩니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-edit-quote",
+          "type": "input",
+          "label": "인상 깊은 문장",
+          "content": "기존 문장을 채운 여러 줄 입력입니다. 문장과 감상 중 하나 이상은 남겨야 합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-edit-thought",
+          "type": "input",
+          "label": "짧은 감상",
+          "content": "기존 감상을 채운 여러 줄 입력입니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-edit-validation",
+          "type": "text",
+          "label": "수정 내용을 확인해 주세요",
+          "content": "유효하지 않은 날짜는 날짜 입력란 아래에 안내합니다. 문장과 감상이 모두 비어 있거나 공백뿐이면 내용 입력 안내를 표시하고 저장하지 않습니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-edit-notice",
+          "type": "text",
+          "label": "이 브라우저에만 저장",
+          "content": "복구·동기화는 제공하지 않습니다. 수정은 새 기록을 만들지 않고 기존 기록을 갱신합니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-edit-save",
+          "type": "button",
+          "label": "수정 저장",
+          "content": "저장 성공 후 변경된 상세를 표시하고 월별 목록·건수·정렬을 갱신합니다. 처리 중에는 ‘저장 중’으로 표시하고 중복 요청을 막습니다.",
+          "target_screen_id": "screen-record-detail"
+        },
+        {
+          "id": "block-edit-error",
+          "type": "text",
+          "label": "수정 내용을 저장하지 못했어요",
+          "content": "실패 시 기존 저장 기록을 보존하고 수정 입력을 유지합니다. 수정 저장 버튼으로 재시도할 수 있습니다.",
+          "target_screen_id": null
+        },
+        {
+          "id": "block-edit-cancel",
+          "type": "button",
+          "label": "수정 취소",
+          "content": "변경 내용을 저장하지 않고 기존 기록 상세로 돌아갑니다.",
+          "target_screen_id": "screen-record-detail"
+        }
+      ],
+      "device": "mobile",
+      "node_id": "node-record-edit"
+    }
+  ],
+  "features": [
+    {
+      "id": "feat-book-create",
+      "actor": "개인 독서 기록 사용자",
+      "steps": [
+        "사용자가 책 제목을 직접 입력한다.",
+        "등록 버튼을 누르면 제목의 앞뒤 공백을 제거하고 필수 입력을 검증한다.",
+        "유효한 제목의 책을 현재 브라우저에 저장한다.",
+        "저장 성공을 확인한 후 등록된 책을 책 목록에 표시한다."
+      ],
+      "title": "책 제목 입력으로 책 등록",
+      "acceptance": [
+        "제목 외 추가 필드 입력 없이 책을 등록할 수 있다.",
+        "등록 성공한 책은 재방문 후에도 책 목록과 책 선택 목록에서 확인된다.",
+        "저장 실패 시 등록 완료를 표시하지 않는다."
+      ],
+      "exceptions": [
+        "제목이 비어 있거나 공백뿐이면 저장하지 않고 제목 입력을 안내한다.",
+        "저장 실패 시 제목을 유지하고 실패 안내와 재시도 동작을 제공한다.",
+        "동일한 제목의 책이 있어도 별개의 책으로 등록하며 제목만으로 자동 병합하지 않는다."
+      ],
+      "description": "책 제목 입력 필드와 등록 동작을 제공하고 저장된 책을 독서 기록에 연결할 수 있게 한다.",
+      "preconditions": [
+        "사용자가 모바일 웹의 책 등록 화면에 접근했다."
+      ],
+      "requirement_id": "req-book"
+    },
+    {
+      "id": "feat-book-list",
+      "actor": "개인 독서 기록 사용자",
+      "steps": [
+        "현재 브라우저에 저장된 책 목록을 불러온다.",
+        "각 책을 제목과 함께 별개의 항목으로 표시한다.",
+        "사용자가 책을 선택하고 기록 작성 동작을 실행한다.",
+        "선택한 책이 지정된 독서 기록 작성 화면을 연다."
+      ],
+      "title": "저장된 책 목록 조회와 기록 작성 진입",
+      "acceptance": [
+        "선택한 책과 작성 화면에 지정된 책이 일치한다.",
+        "동일 제목의 책도 서로 다른 목록 항목으로 선택할 수 있다.",
+        "책이 없는 상태에서 책 등록으로 진입할 수 있다."
+      ],
+      "exceptions": [
+        "등록된 책이 없으면 빈 상태와 책 등록 동작을 표시한다.",
+        "목록 불러오기에 실패하면 빈 목록으로 단정하지 않고 조회 실패와 재시도를 안내한다."
+      ],
+      "description": "기기에 저장된 책 제목 목록을 보여주고 선택한 책의 독서 기록 작성으로 연결한다.",
+      "preconditions": [
+        "사용자가 책 목록 화면에 접근했다."
+      ],
+      "requirement_id": "req-book"
+    },
+    {
+      "id": "feat-record-create",
+      "actor": "개인 독서 기록 사용자",
+      "steps": [
+        "책 선택 항목과 기록 날짜, 문장, 감상 입력 필드를 표시한다.",
+        "미리 선택한 책이 있으면 해당 책을 지정하고 날짜는 현재 기기의 오늘 날짜로 설정한다.",
+        "사용자가 책과 날짜를 확인하거나 변경하고 문장 또는 감상을 입력한다.",
+        "저장 버튼을 누르면 책 선택, 날짜 유효성, 문장 또는 감상의 입력 여부를 검증한다.",
+        "기록을 선택한 책에 연결하여 저장하고 성공한 경우 기록 상세를 표시한다."
+      ],
+      "title": "날짜와 문장·감상 입력 후 기록 저장",
+      "acceptance": [
+        "문장만 또는 감상만 입력한 기록도 저장할 수 있다.",
+        "한 책에 여러 기록을 저장할 수 있다.",
+        "저장된 기록은 지정 날짜에 해당하는 월별 목록과 건수에 반영된다."
+      ],
+      "exceptions": [
+        "책 미선택이나 유효하지 않은 날짜는 해당 필드의 입력 오류로 안내한다.",
+        "문장과 감상이 모두 비어 있거나 공백뿐이면 저장하지 않는다.",
+        "저장 실패 시 모든 입력을 유지하고 재시도를 안내한다."
+      ],
+      "description": "등록된 책을 선택하고 날짜, 문장, 감상을 입력하여 독서 기록 한 건을 저장한다.",
+      "preconditions": [
+        "현재 브라우저에 등록된 책이 하나 이상 있다.",
+        "사용자가 독서 기록 작성 화면에 접근했다."
+      ],
+      "requirement_id": "req-record-create"
+    },
+    {
+      "id": "feat-record-detail",
+      "actor": "개인 독서 기록 사용자",
+      "steps": [
+        "선택한 기록과 연결된 책을 불러온다.",
+        "책 제목, 기록 날짜, 문장, 감상을 표시한다.",
+        "사용자가 수정 버튼을 누르면 해당 기록의 값이 채워진 수정 화면을 연다."
+      ],
+      "title": "저장된 독서 기록 상세 조회",
+      "acceptance": [
+        "선택한 기록의 저장된 값과 상세 표시 값이 일치한다.",
+        "수정 화면에 동일 기록의 날짜, 문장, 감상이 채워진다."
+      ],
+      "exceptions": [
+        "기록을 찾을 수 없으면 이용할 수 없는 기록임을 안내하고 월별 목록으로 돌아가는 동작을 제공한다.",
+        "조회 실패 시 오류를 표시하고 재시도를 제공한다.",
+        "입력하지 않은 문장이나 감상은 미작성 상태로 표시한다."
+      ],
+      "description": "월별 목록에서 선택한 기록의 저장 내용을 확인하고 수정으로 진입한다.",
+      "preconditions": [
+        "사용자가 월별 목록에서 저장된 기록을 선택했다."
+      ],
+      "requirement_id": "req-record-edit"
+    },
+    {
+      "id": "feat-record-edit",
+      "actor": "개인 독서 기록 사용자",
+      "steps": [
+        "기존 책 제목과 기록 날짜, 문장, 감상을 표시한다.",
+        "사용자가 날짜, 문장 또는 감상을 변경한다.",
+        "저장 시 작성과 동일한 필수 입력 규칙을 검증한다.",
+        "기존 기록을 갱신하고 저장 성공 후 변경된 상세 내용을 표시한다.",
+        "월별 조회에 변경된 날짜와 내용을 반영한다."
+      ],
+      "title": "기록 내용과 날짜 수정 저장",
+      "acceptance": [
+        "수정으로 전체 기록 건수가 늘어나지 않는다.",
+        "다른 월로 날짜를 변경하면 이전 월에서는 제외되고 새 월에서는 조회된다.",
+        "같은 월 안에서 날짜를 변경하면 기록 건수는 유지되고 정렬 순서가 갱신된다."
+      ],
+      "exceptions": [
+        "날짜가 유효하지 않거나 문장과 감상이 모두 비어 있으면 갱신하지 않고 입력 오류를 표시한다.",
+        "저장 실패 시 기존 저장 내용을 유지하고 수정 입력은 화면에 남겨 재시도할 수 있게 한다."
+      ],
+      "description": "기존 기록의 날짜, 문장과 감상을 수정하고 월별 조회에 변경 결과를 반영한다.",
+      "preconditions": [
+        "저장된 기록의 수정 화면이 열려 있다."
+      ],
+      "requirement_id": "req-record-edit"
+    },
+    {
+      "id": "feat-month-select",
+      "actor": "개인 독서 기록 사용자",
+      "steps": [
+        "최초 진입 시 현재 기기의 이번 달을 조회 월로 표시한다.",
+        "사용자가 연도와 월 선택 항목에서 조회 대상을 변경한다.",
+        "선택된 연도와 월을 화면에 표시하고 해당 기간의 목록과 건수를 갱신한다."
+      ],
+      "title": "조회할 연도와 월 선택",
+      "acceptance": [
+        "같은 월 번호라도 연도가 다른 기록은 분리하여 조회된다.",
+        "조회 월 변경 시 목록과 기록 수가 동일한 선택 월을 기준으로 갱신된다."
+      ],
+      "exceptions": [
+        "유효하지 않은 연도·월은 선택을 적용하지 않고 안내한다.",
+        "조회 실패 시 선택한 월을 유지하고 재시도를 안내한다."
+      ],
+      "description": "월별 회고의 조회 대상 연도와 월을 선택하고 해당 월의 기록을 불러온다.",
+      "preconditions": [
+        "사용자가 월별 조회 화면에 접근했다."
+      ],
+      "requirement_id": "req-monthly"
+    },
+    {
+      "id": "feat-month-records",
+      "actor": "개인 독서 기록 사용자",
+      "steps": [
+        "기록에 지정된 날짜의 연도와 월이 선택값과 일치하는 기록을 추린다.",
+        "기록 날짜 내림차순, 같은 날짜는 생성 순서 내림차순으로 정렬한다.",
+        "기록 건수와 각 기록의 책 제목, 날짜, 작성된 문장·감상을 표시한다.",
+        "사용자가 목록 항목을 선택하면 해당 기록 상세를 연다."
+      ],
+      "title": "월별 문장·감상 목록과 기록 건수 표시",
+      "acceptance": [
+        "생성한 달과 지정 날짜의 달이 다르면 지정 날짜의 달에서만 조회된다.",
+        "기록 수는 목록 항목 수와 일치하며 책 수나 독서 일수로 표시하지 않는다.",
+        "한쪽 내용만 작성한 기록도 누락 없이 표시된다."
+      ],
+      "exceptions": [
+        "해당 월의 기록이 없으면 0건과 해당 월에 기록이 없다는 안내를 표시한다.",
+        "데이터 조회 실패는 기록 0건 상태와 구분하여 오류로 표시한다."
+      ],
+      "description": "지정 날짜가 선택 월에 속하는 기록만 정렬하여 표시하고 기록 건수를 함께 제공한다.",
+      "preconditions": [
+        "월별 조회 화면에 유효한 조회 연도와 월이 선택되어 있다."
+      ],
+      "requirement_id": "req-monthly"
+    },
+    {
+      "id": "feat-storage-notice",
+      "actor": "개인 독서 기록 사용자",
+      "steps": [
+        "첫 사용 시 로그인 없이 현재 기기의 해당 브라우저에만 저장됨을 안내한다.",
+        "브라우저 데이터 삭제, 기기 변경, 다른 브라우저 사용 시 기존 기록을 이용하지 못할 수 있음을 안내한다.",
+        "복구와 기기 간 동기화를 제공하지 않으며 공유 기기에서는 다른 사람이 기록을 볼 수 있음을 알린다.",
+        "저장 관련 화면에도 기기 저장 안내를 표시한다."
+      ],
+      "title": "현재 기기 저장 범위와 유실 위험 안내",
+      "acceptance": [
+        "계정이나 서버에 백업된다는 오해를 유발하는 표현을 사용하지 않는다.",
+        "첫 사용 안내와 저장 관련 화면에서 저장 범위를 확인할 수 있다."
+      ],
+      "exceptions": [
+        "안내 표시 여부를 저장하지 못하더라도 책 등록이나 기록 입력 자체를 차단하지 않는다."
+      ],
+      "description": "첫 사용과 저장 관련 화면에서 기기 저장의 범위 및 복구 제한을 알린다.",
+      "preconditions": [
+        "사용자가 서비스를 처음 열거나 책 등록 또는 기록 저장 화면에 접근했다."
+      ],
+      "requirement_id": "req-local-storage"
+    },
+    {
+      "id": "feat-storage-result",
+      "actor": "개인 독서 기록 사용자",
+      "steps": [
+        "저장 처리 중 상태를 표시하고 중복 저장 요청을 막는다.",
+        "현재 브라우저 저장 작업의 성공 여부를 확인한다.",
+        "성공한 경우에만 완료 안내와 저장 결과를 표시한다.",
+        "실패한 경우 입력 화면과 내용을 유지하고 재시도 동작을 제공한다."
+      ],
+      "title": "저장 결과 확인과 실패 시 입력 유지",
+      "acceptance": [
+        "저장 실패를 완료로 표시하거나 성공 화면으로 이동하지 않는다.",
+        "재시도 시 입력을 다시 작성하지 않아도 된다.",
+        "저장 처리 중 반복 클릭으로 동일 책이나 기록이 중복 생성되지 않는다.",
+        "저장 성공한 데이터는 동일 브라우저 재방문 시 조회된다."
+      ],
+      "exceptions": [
+        "브라우저 설정이나 저장 공간 문제 등으로 실패하면 저장하지 못했다는 안내를 표시하며 원인을 확인하지 못한 경우 단정하지 않는다.",
+        "수정 저장 실패 시 기존 저장 기록을 변경하지 않는다."
+      ],
+      "description": "책 등록과 기록 작성·수정의 저장 결과를 확인하고 실패 시 원래 데이터와 입력 내용을 보존한다.",
+      "preconditions": [
+        "사용자가 유효한 책 등록 또는 기록 작성·수정 입력으로 저장을 요청했다."
+      ],
+      "requirement_id": "req-local-storage"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "req-book",
+      "title": "책 제목 직접 입력과 기기 저장",
+      "priority": "P0",
+      "acceptance": [
+        "앞뒤 공백을 제거한 제목이 비어 있으면 등록하지 않고 입력 오류를 표시한다.",
+        "등록 성공한 책은 책 목록과 독서 기록의 책 선택 목록에 표시된다.",
+        "동일 브라우저에서 재방문하면 저장된 책을 불러온다.",
+        "외부 도서 검색, 로그인, 책 삭제 기능은 제공하지 않는다."
+      ],
+      "description": "개인 사용자가 책 제목만 필수로 입력하여 책을 등록하고, 현재 기기의 해당 브라우저에 저장된 책을 기록 작성 시 선택할 수 있게 한다."
+    },
+    {
+      "id": "req-record-create",
+      "title": "책에 연결된 독서 기록 작성",
+      "priority": "P0",
+      "acceptance": [
+        "책과 유효한 기록 날짜를 필수로 입력한다.",
+        "문장과 감상 중 앞뒤 공백을 제외한 내용이 하나 이상 있어야 저장된다.",
+        "작성 화면의 기록 날짜 기본값은 현재 기기의 오늘 날짜이며 변경할 수 있다.",
+        "저장 성공 후 저장된 책 제목, 날짜, 문장과 감상을 확인할 수 있다."
+      ],
+      "description": "등록된 책 하나에 기록 날짜와 인상 깊은 문장 또는 짧은 감상을 연결하여 저장한다."
+    },
+    {
+      "id": "req-record-edit",
+      "title": "기존 독서 기록 조회와 수정",
+      "priority": "P0",
+      "acceptance": [
+        "기록을 열면 저장된 책 제목, 날짜, 문장과 감상이 표시된다.",
+        "수정에는 작성과 동일한 날짜 및 내용 검증 규칙을 적용한다.",
+        "수정 저장은 새 기록을 생성하지 않고 기존 기록을 갱신한다.",
+        "날짜를 다른 월로 변경하면 이전 월과 변경된 월의 목록 및 건수가 함께 갱신된다."
+      ],
+      "description": "사용자가 저장된 기록을 열고 문장, 감상, 기록 날짜를 수정하며 기존 기록을 갱신한다."
+    },
+    {
+      "id": "req-monthly",
+      "title": "지정 날짜 기준 월별 목록과 기록 수 조회",
+      "priority": "P0",
+      "acceptance": [
+        "생성 시각이 아니라 기록에 지정된 날짜의 연도와 월로 기록을 분류한다.",
+        "목록에는 책 제목, 기록 날짜, 작성된 문장과 감상을 표시한다.",
+        "기록 날짜 내림차순으로 정렬하며 같은 날짜는 생성 순서가 최신인 기록부터 표시한다.",
+        "표시된 기록 수는 해당 월 목록의 건수와 일치하며, 기록이 없으면 0건과 빈 상태를 표시한다."
+      ],
+      "description": "선택한 월에 해당하는 독서 기록의 문장·감상 목록과 기록 건수를 표시하여 개인 독서 습관을 돌아보게 한다."
+    },
+    {
+      "id": "req-local-storage",
+      "title": "현재 기기 저장 안내와 저장 실패 대응",
+      "priority": "P0",
+      "acceptance": [
+        "첫 사용 시 현재 기기와 브라우저에만 저장된다는 안내를 표시한다.",
+        "브라우저 데이터 삭제나 기기 변경 시 기록을 이용하지 못할 수 있으며 복구와 동기화를 제공하지 않음을 안내한다.",
+        "저장 결과를 확인한 뒤에만 완료 상태를 표시한다.",
+        "저장 실패 시 입력 내용을 유지하고 재시도를 안내하며 기존 저장 데이터는 유지한다."
+      ],
+      "description": "로그인 없이 현재 기기의 해당 브라우저에 데이터를 보관하며 저장 범위와 유실 위험을 안내하고 실패를 성공으로 처리하지 않는다."
+    }
+  ]
+}

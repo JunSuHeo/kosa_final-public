@@ -1,0 +1,14 @@
+# Internal source analysis and local verification artifacts
+/docs/live-*.json
+/docs/luna-*.json
+/docs/luna-evaluation/
+/docs/luna-human-review.md
+/docs/operations-verification*.json
+/docs/proxy-recovery-verification.json
+/docs/rea-evidence-summary.json
+/docs/supabase-self-hosted-verification.json
+/docs/screenshots/
+/docs/previous-implementation.json
+/docs/project-based-planning-plan.md
+/docs/project-based-planning-verification.md
+/scripts/verify_source_planning.py

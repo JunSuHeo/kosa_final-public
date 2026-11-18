@@ -1,0 +1,850 @@
+{
+  "$defs": {
+    "AcceptanceCase": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "scenario": {
+          "maxLength": 1500,
+          "minLength": 1,
+          "title": "Scenario",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "scenario"
+      ],
+      "title": "AcceptanceCase",
+      "type": "object"
+    },
+    "Block": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "heading",
+            "text",
+            "input",
+            "button",
+            "card",
+            "list",
+            "stat",
+            "navigation"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 500,
+          "title": "Label",
+          "type": "string"
+        },
+        "content": {
+          "maxLength": 3000,
+          "title": "Content",
+          "type": "string"
+        },
+        "target_screen_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Target Screen Id"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "label",
+        "content",
+        "target_screen_id"
+      ],
+      "title": "Block",
+      "type": "object"
+    },
+    "ChangeTask": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "requirement_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Requirement Ids",
+          "type": "array"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "acceptance_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Acceptance Ids",
+          "type": "array"
+        },
+        "existing_targets": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Existing Targets",
+          "type": "array"
+        },
+        "proposed_targets": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Proposed Targets",
+          "type": "array"
+        },
+        "reuse": {
+          "maxLength": 1500,
+          "title": "Reuse",
+          "type": "string"
+        },
+        "implementation": {
+          "maxLength": 3000,
+          "minLength": 1,
+          "title": "Implementation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "requirement_ids",
+        "evidence_ids",
+        "acceptance_ids",
+        "existing_targets",
+        "proposed_targets",
+        "reuse",
+        "implementation"
+      ],
+      "title": "ChangeTask",
+      "type": "object"
+    },
+    "CodeEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "start_line": {
+          "title": "Start Line",
+          "type": "integer"
+        },
+        "end_line": {
+          "title": "End Line",
+          "type": "integer"
+        },
+        "quote": {
+          "title": "Quote",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "path",
+        "sha256",
+        "start_line",
+        "end_line",
+        "quote"
+      ],
+      "title": "CodeEvidence",
+      "type": "object"
+    },
+    "Edge": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 160,
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "target",
+        "label"
+      ],
+      "title": "Edge",
+      "type": "object"
+    },
+    "Feature": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "requirement_id": {
+          "title": "Requirement Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 6000,
+          "title": "Description",
+          "type": "string"
+        },
+        "actor": {
+          "title": "Actor",
+          "type": "string"
+        },
+        "preconditions": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Preconditions",
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 15,
+          "title": "Steps",
+          "type": "array"
+        },
+        "exceptions": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Exceptions",
+          "type": "array"
+        },
+        "acceptance": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Acceptance",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "requirement_id",
+        "title",
+        "description",
+        "actor",
+        "preconditions",
+        "steps",
+        "exceptions",
+        "acceptance"
+      ],
+      "title": "Feature",
+      "type": "object"
+    },
+    "Flow": {
+      "additionalProperties": false,
+      "properties": {
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/Node"
+          },
+          "maxItems": 100,
+          "title": "Nodes",
+          "type": "array"
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/Edge"
+          },
+          "maxItems": 160,
+          "title": "Edges",
+          "type": "array"
+        }
+      },
+      "required": [
+        "nodes",
+        "edges"
+      ],
+      "title": "Flow",
+      "type": "object"
+    },
+    "ImplementationPlan": {
+      "additionalProperties": false,
+      "properties": {
+        "current_behavior": {
+          "maxLength": 3000,
+          "minLength": 1,
+          "title": "Current Behavior",
+          "type": "string"
+        },
+        "proposed_behavior": {
+          "maxLength": 3000,
+          "minLength": 1,
+          "title": "Proposed Behavior",
+          "type": "string"
+        },
+        "confirmed_policy": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Confirmed Policy",
+          "type": "array"
+        },
+        "preserve": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Preserve",
+          "type": "array"
+        },
+        "exceptions": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Exceptions",
+          "type": "array"
+        },
+        "assumptions": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "unresolved": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Unresolved",
+          "type": "array"
+        },
+        "scope": {
+          "items": {
+            "$ref": "#/$defs/ScopeItem"
+          },
+          "maxItems": 40,
+          "minItems": 1,
+          "title": "Scope",
+          "type": "array"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/$defs/ChangeTask"
+          },
+          "maxItems": 25,
+          "minItems": 1,
+          "title": "Tasks",
+          "type": "array"
+        },
+        "acceptance": {
+          "items": {
+            "$ref": "#/$defs/AcceptanceCase"
+          },
+          "maxItems": 30,
+          "minItems": 1,
+          "title": "Acceptance",
+          "type": "array"
+        }
+      },
+      "required": [
+        "current_behavior",
+        "proposed_behavior",
+        "confirmed_policy",
+        "preserve",
+        "exceptions",
+        "assumptions",
+        "unresolved",
+        "scope",
+        "tasks",
+        "acceptance"
+      ],
+      "title": "ImplementationPlan",
+      "type": "object"
+    },
+    "Node": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "start",
+            "screen",
+            "decision",
+            "action",
+            "end"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "section": {
+          "title": "Section",
+          "type": "string"
+        },
+        "feature_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Feature Ids",
+          "type": "array"
+        },
+        "x": {
+          "maximum": 10000,
+          "minimum": -10000,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 10000,
+          "minimum": -10000,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "title",
+        "section",
+        "feature_ids",
+        "x",
+        "y"
+      ],
+      "title": "Node",
+      "type": "object"
+    },
+    "Prd": {
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "sections": {
+          "items": {
+            "$ref": "#/$defs/Section"
+          },
+          "maxItems": 30,
+          "title": "Sections",
+          "type": "array"
+        },
+        "roles": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Roles",
+          "type": "array"
+        },
+        "platforms": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 6,
+          "title": "Platforms",
+          "type": "array"
+        },
+        "assumptions": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Assumptions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "sections",
+        "roles",
+        "platforms",
+        "assumptions"
+      ],
+      "title": "Prd",
+      "type": "object"
+    },
+    "Requirement": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 6000,
+          "title": "Description",
+          "type": "string"
+        },
+        "priority": {
+          "enum": [
+            "P0",
+            "P1",
+            "P2"
+          ],
+          "title": "Priority",
+          "type": "string"
+        },
+        "acceptance": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Acceptance",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "description",
+        "priority",
+        "acceptance"
+      ],
+      "title": "Requirement",
+      "type": "object"
+    },
+    "ScopeItem": {
+      "additionalProperties": false,
+      "properties": {
+        "area": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Area",
+          "type": "string"
+        },
+        "disposition": {
+          "enum": [
+            "apply",
+            "exclude",
+            "unverified"
+          ],
+          "title": "Disposition",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 1500,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Evidence Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "area",
+        "disposition",
+        "reason",
+        "evidence_ids"
+      ],
+      "title": "ScopeItem",
+      "type": "object"
+    },
+    "Screen": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "device": {
+          "enum": [
+            "mobile",
+            "desktop"
+          ],
+          "title": "Device",
+          "type": "string"
+        },
+        "blocks": {
+          "items": {
+            "$ref": "#/$defs/Block"
+          },
+          "maxItems": 24,
+          "title": "Blocks",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "node_id",
+        "title",
+        "device",
+        "blocks"
+      ],
+      "title": "Screen",
+      "type": "object"
+    },
+    "Section": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "group": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Group",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "content": {
+          "maxLength": 12000,
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "group",
+        "title",
+        "content"
+      ],
+      "title": "Section",
+      "type": "object"
+    },
+    "SourceContext": {
+      "additionalProperties": false,
+      "properties": {
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "snapshot_id": {
+          "title": "Snapshot Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "repository": {
+          "title": "Repository",
+          "type": "string"
+        },
+        "ref": {
+          "title": "Ref",
+          "type": "string"
+        },
+        "commit_sha": {
+          "title": "Commit Sha",
+          "type": "string"
+        },
+        "analysis_version": {
+          "title": "Analysis Version",
+          "type": "string"
+        },
+        "analysis_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Analysis Paths",
+          "type": "array"
+        },
+        "files_analyzed": {
+          "title": "Files Analyzed",
+          "type": "integer"
+        },
+        "excluded": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Excluded",
+          "type": "object"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/CodeEvidence"
+          },
+          "maxItems": 40,
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_id",
+        "snapshot_id",
+        "name",
+        "repository",
+        "ref",
+        "commit_sha",
+        "analysis_version",
+        "analysis_paths",
+        "files_analyzed",
+        "excluded",
+        "evidence"
+      ],
+      "title": "SourceContext",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "prd": {
+      "$ref": "#/$defs/Prd"
+    },
+    "requirements": {
+      "items": {
+        "$ref": "#/$defs/Requirement"
+      },
+      "maxItems": 20,
+      "title": "Requirements",
+      "type": "array"
+    },
+    "features": {
+      "items": {
+        "$ref": "#/$defs/Feature"
+      },
+      "maxItems": 40,
+      "title": "Features",
+      "type": "array"
+    },
+    "flow": {
+      "$ref": "#/$defs/Flow"
+    },
+    "screens": {
+      "items": {
+        "$ref": "#/$defs/Screen"
+      },
+      "maxItems": 16,
+      "title": "Screens",
+      "type": "array"
+    },
+    "source_context": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SourceContext"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "implementation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ImplementationPlan"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "prd",
+    "requirements",
+    "features",
+    "flow",
+    "screens"
+  ],
+  "title": "Snapshot",
+  "type": "object"
+}

@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reusable project configuration v1",
+  "description": "Contract for a ready, secret-free project configuration. Paths are normalized repository-relative POSIX paths. Null placeholders and incomplete examples must fail validation. This first-stage contract does not register a project for GitHub or Codex execution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "configuration_status", "project_id", "repository",
+    "base_branch", "project_root", "allowed_paths", "design_documents",
+    "tests", "pr_policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Only version 1 is supported; unknown versions are rejected."
+    },
+    "configuration_status": {
+      "type": "string",
+      "const": "ready",
+      "description": "Set to ready only after all placeholders and project policies are confirmed. Incomplete examples deliberately do not satisfy this schema."
+    },
+    "project_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "owner", "name"],
+      "properties": {
+        "provider": {"type": "string", "const": "github"},
+        "owner": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$"},
+        "name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"}
+      },
+      "description": "Repository identifiers only. No authenticated URL, token or secret value. Remote identity and access are checked in a later intake stage."
+    },
+    "base_branch": {"$ref": "#/$defs/branch"},
+    "project_root": {
+      "$ref": "#/$defs/path",
+      "description": "Existing project directory, relative to the explicit repository root. Use '.' for a standalone repository."
+    },
+    "allowed_paths": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/path"},
+      "description": "Explicit file or directory scopes inside project_root, not glob patterns. Directory scopes include descendants. New paths may not exist yet."
+    },
+    "design_documents": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/path"},
+      "description": "Existing authoritative document files inside an allowed scope. Selection must be confirmed by the project owner."
+    },
+    "tests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit", "e2e"],
+      "properties": {
+        "unit": {"$ref": "#/$defs/test_list"},
+        "e2e": {"$ref": "#/$defs/test_list"}
+      },
+      "description": "Both test categories must be explicitly configured. Required flags express project policy, not test outcomes. This validator never runs commands."
+    },
+    "pr_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_branch", "allow_draft_on_failure", "require_human_approval",
+        "allow_auto_merge"
+      ],
+      "properties": {
+        "target_branch": {"$ref": "#/$defs/branch"},
+        "allow_draft_on_failure": {"type": "boolean"},
+        "require_human_approval": {"type": "boolean", "const": true},
+        "allow_auto_merge": {"type": "boolean", "const": false}
+      },
+      "description": "Ordinary PRs require all mandatory checks to pass. Draft exceptions must be explicit. Approval and merge remain human responsibilities. Actual branch protection is verified later."
+    },
+    "publishing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["remote", "branch_template", "draft"],
+      "description": "Required only by the separate PR publisher. No secrets. Missing commit_author uses the local Git user identity, or blocks if unset.",
+      "properties": {
+        "remote": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+        "branch_template": {"type": "string", "minLength": 1, "description": "Use project_id/run_id, or date/approver/issue_title for approved Issue branches. Date is the execution start day in Asia/Seoul, YY.MM.DD."},
+        "manual_branch_template": {"type": "string", "minLength": 1, "description": "Optional project_id/run_id template for manual requests when branch_template uses Issue fields. Defaults to ai/{project_id}/{run_id}."},
+        "draft": {"type": "boolean"},
+        "commit_author": {
+          "type": "object", "additionalProperties": false, "required": ["name", "email"],
+          "properties": {"name": {"type": "string", "minLength": 1}, "email": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["instructions", "environment", "codex"],
+      "description": "Optional for offline validation of older v1 configs, mandatory for the manual execution engine. No installation commands or secret values.",
+      "properties": {
+        "instructions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/path"},
+          "description": "Explicit existing project instruction files inside project_root; read as context, never editable. An empty list explicitly declares no additional instructions."
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["platform", "required_programs"],
+          "properties": {
+            "platform": {"type": "string", "const": "linux"},
+            "required_programs": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*$"}
+            }
+          }
+        },
+        "codex": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "model", "timeout_seconds"],
+          "properties": {
+            "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[A-Za-z0-9.-]+)?$"},
+            "model": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+            "timeout_seconds": {"type": "integer", "description": "Explicit wall-clock limit, from 1 to 3600 seconds (checked by the engine)."}
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "Informational notes, never commands or policy overrides. Do not put credentials here."
+    }
+  },
+  "$defs": {
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Normalized relative POSIX path. Semantic checks reject absolute paths, traversal, .git, globs, backslashes and symlink escapes."
+    },
+    "branch": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$",
+      "description": "Branch name, with additional Git ref syntax checks offline. Existence and protection are not checked."
+    },
+    "test_list": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/test"}
+    },
+    "test": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "required", "cwd", "command"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+        "required": {"type": "boolean"},
+        "cwd": {"$ref": "#/$defs/path"},
+        "timeout_seconds": {
+          "type": "integer",
+          "description": "Wall-clock limit, 1..3600 seconds. Existing v1 entries without this field use the documented conservative 300-second limit."
+        },
+        "run_if": {
+          "type": "string",
+          "pattern": "^(always|never|changed_paths)$",
+          "description": "Default always. Required checks cannot be skipped. Optional checks may use never with skip_reason, or changed_paths with an explicit path list."
+        },
+        "changed_paths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/path"},
+          "description": "Repository-relative exact file/directory scopes for run_if=changed_paths, inside allowed_paths. Includes added and deleted files."
+        },
+        "skip_reason": {"type": "string", "minLength": 1},
+        "on_failure": {
+          "type": "string",
+          "pattern": "^(block|record)$",
+          "description": "Default block. record is only allowed for optional checks; failures, timeouts and unavailable checks stay visible but do not block required checks."
+        },
+        "command": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["program", "args"],
+          "properties": {
+            "program": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*$",
+              "description": "Executable name on the approved environment's PATH, without a shell command or filesystem path. Availability is checked later."
+            },
+            "args": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "Argument vector, not an interpolated shell string. Arguments are opaque here; approval, argument-path safety and execution isolation belong to the later test runner."
+            }
+          }
+        }
+      }
+    }
+  }
+}

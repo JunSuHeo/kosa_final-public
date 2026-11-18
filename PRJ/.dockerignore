@@ -1,0 +1,15 @@
+**/.env
+**/.env.*
+**/*.env
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*:Zone.Identifier
+**/*.tsbuildinfo
+.research
+**/node_modules
+**/.venv
+**/__pycache__
+**/test-results*
+**/dist

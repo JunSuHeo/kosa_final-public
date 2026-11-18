@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "configuration_status": "ready",
+  "project_id": "prj",
+  "repository": {
+    "provider": "github",
+    "owner": "JunSuHeo",
+    "name": "kosa_final"
+  },
+  "base_branch": "main",
+  "project_root": "PRJ",
+  "allowed_paths": ["PRJ"],
+  "design_documents": [
+    "PRJ/docs/spec/README.md",
+    "PRJ/docs/implementation-plan.md",
+    "PRJ/docs/verification.md"
+  ],
+  "tests": {
+    "unit": [
+      {
+        "id": "backend-postgresql",
+        "required": true,
+        "timeout_seconds": 600,
+        "run_if": "always",
+        "on_failure": "block",
+        "cwd": "PRJ/backend",
+        "command": {
+          "program": "uv",
+          "args": ["run", "--frozen", "pytest", "-q"]
+        }
+      }
+    ],
+    "e2e": [
+      {
+        "id": "browser-e2e",
+        "required": false,
+        "timeout_seconds": 600,
+        "run_if": "never",
+        "skip_reason": "현재 독립 runner는 PostgreSQL/API/web 서비스와 브라우저를 제공하지 않습니다. 전용 격리 서비스 실행 경로가 준비되면 활성화하세요.",
+        "on_failure": "record",
+        "cwd": "PRJ/frontend",
+        "command": {
+          "program": "npm",
+          "args": ["run", "test:e2e"]
+        }
+      }
+    ]
+  },
+  "pr_policy": {
+    "target_branch": "main",
+    "allow_draft_on_failure": false,
+    "require_human_approval": true,
+    "allow_auto_merge": false
+  },
+  "publishing": {
+    "remote": "origin",
+    "branch_template": "ai_feature/{date}/{approver}/{issue_title}",
+    "manual_branch_template": "ai/{project_id}/{run_id}",
+    "draft": true,
+    "commit_author": {
+      "name": "github-actions[bot]",
+      "email": "41898282+github-actions[bot]@users.noreply.github.com"
+    }
+  },
+  "execution": {
+    "instructions": ["PRJ/AGENTS.md"],
+    "environment": {"platform": "linux", "required_programs": ["python3", "uv"]},
+    "codex": {"version": "0.169.0", "model": "gpt-6-luna", "timeout_seconds": 120}
+  },
+  "notes": [
+    "Product configuration. Writes are scoped to PRJ; project instructions, credentials and repository controls remain protected by the runtime.",
+    "Backend pytest requires the isolated studio_test PostgreSQL service. The current Bubblewrap test runner has no service or network provisioning, so this required check safely blocks publication until that test infrastructure is available.",
+    "Browser E2E requires an API/web/PostgreSQL stack and Playwright browser. It is recorded as explicitly skipped until a dedicated isolated service runner is implemented.",
+    "Codex CLI 0.169.0 was installed in WSL using the official standalone installer on 2026-11-17 and is available at /usr/local/bin/codex. The actual --version and required help flags were checked.",
+    "gpt-6-luna was selected by the installed CLI with user configuration ignored and successfully executed a no-file-change request on 2026-11-17. gpt-6.1-sol was rejected for this ChatGPT account. Offline validation cannot guarantee future account/model availability; do not record credentials in configuration or logs.",
+    "Candidate modifications are retained in the engine's external workspace, not automatically applied to the original demo or PRJ."
+  ]
+}

@@ -1,0 +1,120 @@
+{
+  "$defs": {
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "target_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "quote": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Quote",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id",
+        "quote"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "properties": {
+        "severity": {
+          "enum": [
+            "critical",
+            "warning",
+            "suggestion"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "rationale": {
+          "maxLength": 1500,
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "recommendation": {
+          "maxLength": 1500,
+          "minLength": 1,
+          "title": "Recommendation",
+          "type": "string"
+        },
+        "acceptance": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "title": "Acceptance",
+          "type": "array"
+        }
+      },
+      "required": [
+        "severity",
+        "title",
+        "evidence",
+        "rationale",
+        "recommendation",
+        "acceptance"
+      ],
+      "title": "Finding",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "summary": {
+      "maxLength": 1500,
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    },
+    "reviewed_checks": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 6,
+      "minItems": 3,
+      "title": "Reviewed Checks",
+      "type": "array"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/Finding"
+      },
+      "maxItems": 5,
+      "title": "Findings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "summary",
+    "reviewed_checks",
+    "findings"
+  ],
+  "title": "AgentResult",
+  "type": "object"
+}
