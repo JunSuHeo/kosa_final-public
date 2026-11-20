@@ -272,7 +272,8 @@ class IssueController:
         self.config, self.config_hash = run._load(self.config_path, self.root)
         self.repository = self.config["repository"]["owner"] + "/" + self.config["repository"]["name"]
         if github.repository.casefold() != self.repository.casefold():
-            raise ValueError("Configured repository and GitHub adapter must match")
+            raise ExecutionError("repository_mismatch",
+                                 "Configured repository.owner/name must match the GitHub Actions repository.")
         self.github, self.key, self.bot = github, signing_key, bot_login
         self.analyzer = analyzer or PlanAnalyzer()
         self.engine = engine or orchestrator.execute_workflow

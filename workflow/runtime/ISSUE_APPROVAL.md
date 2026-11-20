@@ -72,7 +72,7 @@ Snapshot은 `{title, body}`의 정렬된 JSON에 SHA-256을 적용한다. 없는
 | 설정 | 값 또는 필요한 조건 |
 | --- | --- |
 | Repository variable `WORKFLOW_ISSUES_ENABLED` | `true`로 설정하면 이벤트 job 활성화. 미설정은 실행하지 않는다. |
-| `WORKFLOW_CONFIG_PATH` | 저장소 안의 검증된 설정 JSON 상대 경로. 기존 설정을 임의로 바꾸지 않고 대상 repository identity, 실행 모델/버전, 경로·테스트·publishing 항목을 운영자가 확인한다. |
+| `WORKFLOW_CONFIG_PATH` | 저장소 안의 검증된 설정 JSON 상대 경로. 활성 `prj.json`과 `sandbox.json`의 `repository.owner/name`은 `JunSuHeo/kosa_final-public`이다. 다른 저장소에서 실행하면 두 값을 해당 저장소에 맞춰야 한다. 실행 모델/버전, 경로·테스트·publishing 항목도 운영자가 확인한다. |
 | `WORKFLOW_BASE_BRANCH` | 설정의 `base_branch`와 같은 기존 신뢰 Branch. workflow 파일은 Issue 이벤트를 받는 기본 Branch에도 존재해야 한다. |
 | Secret `WORKFLOW_STATE_KEY` | 최소 32바이트의 무작위 private key. 분석/승인과 실행 단계에서 같은 값을 사용한다. 값은 댓글에 저장하지 않는다. 교체 시 기존 서명 상태를 자동으로 승인하지 않는다. |
 | Secret `WORKFLOW_PUBLISH_TOKEN` | 해당 저장소로 제한한 GitHub App 또는 fine-grained 토큰. Contents read/write, Pull requests read/write, 기존 게시 엔진의 Branch protection 조회를 위한 Administration read와 repository metadata 접근 권한이 필요하다. 자동 병합 권한/우회를 설정하지 않는다. |
@@ -100,6 +100,8 @@ python3 -B -m unittest discover -s workflow/runtime/tests -p 'test_*.py'
 ## 한계 및 복구
 
 이슈 워크플로의 단계가 실패하면 같은 이슈에 실패 원인, 해결 방법, Actions 실행 링크를 담은 안내 댓글을 별도로 남긴다. 댓글은 기본 Actions 토큰(`issues: write`)으로 GitHub API에 작성하며 `gh`나 게시용 토큰에 의존하지 않는다. 원본 로그, 이슈 본문, 비밀값은 포함하지 않는다. 실패 단계의 구조화된 진단이 없으면 해당 단계에 맞는 기본 안내를 남기며, 이전 실행의 실패 상태를 조회하는 것만으로 댓글을 다시 달지 않는다. 러너가 중단되어 알림 단계가 실행되지 않거나 GitHub API가 댓글을 거부하면 알림을 남길 수 없다.
+
+분석 단계의 `stage: load workflow configuration`, `reason: repository_mismatch`는 설정 JSON의 `repository.owner/name`과 `GITHUB_REPOSITORY`가 다르다는 뜻이다. 모델 분석과 상태 댓글 생성 전에 차단한다. 기존 버전은 같은 상황을 `ValueError`로만 보고했다. Actions에서 선택한 설정의 두 값을 수정해 기준 브랜치에 반영한 뒤 실패한 분석 job을 재실행한다.
 
 Actions 로그에서 `publishing_failed`가 나오면 `publication`의 `operation`, `reason`, 가능한 경우 `http_status`를 확인한다. `prepare_git_commit`의 `commit_identity_missing`은 GitHub API를 호출하기 전에 커밋 작성자가 누락된 경우다. `get_branch_protection`의 `403`은 게시 토큰의 `Administration: Read` 권한을, `404`는 토큰의 저장소 접근과 `Settings → Branches`의 classic branch protection 설정을 확인한다. Rulesets만 설정한 경우 기존 게시 엔진의 classic protection 조회를 충족하지 않는다. `attempted: false`는 Push나 PR 생성을 시도하기 전에 차단되었음을 뜻한다.
 
