@@ -197,6 +197,17 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(self.analyzer.analyze.call_count, 2)
         self.engine.assert_not_called()
 
+    def test_provider_auth_failure_is_persisted_without_credentials_and_can_be_retried(self):
+        self.analyzer.analyze.side_effect = ExecutionError("codex_provider_auth_missing", "synthetic-private-diagnostic", 1)
+        state = self.opened()
+        self.assertEqual(state["status"], "analysis_failed")
+        self.assertEqual(state["failure_diagnostic"], {"reason": "codex_provider_auth_missing"})
+        self.assertNotIn("synthetic-private-diagnostic", json.dumps(state))
+        self.analyzer.analyze.side_effect = None
+        self.controller = self.new_controller()
+        self.assertEqual(self.opened()["status"], "awaiting_approval")
+        self.engine.assert_not_called()
+
     def test_failed_reanalysis_retry_preserves_human_decisions(self):
         self.opened()
         self.analyzer.analyze.side_effect = ExecutionError("environment_error", "Mock environment failure")

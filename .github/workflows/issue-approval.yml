@@ -66,6 +66,7 @@ jobs:
         id: intake
         shell: bash
         env:
+          AI_WORKSPACE_API_KEY: ${{ secrets.AI_WORKSPACE_API_KEY }}
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_STATE_KEY: ${{ secrets.WORKFLOW_STATE_KEY }}
           WORKFLOW_RESULTS_DIR: ${{ runner.temp }}/issue-workflow-results
@@ -79,6 +80,7 @@ jobs:
         if: steps.intake.outputs.plan_id != ''
         shell: bash
         env:
+          AI_WORKSPACE_API_KEY: ${{ secrets.AI_WORKSPACE_API_KEY }}
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_STATE_KEY: ${{ secrets.WORKFLOW_STATE_KEY }}
           WORKFLOW_PUBLISH_TOKEN: ${{ secrets.WORKFLOW_PUBLISH_TOKEN }}
@@ -142,6 +144,7 @@ jobs:
               approval_invalidated: ['이슈 또는 서명된 승인 상태를 검증하지 못했습니다.', '상태 댓글과 `WORKFLOW_STATE_KEY` 설정을 확인하고 최신 계획이 준비된 후 승인하세요.'],
               analysis_failed: ['요구사항 분석 또는 계획 작성에 실패했습니다.', '이슈의 변경 범위와 완료 조건을 명확히 하고 러너의 Codex 로그인과 모델 접근을 확인하세요.'],
               codex_failed: ['Codex 프로세스가 완료되지 않았습니다.', '러너의 Codex 로그인과 설정된 모델 접근을 확인하세요.'],
+              codex_provider_auth_missing: ['AI Workspace 제공자의 인증 키가 없습니다.', '저장소 Actions Secret AI_WORKSPACE_API_KEY를 등록하세요. ChatGPT 로그인은 이 제공자의 환경변수 인증을 대신하지 않습니다. 키 값은 댓글이나 로그에 붙여넣지 마세요.'],
               codex_missing: ['러너에서 Codex CLI를 찾지 못했습니다.', '러너 계정에 프로젝트에서 지정한 버전의 Codex CLI를 설치하세요.'],
               timeout: ['Codex 실행 시간이 초과됐습니다.', '작업 범위를 줄이거나 프로젝트의 `execution.codex.timeout_seconds` 설정을 확인하세요.'],
               environment_error: ['러너 환경이 프로젝트 요구사항을 충족하지 않습니다.', '설정된 CLI 버전과 `execution.environment.required_programs`를 확인하세요.'],

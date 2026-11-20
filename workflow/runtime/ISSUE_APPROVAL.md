@@ -77,6 +77,7 @@ Snapshot은 `{title, body}`의 정렬된 JSON에 SHA-256을 적용한다. 없는
 | `WORKFLOW_CONFIG_PATH` | 저장소 안의 검증된 설정 JSON 상대 경로. 활성 `prj.json`과 `sandbox.json`의 `repository.owner/name`은 `JunSuHeo/kosa_final-public`이다. 다른 저장소에서 실행하면 두 값을 해당 저장소에 맞춰야 한다. 실행 모델/버전, 경로·테스트·publishing 항목도 운영자가 확인한다. |
 | `WORKFLOW_BASE_BRANCH` | 설정의 `base_branch`와 같은 기존 신뢰 Branch. workflow 파일은 Issue 이벤트를 받는 기본 Branch에도 존재해야 한다. |
 | Secret `WORKFLOW_STATE_KEY` | 최소 32바이트의 무작위 private key. 분석/승인과 실행 단계에서 같은 값을 사용한다. 값은 댓글에 저장하지 않는다. 교체 시 기존 서명 상태를 자동으로 승인하지 않는다. |
+| Secret `AI_WORKSPACE_API_KEY` | 기존 Codex 설정의 `ai_workspace` 제공자가 사용하는 인증 키. 분석·실행 단계에만 제공하며, Codex가 실행하는 셸 명령에서는 제외한다. `~/.codex/config.toml`의 제공자 설정은 유지하고 키 값은 설정 JSON·로그·댓글에 기록하지 않는다. |
 | Secret `WORKFLOW_PUBLISH_TOKEN` | 해당 저장소로 제한한 GitHub App 또는 fine-grained 토큰. Contents read/write, Pull requests read/write, 기존 게시 엔진의 Branch protection 조회를 위한 Administration read와 repository metadata 접근 권한이 필요하다. 자동 병합 권한/우회를 설정하지 않는다. |
 | Actions `GITHUB_TOKEN` | workflow의 `contents: read`, `issues: write`. Issue API와 상태 댓글에만 사용한다. 게시 토큰은 실행 단계에서만 제공한다. |
 | Runner labels | `[self-hosted, macOS, ARM64, workflow-isolated]`. Codex 실행과 POSIX 게시 잠금을 지원한다. 활성 검사는 macOS `sandbox-exec`로 격리하며, 격리 도구가 없거나 점검에 실패하면 host 실행 없이 차단한다. |
@@ -85,7 +86,7 @@ Snapshot은 `{title, body}`의 정렬된 JSON에 SHA-256을 적용한다. 없는
 | 커밋 작성자 | `publishing.commit_author`에 자동화 커밋의 이름과 이메일을 설정한다. 생략하면 checkout의 로컬 Git `user.name`과 `user.email`을 사용하며 머신의 전역 설정은 읽지 않는다. |
 | 결과 보존 | runner 임시 결과는 없어질 수 있다. 원격 journal로 상태를 복구하지만 후보/검증 근거를 장기 보존하려면 접근이 제한된 외부 저장 위치와 보존 정책이 필요하다. |
 
-Codex 인증은 runner에 이미 설정된 CLI 로그인을 사용한다. 제품 API key나 새 모델 기본값을 자동으로 만들지 않는다. Issue/GitHub 토큰은 gh subprocess 환경에만 전달하고 Codex에는 전달하지 않는다. 게시 토큰이 없다면 승인 후 실행 단계가 시작되기 전에 실패한다.
+Codex 인증 제공자는 runner의 기존 사용자 설정을 유지한다. `ai_workspace` 제공자의 `env_key="AI_WORKSPACE_API_KEY"` 인증에는 같은 이름의 Actions Secret이 필요하며, ChatGPT 로그인만으로는 이 제공자를 인증할 수 없다. Secret은 Codex 프로세스에만 추가하고 셸 환경 정책으로 모델의 셸 명령에서 제외한다. 제품 API key나 새 모델 기본값을 자동으로 만들지 않는다. Issue/GitHub 토큰은 gh subprocess 환경에만 전달하고 Codex에는 전달하지 않는다. 게시 토큰이 없다면 승인 후 실행 단계가 시작되기 전에 실패한다.
 
 러너 라벨의 ARM64와 Python 프로세스의 아키텍처는 다를 수 있다. `python3 -c 'import sys, platform; print(sys.platform, platform.machine())'`이 `darwin x86_64`를 출력해도 지원하는 macOS 환경이며, 동일한 Codex sandbox와 macOS `sandbox-exec` 검사 경로를 사용한다. 러너 라벨이나 검사 격리 설정을 바꿀 필요는 없다.
 
@@ -103,6 +104,8 @@ python3 -B -m unittest discover -s workflow/runtime/tests -p 'test_*.py'
 
 2026-11-20 macOS x86_64 지원 수정에서는 일반 런타임 테스트 239개가 통과했다. macOS ARM64/x86_64 preflight, 환경 진단, 실패한 분석 재시도와 결정사항 보존을 모의 환경에서 검증했다. WSL의 실제 Codex CLI 0.171.0으로 버전/도움말 검사도 실행했으며 모델 호출은 하지 않았다. 실제 실패 댓글 스크립트의 환경 진단 9개는 모의 GitHub API로 확인했다. 수정 후 macOS 러너 재실행과 실제 모델 분석은 아직 확인하지 않았다.
 
+2026-11-20 AI Workspace 인증 수정에서는 일반 런타임 테스트 246개가 통과했다. 분석·실행의 제공자 키 전달, 다른 비밀값 제외, 셸 환경 정책, 키 누락 진단 및 실패 후 재분석을 모의 환경에서 확인했다. WSL의 실제 Codex CLI 0.171.0과 임시 HOME·로컬 테스트 URL로 키 누락 종료와 모의 키의 인증 설정 검사도 확인했다. Actions YAML을 파싱하고 실제 실패 댓글 스크립트는 모의 GitHub API로 검증했다. 실제 모델 호출, macOS 러너의 Secret 적용·제공자 모델 접근 및 제품 테스트는 수행하지 않았다.
+
 ## 한계 및 복구
 
 이슈 워크플로의 단계가 실패하면 같은 이슈에 실패 원인, 해결 방법, Actions 실행 링크를 담은 안내 댓글을 별도로 남긴다. 댓글은 기본 Actions 토큰(`issues: write`)으로 GitHub API에 작성하며 `gh`나 게시용 토큰에 의존하지 않는다. 원본 로그, 이슈 본문, 비밀값은 포함하지 않는다. 실패 단계의 구조화된 진단이 없으면 해당 단계에 맞는 기본 안내를 남기며, 이전 실행의 실패 상태를 조회하는 것만으로 댓글을 다시 달지 않는다. 러너가 중단되어 알림 단계가 실행되지 않거나 GitHub API가 댓글을 거부하면 알림을 남길 수 없다.
@@ -110,6 +113,8 @@ python3 -B -m unittest discover -s workflow/runtime/tests -p 'test_*.py'
 분석 단계의 `stage: load workflow configuration`, `reason: repository_mismatch`는 설정 JSON의 `repository.owner/name`과 `GITHUB_REPOSITORY`가 다르다는 뜻이다. 모델 분석과 상태 댓글 생성 전에 차단한다. 기존 버전은 같은 상황을 `ValueError`로만 보고했다. Actions에서 선택한 설정의 두 값을 수정해 기준 브랜치에 반영한 뒤 실패한 분석 job을 재실행한다.
 
 `reason: environment_error`는 `operation`으로 구분한다. `check_codex_platform`은 Python의 플랫폼/아키텍처, `check_codex_version`은 설치 버전 불일치, `check_codex_options`는 필수 CLI 옵션 누락이다. 누락된 옵션은 허용 목록에 있는 `option` 값으로만 보고한다. `inspect_codex_version`, `inspect_codex_help`, `inspect_codex_exec_help`는 해당 조회 명령 실패를, `read_utf8_context`, `check_context_size`, `check_snapshot_size`는 문서 읽기 또는 크기 제한 실패를 뜻한다. 원본 CLI 출력과 예외 원문은 공개하지 않는다.
+
+`reason: codex_provider_auth_missing`는 CLI가 `AI_WORKSPACE_API_KEY` 환경변수 누락으로 종료한 경우다. 저장소 Settings → Secrets and variables → Actions에서 같은 이름의 Secret을 등록하고 수정된 워크플로가 기준 브랜치에 병합된 뒤 실패한 분석을 재실행한다. 인증 값·원본 stderr는 공개하지 않는다. Secret이 있어도 만료·접근 권한·모델 지원 여부는 실제 제공자에서 별도 확인되므로, 설정 검사 성공을 모델 호출 성공으로 해석하지 않는다.
 
 소스의 민감정보 검사는 `workspace.py`의 파일별 허용 목록에서 검토된 표현만 예외로 처리한다. 계정 소스의 토큰 변수 참조와 비밀번호 파일 입력, 계정 테스트의 고정된 모의 데이터도 해당 파일과 정확한 표현이 일치할 때만 허용한다. 다른 값·다른 파일에는 이 예외를 적용하지 않으며, 환경변수에 등록된 비밀값은 허용 목록보다 먼저 검사한다. 문서·이슈·로그의 값 가리기 규칙은 동일하게 유지한다.
 

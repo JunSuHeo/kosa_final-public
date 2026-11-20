@@ -90,12 +90,15 @@ Linux 검증은 시스템 런타임(`/usr`, `/bin`, `/lib`, `/lib64`, `/etc/alte
 - [CLI reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli)
 - [Non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode)
 - [Config reference](https://learn.chatgpt.com/docs/config-file/config-reference)
+- [Authentication](https://learn.chatgpt.com/docs/auth)
 
 `codex_adapter.py`는 실행 직전에 `--version`, `--help`, `exec --help`를 조회해 고정 버전과 필요한 옵션을 확인한다. 지원되지 않는 버전이나 옵션에서 다른 명령으로 추측·재시도하지 않는다.
 
 `codex --strict-config --ask-for-approval never exec`에 `--sandbox workspace-write`, `--skip-git-repo-check`, `--ephemeral`, `--ignore-rules`, 명시한 `--model`과 프롬프트 표준입력 `-`를 사용한다. Codex 사용자 설정을 불러오며, 프로젝트 모델과 runtime 안전 옵션은 명시적으로 적용한다. 별도 workspace에는 Git 메타데이터를 복사하지 않으므로 저장소 검사 생략 옵션을 사용한다. sandbox 설정은 외부 네트워크, 추가 writable roots, 일반 `/tmp`와 `$TMPDIR` 쓰기 권한을 비활성화한다. CLI가 지원하지 않는 설정은 strict config 검사를 통해 차단해야 한다.
 
-인증은 사용자가 이미 구성한 CLI 로그인 경로를 사용한다. 엔진은 로그인·설치·인증정보 출력·Token 요청을 수행하지 않는다. 상속 환경 변수는 명시한 OS 필수 항목으로 제한하며 GitHub Token, API Key, 제품 비밀정보와 셸 초기화 변수는 전달하지 않는다. 인증 방식·모델 접근·sandbox 강제 가능 여부는 설치 환경에서 별도로 검증해야 한다.
+인증 제공자는 기존 Codex 사용자 설정을 유지한다. `ai_workspace`의 `env_key`가 `AI_WORKSPACE_API_KEY`이면 Actions의 같은 이름 Secret을 분석·실행 단계에 제공한다. 수동 실행에서는 해당 변수가 실행 환경에 있어야 한다. ChatGPT 로그인은 이 제공자의 환경변수 인증을 대신하지 않는다. 엔진은 로그인·설치·인증정보 출력·Token 요청을 수행하지 않는다.
+
+상속 환경 변수는 명시한 OS 필수 항목으로 제한하며, `AI_WORKSPACE_API_KEY`만 Codex 프로세스의 제공자 인증에 추가한다. 키는 명령 인수나 prompt에 넣지 않는다. 키가 있으면 `shell_environment_policy`를 `inherit="core"`, 빈 `set`, 키 제외 `filters`, 셸 profile 비활성화로 덮어써 Codex 셸 명령에 전달하지 않는다. 도움말·버전 조회, GitHub 전송, 독립 테스트에는 이 키를 추가하지 않는다. GitHub Token, 다른 API Key, 제품 비밀정보와 셸 초기화 변수는 계속 제외한다. 이 설정은 OS의 모든 읽기 경계를 제한하는 기능이 아니므로 전용 러너 격리가 필요하다. 인증 방식·모델 접근·sandbox 강제 가능 여부는 설치 환경에서 별도로 검증해야 한다.
 
 ## 작업 경로 보호
 

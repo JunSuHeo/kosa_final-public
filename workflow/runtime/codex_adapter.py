@@ -6,8 +6,9 @@ https://learn.chatgpt.com/docs/non-interactive-mode
 https://learn.chatgpt.com/docs/config-file/config-reference
 
 The adapter supports Linux (including WSL) and macOS. It requires a pinned CLI
-version and rejects unsupported flags. Authentication uses existing CLI login;
-API keys and GitHub credentials are not inherited through environment variables.
+version and rejects unsupported flags. Authentication uses existing CLI settings;
+only AI_WORKSPACE_API_KEY may reach Codex for provider authentication. Shell
+commands exclude that key; GitHub and other API credentials are not inherited.
 """
 
 from __future__ import annotations
@@ -149,6 +150,12 @@ class CodexCLI:
             "--ephemeral", "--ignore-rules",
             "--model", settings["model"],
         ]
+        environment = restricted_environment()
+        if provider_key := os.environ.get("AI_WORKSPACE_API_KEY"):
+            environment["AI_WORKSPACE_API_KEY"] = provider_key
+            # Authenticate Codex without exposing the key to its shell commands.
+            command.extend(["--config", 'shell_environment_policy={inherit="core",set={},'
+                            'filters={AI_WORKSPACE_API_KEY="exclude"},experimental_use_profile=false}'])
         for override in ((
             "sandbox_workspace_write.network_access=false",
             "sandbox_workspace_write.writable_roots=[]",
@@ -160,7 +167,7 @@ class CodexCLI:
         command.append("-")  # Official prompt-from-stdin interface; no shell interpolation.
         try:
             process = subprocess.Popen(
-                command, cwd=workspace, env=restricted_environment(),
+                command, cwd=workspace, env=environment,
                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                 text=True, encoding="utf-8", errors="replace", start_new_session=True,
             )
@@ -180,5 +187,9 @@ class CodexCLI:
             status = "timeout" if isinstance(exc, subprocess.TimeoutExpired) else "unexpected_error"
             raise ExecutionError(status, "Codex execution timed out." if status == "timeout" else "Codex execution was interrupted.") from exc
         if process.returncode:
+            if re.search(r"(?im)^error:\s*missing environment variable:\s*[`'\"]?AI_WORKSPACE_API_KEY[`'\"]?\.?\s*$", stderr or ""):
+                raise ExecutionError("codex_provider_auth_missing",
+                                     "AI Workspace provider authentication is missing. Configure the AI_WORKSPACE_API_KEY Actions secret.",
+                                     process.returncode)
             raise ExecutionError("codex_failed", failure_message(stderr), process.returncode)
         return process.returncode
