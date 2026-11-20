@@ -172,14 +172,14 @@ export default function UserManagement({
       </header>
       <main className="management-main">
         <div className="page-heading">
-          <span className="eyebrow">사용자 관리 · 테스트 환경</span>
+          <span className="eyebrow">사용자 관리</span>
           <h1>{title}</h1>
           <p>
             {page === "accounts"
               ? "계정별 역할과 사용 상태, 기획할 업무를 관리하세요."
               : page === "permissions"
                 ? "모든 기획 권한은 본인 소유의 기획에만 적용됩니다."
-                : "이 브라우저의 계정·권한 변경과 로그인 기록을 확인하세요."}
+                : "계정·권한 변경과 로그인 기록을 확인하세요."}
           </p>
         </div>
         {notice && (
@@ -345,7 +345,7 @@ export default function UserManagement({
                     </label>
                     {selected === "new" ? (
                       <label>
-                        테스트 비밀번호
+                        초기 비밀번호
                         <input
                           type="password"
                           required
@@ -401,10 +401,10 @@ export default function UserManagement({
                           });
                         }}
                       >
-                        <h3>테스트 비밀번호 재설정</h3>
+                        <h3>비밀번호 재설정</h3>
                         <p>
                           현재 비밀번호는 표시하지 않습니다. 재설정하면 해당
-                          계정의 모든 테스트 세션이 종료됩니다.
+                          계정의 기존 로그인 세션이 종료됩니다.
                         </p>
                         <label>
                           새 비밀번호

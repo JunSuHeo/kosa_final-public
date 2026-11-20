@@ -4,6 +4,8 @@
 
 ## 구성과 책임
 
+이 버전에는 `accounts.py`의 서버 계정·역할·세션·감사 API와 `manage.py`의 명시적 운영 명령, `transfer.py`의 오프라인 이전 도구가 추가되어 있다. Supabase 인증 모드의 앱 시작은 기본적으로 DDL을 실행하지 않는다. 실제 운영 전환 상태와 미완료 사항은 [전환 인계](../docs/supabase-transition.md)를 확인한다.
+
 Python 3.12 이상, FastAPI, Pydantic, psycopg, PostgreSQL을 사용한다. API와 worker는 별도 프로세스이며 DB에 저장한 작업을 주고받는다. 별도 메시지 브로커는 사용하지 않는다.
 
 | 소스 | 책임 |
@@ -24,6 +26,8 @@ Python 3.12 이상, FastAPI, Pydantic, psycopg, PostgreSQL을 사용한다. API�
 | `backend/migrations/002_role_reviews.sql` | review·review_agent |
 | `backend/migrations/003_source_planning.sql` | 기준 저장소·코드 snapshot·프로젝트 기준 고정 |
 | `backend/migrations/004_studio_row_security.sql` | 앱 테이블의 RLS 활성화, 서버 연결 역할은 테이블 소유권으로 접근 |
+| `backend/migrations/006_accounts.sql` | 서버 계정·권한·세션·감사 테이블 |
+| `backend/migrations/007_runtime_security.sql` | 전용 런타임 역할, RLS 및 데이터 이전 제약 |
 
 ## 생성·승인 흐름
 
@@ -71,7 +75,7 @@ AI 가정으로 진행하려면 전체 key를 유지하고 값을 빈 문자열�
 - `schema.py` / `review.py` 검증을 우회하지 않는다. malformed 출력과 연결 오류를 구분하고 live 실패를 mock으로 대체하지 않는다.
 - 다섯 역할은 같은 snapshot을 검토하며 최대 3개 동시 실행한다. 결과는 proposal/revision/current_version을 변경하지 않는다.
 - 저장소 분석은 코드·설치 스크립트를 실행하지 않는다. 고정 커밋·상한·제외 사유, 코드 전송 확인 fingerprint와 공급자·모델 연결을 유지한다.
-- migration은 새 번호의 SQL로 추가하고 재시작 때 재실행하는 `db.initialize()` 방식에 맞춘다.
+- migration은 새 번호의 SQL로 추가한다. `db.initialize()`는 mock 시작 시 또는 Supabase의 명시적 관리 명령에서 실행된다.
 - API·schema 변경은 UI 타입·프롬프트·`docs/spec/` 계약·예시·관련 테스트와 함께 검토한다.
 
 ## 실행과 검증
@@ -84,7 +88,7 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8010
 uv run python -m app.worker
 ```
 
-설정 파일은 실행 디렉토리 기준 `../.env`다. API·worker 환경을 동일하게 맞춘다. 시작 시 migration을 실행하므로 검증에는 별도 DB를 지정한다.
+설정 파일은 실행 디렉토리 기준 `../.env`다. API·worker 환경을 동일하게 맞춘다. 검증에는 별도 DB를 지정한다. Supabase 구성에서는 API·worker의 시작 시 migration을 비활성화한다.
 
 PostgreSQL 테스트는 `PRJ/`에서 다음을 실행한다.
 

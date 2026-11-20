@@ -57,4 +57,8 @@ compose up --build --detach --wait --wait-timeout 120 db api worker web
 endpoint=$(compose port web 80)
 export E2E_BASE_URL="http://$endpoint"
 printf 'E2E project %s at %s\n' "$project" "$E2E_BASE_URL"
-npm run test:e2e -- tests/studio.spec.ts tests/source-planning.spec.ts
+if [ "$#" -gt 0 ]; then
+  npm run test:e2e -- "$@"
+else
+  npm run test:e2e -- tests/studio.spec.ts tests/source-planning.spec.ts tests/users.spec.ts tests/login.spec.ts tests/supabase-accounts.spec.ts
+fi

@@ -133,7 +133,7 @@ export default function BusinessHome({
           <Brand />
         </div>
         <div className="business-header-actions">
-          {(canManage || canAssign) && (
+          {!navigation && (canManage || canAssign) && (
             <button className="secondary" onClick={onSettings}>
               <Settings2 size={16} />{" "}
               {canManage ? "업무 연결 설정" : "업무 배정"}

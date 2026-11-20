@@ -22,6 +22,10 @@ React 19, TypeScript, Vite 6, React Flow(`@xyflow/react`), `lucide-react`를 사
 
 별도 전역 상태 라이브러리나 라우터 없이 hooks와 History API를 사용한다. 프로젝트 주소는 `/?project=<id>`다. 비동기 처리를 바꿀 때 프로젝트 전환·언마운트 후 늦게 도착한 응답이 현재 화면을 덮어쓰지 않는지 확인한다.
 
+관리자 홈의 업무 연결 설정은 왼쪽 햄버거 메뉴에서 연다. 관리자 내비게이션이 있는 경우 오른쪽 위의 중복 바로가기는 표시하지 않는다. 관리자 내비게이션 없이 업무 관리·배정 권한을 받은 사용자는 홈의 바로가기를 사용한다.
+
+Supabase 모드도 ID 로그인을 사용한다. `accounts/server.ts`가 서버 계정 API와 탭 세션·토큰 갱신을 처리하고, `accounts/index.ts`에서 mock/browser 구현과 선택한다. Supabase 모드의 실제 권한 검증은 API 서버가 수행한다. 실제 계정 전환의 검증 상태는 [전환 인계](../docs/supabase-transition.md)를 확인한다.
+
 ## 실제 코드 사용 예시
 
 `App.tsx:create`의 호출 형태다. `api()`는 body가 있으면 기본 POST, 없으면 GET이며 인증 흐름에서 설정한 토큰을 붙인다.

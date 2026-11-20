@@ -2,12 +2,12 @@ from contextlib import asynccontextmanager
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 import json
-import httpx
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from psycopg.types.json import Jsonb
 from .auth import current_user
+from .accounts import router as accounts_router
 from .config import settings
 from .db import connect, initialize
 from .schema import Snapshot, empty_snapshot
@@ -24,7 +24,8 @@ User = Annotated[str, Depends(current_user)]
 
 @asynccontextmanager
 async def lifespan(app):
-    initialize()
+    if settings().should_migrate:
+        initialize()
     yield
 
 
@@ -32,6 +33,7 @@ app = FastAPI(title="H-PlanIT API", version="2.1.0", lifespan=lifespan)
 
 
 app.include_router(source_router)
+app.include_router(accounts_router)
 
 
 class Input(BaseModel):
@@ -91,11 +93,6 @@ class ManualInput(Input):
 class DecisionInput(Input):
     expected_version: int = Field(ge=0)
     acknowledge_warnings: bool = False
-
-
-class LoginInput(Input):
-    email: str = Field(max_length=320)
-    password: str = Field(min_length=1, max_length=1024)
 
 
 def project(c, project_id, owner, lock=False):
@@ -210,26 +207,6 @@ def health():
         "model": s.model,
         "version": "2.1.0",
     }
-
-
-@app.post("/api/auth/login")
-def login(inp: LoginInput):
-    s = settings()
-    if s.auth_mode != "supabase" or not s.supabase_anon_key:
-        raise HTTPException(400, "실제 로그인 환경이 설정되지 않았습니다.")
-    try:
-        r = httpx.post(
-            s.supabase_url.rstrip("/") + "/auth/v1/token?grant_type=password",
-            headers={"apikey": s.supabase_anon_key},
-            json=inp.model_dump(),
-            timeout=20,
-        )
-    except httpx.HTTPError:
-        raise HTTPException(503, "인증 서버에 연결할 수 없습니다.") from None
-    if r.status_code != 200:
-        raise HTTPException(401, "이메일 또는 비밀번호를 확인해 주세요.")
-    data = r.json()
-    return {"access_token": data["access_token"], "expires_in": data["expires_in"]}
 
 
 @app.get("/api/projects")

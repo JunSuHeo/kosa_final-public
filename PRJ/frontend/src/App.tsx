@@ -548,7 +548,7 @@ export default function App() {
     />
   );
   const navigation =
-    allowed("accounts.manage") && health.auth_mode === "mock" ? (
+    allowed("accounts.manage") ? (
       <button
         className="admin-navigation-toggle"
         aria-label="관리자 메뉴 열기"
@@ -602,7 +602,7 @@ export default function App() {
         ) : page === "settings" && allowed("sources.manage") ? (
           <SourceSettings
             onAssignments={
-              health.auth_mode === "mock" && allowed("sources.assign")
+              allowed("sources.assign")
                 ? () => openPage("assignments")
                 : undefined
             }
@@ -627,7 +627,7 @@ export default function App() {
             accountMenu={accountMenu}
             canCreate={allowed("plans.create")}
             canManage={allowed("sources.manage")}
-            canAssign={health.auth_mode === "mock" && allowed("sources.assign")}
+            canAssign={allowed("sources.assign")}
             canRead={allowed("plans.read")}
             projects={projects}
             health={health}

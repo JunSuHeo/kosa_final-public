@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     supabase_url: str = ""
     supabase_anon_key: str = ""
+    supabase_service_role_key: str = ""
+    auto_migrate: bool | None = None
+    migration_database_url: str = ""
     supabase_jwt_audience: str = "authenticated"
     llm_timeout_seconds: int = 240
     local_repository_root: str = ""
@@ -53,6 +56,10 @@ class Settings(BaseSettings):
         if self.auth_mode == "supabase" and not self.supabase_url:
             raise ValueError("Supabase URL이 필요합니다.")
         return self
+
+    @property
+    def should_migrate(self):
+        return self.auto_migrate if self.auto_migrate is not None else self.auth_mode == 'mock'
 
     @property
     def local_repository_root_resolved(self):

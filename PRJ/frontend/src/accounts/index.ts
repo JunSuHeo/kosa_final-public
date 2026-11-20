@@ -1,3 +1,7 @@
-// Swap this service for an API implementation when accounts move to the DB.
-export { default as accountService } from "./browser";
+import browser from "./browser";
+import server from "./server";
+export let accountService = browser;
+export function configureAccountService(mode: string) {
+  accountService = mode === "mock" ? browser : server;
+}
 export * from "./types";

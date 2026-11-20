@@ -6,7 +6,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from fastapi import HTTPException
 from pydantic import ValidationError
-from app.auth import current_user
+from app.auth import current_user, verify_token
 from app.config import Settings
 from app.review import review
 from app.worker import process
@@ -48,7 +48,7 @@ def test_signed_supabase_claims_and_invalid_tokens(monkeypatch, algorithm):
     def token(payload):
         return "Bearer " + jwt.encode(payload, private, algorithm=algorithm)
 
-    assert current_user(token(claims)) == "user-123"
+    assert verify_token(token(claims).removeprefix('Bearer '))["sub"] == "user-123"
     for patch in [
         {"exp": now - timedelta(seconds=1)},
         {"aud": "other"},
@@ -57,12 +57,12 @@ def test_signed_supabase_claims_and_invalid_tokens(monkeypatch, algorithm):
         {"iat": now + timedelta(hours=1)},
     ]:
         with pytest.raises(HTTPException) as e:
-            current_user(token({**claims, **patch}))
+            verify_token(token({**claims, **patch}).removeprefix('Bearer '))
         assert e.value.status_code == 401
     for removed in ["sub", "iat", "exp", "iss", "aud"]:
         payload = {k: v for k, v in claims.items() if k != removed}
         with pytest.raises(HTTPException):
-            current_user(token(payload))
+            verify_token(token(payload).removeprefix('Bearer '))
 
 
 def test_production_mock_is_rejected_without_leaking_secrets():

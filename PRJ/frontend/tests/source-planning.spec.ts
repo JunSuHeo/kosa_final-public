@@ -17,7 +17,16 @@ test("업무 연결 설정에서 소스 디자인·사용 범위를 확인해 �
   const repository = process.env.E2E_FIXTURE_REPO;
   test.skip(!repository, "Run scripts/e2e.sh to mount the isolated fixture.");
   await page.goto("/");
+  await expect(
+    page
+      .locator(".business-header-actions")
+      .getByRole("button", { name: "업무 연결 설정", exact: true }),
+  ).toHaveCount(0);
   await page
+    .getByRole("button", { name: "관리자 메뉴 열기", exact: true })
+    .click();
+  await page
+    .getByRole("navigation", { name: "관리자 메뉴", exact: true })
     .getByRole("button", { name: "업무 연결 설정", exact: true })
     .click();
   await page

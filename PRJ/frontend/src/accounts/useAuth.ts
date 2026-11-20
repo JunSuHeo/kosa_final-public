@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, setAccessGuard, setToken } from "../api";
+import { ApiError, setAccessGuard, setToken } from "../api";
 import {
   accountService,
+  configureAccountService,
   can,
-  fixedPermissions,
   type Identity,
   type Permission,
 } from "./index";
+import { ensureSession } from "./server";
 function requestPermission(path: string, method: string): Permission | null {
   if (path.startsWith("/api/projects")) {
     if (path.includes("/export")) return "plans.export";
@@ -31,19 +32,13 @@ export function useAuth(mode: string | undefined) {
   const wasAuthed = useRef(false);
   useEffect(() => {
     if (!mode) return;
+    configureAccountService(mode);
     let active = true;
     const sync = async () => {
-      if (mode !== "mock") {
-        if (active) {
-          setAuthed(!!sessionStorage.getItem("studio-token"));
-          setReady(true);
-        }
-        return;
-      }
       try {
         const current = await accountService.current();
         if (!active) return;
-        setToken(current ? `local:${current.account.id}` : "", false);
+        if (mode === "mock") setToken(current ? `local:${current.account.id}` : "", false);
         setIdentity(current);
         setAuthed(!!current);
         setReady(true);
@@ -79,10 +74,14 @@ export function useAuth(mode: string | undefined) {
           );
         setToken(`local:${current.account.id}`, false);
       });
+    } else {
+      setAccessGuard(async (path) => {
+        if (path.startsWith("/api/auth/")) return;
+        await ensureSession();
+      });
     }
     void sync();
-    const unsubscribe =
-      mode === "mock" ? accountService.subscribe(() => void sync()) : () => {};
+    const unsubscribe = accountService.subscribe(() => void sync());
     return () => {
       active = false;
       unsubscribe();
@@ -90,32 +89,19 @@ export function useAuth(mode: string | undefined) {
     };
   }, [mode]);
   const login = async (identifier: string, password: string) => {
-    if (mode === "mock") {
-      const current = await accountService.login(identifier, password);
-      setToken(`local:${current.account.id}`, false);
-      setIdentity(current);
-      wasAuthed.current = true;
-    } else {
-      const result = await api<{ access_token: string }>("/api/auth/login", {
-        email: identifier,
-        password,
-      });
-      setToken(result.access_token);
-    }
+    const current = await accountService.login(identifier, password);
+    if (mode === "mock") setToken(`local:${current.account.id}`, false);
+    setIdentity(current);
+    wasAuthed.current = true;
     setNotice("");
     setAuthed(true);
   };
   const logout = async () => {
     wasAuthed.current = false;
-    setToken("");
-    if (mode === "mock") await accountService.logout();
-    setIdentity(null);
-    setAuthed(false);
+    try { await accountService.logout(); }
+    finally { setToken(""); setIdentity(null); setAuthed(false); }
   };
   const allowed = (permission: Permission) =>
-    mode === "mock"
-      ? can(identity, permission)
-      : !fixedPermissions.includes(permission) &&
-        permission !== "sources.assign";
+    can(identity, permission);
   return { identity, authed, ready, notice, login, logout, allowed };
 }

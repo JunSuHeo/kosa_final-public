@@ -3,6 +3,8 @@ x-supabase-backend: &supabase-backend
   env_file: .env.supabase
   environment:
     DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env.supabase}
+    AUTH_MODE: supabase
+    AUTO_MIGRATE: "false"
   depends_on: !reset []
 
 services:
@@ -10,5 +12,29 @@ services:
     profiles: [local-db]
   api:
     <<: *supabase-backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env.supabase}
+      AUTH_MODE: supabase
+      AUTO_MIGRATE: "false"
+      MIGRATION_DATABASE_URL: ""
+      SOURCE_DATABASE_URL: ""
   worker:
     <<: *supabase-backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env.supabase}
+      AUTH_MODE: supabase
+      AUTO_MIGRATE: "false"
+      SUPABASE_SERVICE_ROLE_KEY: ""
+      MIGRATION_DATABASE_URL: ""
+      SOURCE_DATABASE_URL: ""
+  manage:
+    <<: *supabase-backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    profiles: [supabase-tools]
+    command: ["python", "-m", "app.manage"]
+    environment:
+      DATABASE_URL: ${MIGRATION_DATABASE_URL:-${DATABASE_URL}}
+      AUTH_MODE: supabase
+      AUTO_MIGRATE: "false"

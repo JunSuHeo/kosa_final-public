@@ -13,6 +13,7 @@ from .repositories import RepositoryError, github_url, local_path, planning_cont
 from .role_reviews import snapshot_hash
 from .schema import StrictModel, DesignProfile
 from .design import extract_design
+from .accounts import audit
 
 router = APIRouter(prefix="/api/sources")
 User = Annotated[str, Depends(current_user)]
@@ -188,15 +189,23 @@ def assign_source(source_id: UUID, account_id: str, owner: User):
         source = owned_source(c, source_id, owner, lock=True)
         if not source["publication_id"]:
             raise HTTPException(409, "게시된 업무만 배정할 수 있습니다.")
-        c.execute("INSERT INTO studio_source_assignments(source_id,account_id,assigned_by) VALUES (%s,%s,%s) ON CONFLICT DO NOTHING", (source_id, account_id, owner))
+        if settings().auth_mode == 'supabase' and not c.execute(
+            "SELECT 1 FROM studio_accounts WHERE id=%s AND active AND provisioning_status='ready'", (account_id,)
+        ).fetchone():
+            raise HTTPException(404, '사용 가능한 계정을 찾을 수 없습니다.')
+        changed = c.execute("INSERT INTO studio_source_assignments(source_id,account_id,assigned_by) VALUES (%s,%s,%s) ON CONFLICT DO NOTHING RETURNING account_id", (source_id, account_id, owner)).fetchone()
+        if changed and settings().auth_mode == 'supabase':
+            audit(c, owner, '업무 배정', account_id, source['name'])
         return {"account_id": account_id, "assigned": True}
 
 
 @router.delete("/{source_id}/assignments/{account_id}")
 def unassign_source(source_id: UUID, account_id: str, owner: User):
     with connect() as c:
-        owned_source(c, source_id, owner, lock=True)
-        c.execute("DELETE FROM studio_source_assignments WHERE source_id=%s AND account_id=%s", (source_id, account_id))
+        source = owned_source(c, source_id, owner, lock=True)
+        changed = c.execute("DELETE FROM studio_source_assignments WHERE source_id=%s AND account_id=%s RETURNING account_id", (source_id, account_id)).fetchone()
+        if changed and settings().auth_mode == 'supabase':
+            audit(c, owner, '업무 배정 해제', account_id, source['name'])
         return {"account_id": account_id, "assigned": False}
 
 

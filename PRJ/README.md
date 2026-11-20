@@ -29,26 +29,14 @@ curl -f http://localhost:8010/health
 ## Supabase PostgreSQL 연결
 
 1. Supabase 프로젝트의 **Connect → Session pooler**에서 포트 `5432` 연결 문자열을 복사한다. 실행 환경에서 직접 접속이 가능하면 **Direct connection**도 사용할 수 있다. worker가 PostgreSQL 세션 잠금을 사용하므로 **Transaction pooler**는 사용하지 않는다. [Supabase 연결 가이드](https://supabase.com/docs/guides/database/connecting-to-postgres)
-2. 아래 명령으로 비밀 파일을 준비한다. `.env.supabase`의 `DATABASE_URL`에 연결 문자열을 작은따옴표로 감싸 넣는다. DB 비밀번호의 특수문자를 URL 인코딩하고 `sslmode=require`를 지정한다. 첫 실행에서 테이블을 만들므로 대상 스키마에 DDL 권한이 있고 생성한 테이블을 소유하는 DB 계정을 사용한다.
+2. 예제를 복사해 `.env.supabase`를 준비한다.
 
    ```sh
    test -f .env.supabase || (umask 077; cp .env.supabase.example .env.supabase)
    ```
 
-3. `PRJ/`에서 Supabase 전용 Compose 구성을 실행한다. 아래 예시는 기본 로컬 인스턴스와 별도로 띄우기 위해 다른 프로젝트명과 포트를 사용한다.
-
-   ```sh
-   STUDIO_API_PORT=8014 STUDIO_WEB_PORT=5178 docker compose -p planning-studio-supabase \
-     --env-file .env --env-file .env.supabase \
-     -f compose.yaml -f infra/supabase.compose.yaml up --build -d
-   curl -fsS http://localhost:8014/health
-   ```
-
-   웹은 [http://localhost:5178/](http://localhost:5178/)에서 연다. `/health`의 `database: ready`로 API의 DB 연결을 확인한다. 프로젝트를 생성해 worker가 확인 질문을 저장하는지 확인한다.
-
-API와 worker는 동일한 DB에 연결하고 시작할 때 [SQL 마이그레이션](backend/migrations/)을 적용한다. 앱 테이블은 RLS를 켜고 브라우저 역할에 대한 정책을 만들지 않는다. 전용 Supabase 프로젝트에 다른 Data API 소비자가 없다면 Data API를 끌 수 있다. [Supabase Data API 보안 가이드](https://supabase.com/docs/guides/api/securing-your-api)
-
-Supabase DB와 [Supabase 로그인](#인증)은 별개다. 동일 인스턴스에서 실제 로그인도 쓰려면 `.env.supabase`에 해당 인증 설정을 함께 넣는다. 기존 로컬 프로젝트 데이터 이전은 별도 작업이다. 기본 Docker 실행으로 돌아갈 때는 [기본 실행 명령](#실행)을 사용한다.
+3. `MIGRATION_DATABASE_URL`은 스키마를 관리하는 계정에, `DATABASE_URL`은 `studio_runtime`을 상속하는 전용 실행 계정에 연결한다. 연결 문자열은 비밀번호를 URL 인코딩한 뒤 작은따옴표로 감싸고 `sslmode=require`를 지정한다. API와 worker는 시작할 때 마이그레이션을 실행하지 않는다.
+4. 인증 값과 명시적 마이그레이션, 초기 관리자 생성, 데이터 이전의 전제는 [Supabase 전환 안내](docs/supabase-transition.md)를 확인한다. 운영에 적용하기 전에 별도 DB와 테스트 계정으로 검증한다.
 
 ## 실제 AI
 
@@ -82,19 +70,19 @@ docker compose up --build -d api worker
 7. **현업 확인본 저장**은 버전을 보관하는 기능이며 IT 최종 승인을 의미하지 않는다. 확인본의 Markdown/JSON을 내보낼 수 있다.
 8. 기록에서 이전 확인본을 조회하고 복원 수정안을 만들 수 있다. 좁은 화면은 **대화/산출물** 전환과 **기획 도구** 메뉴를 사용한다.
 
-계정·권한은 브라우저 목업으로 관리하며 실제 계정 DB·운영 인증·IT 최종 승인은 후속 범위다. 업무 연결은 소유자가 준비·게시하고 계정별로 배정한다. 관리자는 다른 계정의 기획을 열람하지 않는다. 코드 변경은 5분 간격으로 백그라운드 확인하며 기존 기획의 코드 기준을 자동 교체하지 않는다.
+계정·권한은 mock 모드에서는 브라우저 목업으로, Supabase 모드에서는 서버 계정 API로 관리한다. 운영 인증 전환과 IT 최종 승인은 후속 범위다. 업무 연결은 소유자가 준비·게시하고 계정별로 배정한다. 관리자는 다른 계정의 기획을 열람하지 않는다. 코드 변경은 5분 간격으로 백그라운드 확인하며 기존 기획의 코드 기준을 자동 교체하지 않는다.
 
 새로고침과 재접속 후에도 프로젝트·질문·메시지·proposal·확정본이 PostgreSQL에 유지된다. worker 재시작은 저장된 단계부터 재개한다. DB 결과는 중복 생성하지 않지만, 저장 직전에 중단된 외부 모델 호출은 다시 일어날 수 있다.
 
 ## 인증
 
-실제 인증은 `AUTH_MODE=supabase`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_AUDIENCE`로 설정한다. 등록된 Supabase 계정의 이메일/비밀번호로 로그인한다. 서버는 JWKS와 RS256/ES256 서명, issuer/audience/sub/iat/exp를 확인한다. 토큰 만료 시 다시 로그인한다. 회원가입·조직·초대는 이번 범위에 없다.
+실제 인증은 `AUTH_MODE=supabase`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_AUDIENCE`로 설정한다. 서버에 등록된 계정의 ID와 비밀번호로 로그인한다. 서버는 계정 관리에 `SUPABASE_SERVICE_ROLE_KEY`를 사용한다. 서버는 JWKS와 RS256/ES256 서명, issuer/audience/sub/iat/exp를 확인한다. 서버 인증 구현은 만료된 토큰을 갱신하고 갱신에 실패하면 로그인 화면으로 이동한다. 회원가입·조직·초대는 이번 범위에 없다.
 
 로컬 `AUTH_MODE=mock` UI는 중앙 로그인 카드를 사용한다. 기본 계정은 `admin`(ADMINISTRATOR), `user1`(USER1), `user2`(USER2)이며 초기 테스트 비밀번호는 모두 `a123456789!`다. admin의 내부 ID는 기존 `demo-user`이고 user1·user2는 `test-user-1`, `test-user-2`로 기획 소유권이 분리된다. ID·표시 이름·역할은 별개이며 역할을 바꿔도 소유권은 유지된다. 계정은 화면에 자동 입력하지 않는다.
 
 관리자의 왼쪽 위 메뉴에서 **계정 관리 / 역할·권한 설정 / 변경 이력**을 연다. 계정 등록·이름/역할/상태 변경·비밀번호 재설정·게시 업무 배정을 지원하며 마지막 활성 관리자는 보호한다. 업무는 연결 소유자가 게시한 뒤 배정하고, 사용자는 배정된 업무로 본인 기획을 만든다. 배정을 해제해도 기존 문서와 확인본 내보내기는 유지되지만 새 AI 요청은 차단된다.
 
-`frontend/src/accounts/types.ts`의 비동기 `AccountService`가 로그인·현재 계정·관리·권한 정책·이력 인터페이스이고 `accounts/index.ts`에서 브라우저 구현을 선택한다. DB 연결 시 서비스 구현과 실제 인증 토큰 연동을 교체한다. 목업 계정·정책·이력은 버전 있는 localStorage에, 세션은 계정 ID와 세션 버전만 sessionStorage에 보관한다. 비밀번호는 계정별 임의 salt와 PBKDF2-SHA256(120,000회) 검증값으로 저장한다. 역할·사용 상태·비밀번호 변경은 세션 버전을 올려 다른 탭에도 적용한다. 브라우저 목업 권한은 운영 보안 경계가 아니며 운영 계정 검증은 후속이다. 서버는 기존 프로젝트 소유권과 업무 배정·업무 소유권을 별도로 검증하고 Supabase 경로는 유지한다.
+`frontend/src/accounts/types.ts`의 비동기 `AccountService`가 로그인·현재 계정·관리·권한 정책·이력 인터페이스이고 `accounts/index.ts`에서 인증 모드에 따라 브라우저 구현 또는 서버 구현을 선택한다. 목업 계정·정책·이력은 버전 있는 localStorage에, 세션은 계정 ID와 세션 버전만 sessionStorage에 보관한다. 비밀번호는 계정별 임의 salt와 PBKDF2-SHA256(120,000회) 검증값으로 저장한다. 역할·사용 상태·비밀번호 변경은 세션 버전을 올려 다른 탭에도 적용한다. 브라우저 목업 권한은 운영 보안 경계가 아니며 운영 계정 검증은 후속이다. 서버는 기존 프로젝트 소유권과 업무 배정·업무 소유권을 별도로 검증하고 Supabase 경로는 유지한다.
 
 업무 배정 API는 `GET /api/sources/{id}/assignments`, `PUT/DELETE /api/sources/{id}/assignments/{account_id}`다. actor는 인증 토큰에서만 가져오며 대상 account_id만 경로로 전달한다. `005_source_assignments.sql`은 배정 관계를 추가하고 프로젝트의 source-owner 복합 FK를 source FK로 바꾼다. 스냅샷·게시 기준·revision 불변성과 snapshot/source 복합 FK는 유지된다. 계정 저장소 초기화는 계정·정책·이력을 초기화하므로 일반 사용 중에는 브라우저 사이트 데이터를 삭제하지 않는다.
 

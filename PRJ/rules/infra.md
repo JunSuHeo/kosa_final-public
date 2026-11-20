@@ -32,6 +32,8 @@ worker → 모델 공급자 / 허용된 로컬 저장소 / GitHub
 
 ## 서비스 확인과 신규 실행
 
+Supabase 구성은 `infra/supabase.compose.yaml`의 `manage` 서비스를 통해 스키마 변경·초기 관리자 생성·데이터 이전을 명시적으로 실행한다. API·worker는 `AUTO_MIGRATE=false`이며 worker에는 Auth 관리자 키와 이전용 DB 연결을 전달하지 않는다. 현재 준비 상태와 후속 절차는 [전환 인계](../docs/supabase-transition.md)를 확인한다.
+
 팀 개발용 `make up`은 저장소 루트에서 실행한다. 체크아웃 전용 Compose 프로젝트와 자동 할당 포트로 mock 앱을 실행한다. 나머지 공용 명령은 [팀 개발 가이드](../../README.md#자주-쓰는-명령)를 참고한다.
 
 기존 상태를 먼저 확인한다. `.env` 원문은 로그에 출력하지 않는다.

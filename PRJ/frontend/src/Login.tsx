@@ -66,11 +66,11 @@ export default function Login({
           <p className="login-description">
             업무에 필요한 변화를 함께 정리해요.
           </p>
-          <label htmlFor="login-id">{mock ? "아이디" : "이메일"}</label>
+          <label htmlFor="login-id">아이디</label>
           <input
             id="login-id"
             name="username"
-            type={mock ? "text" : "email"}
+            type="text"
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
@@ -79,9 +79,7 @@ export default function Login({
             disabled={busy}
             aria-invalid={!!error}
             aria-describedby={error ? "login-error" : undefined}
-            placeholder={
-              mock ? "아이디를 입력해 주세요" : "이메일을 입력해 주세요"
-            }
+            placeholder="아이디를 입력해 주세요"
             onChange={(event) => {
               setId(event.target.value);
               setError("");

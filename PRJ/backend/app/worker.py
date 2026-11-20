@@ -261,7 +261,8 @@ def _process(job_id):
 def main():
     from .role_reviews import process_review
     logging.basicConfig(level=logging.INFO)
-    initialize()
+    if settings().should_migrate:
+        initialize()
     while True:
         with connect() as c:
             analyses = c.execute(

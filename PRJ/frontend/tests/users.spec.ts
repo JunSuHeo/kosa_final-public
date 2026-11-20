@@ -110,7 +110,7 @@ test("계정 등록·수정·필터·마지막 관리자 보호·변경 이력",
   detail = page.getByRole("region", { name: "계정 상세" });
   await detail.getByLabel("로그인 ID").fill("planner3");
   await detail.getByLabel("표시 이름").fill("업무 담당자");
-  await detail.getByLabel("테스트 비밀번호", { exact: true }).fill(password);
+  await detail.getByLabel("초기 비밀번호", { exact: true }).fill(password);
   await detail.getByRole("button", { name: "등록하기" }).click();
   await expect(page.getByRole("status")).toContainText("계정을 등록했습니다");
   await expect(detail.getByLabel("로그인 ID")).toBeDisabled();
