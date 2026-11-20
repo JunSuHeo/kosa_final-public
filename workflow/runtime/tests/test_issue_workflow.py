@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
@@ -384,6 +385,30 @@ class ControllerTests(unittest.TestCase):
             self.assertEqual(subject.main(["--config", str(self.fixture.path), "--results-dir", str(self.fixture.results)]), 1)
         api.assert_not_called()
 
+    def test_main_reports_repository_mismatch_before_analysis(self):
+        self.fixture.config["repository"] = {"provider": "github", "owner": "example-owner",
+                                              "name": "example-repository"}
+        self.fixture.write()
+        event_path = self.fixture.base / "event.json"
+        output_path = self.fixture.base / "output.txt"
+        event_path.write_text(json.dumps({"action": "opened", "repository": {"full_name": "example/sample"},
+                                         "issue": self.github.issue(1)}), encoding="utf-8")
+        env = {"GITHUB_ACTIONS": "true", "GITHUB_EVENT_PATH": str(event_path),
+               "GITHUB_EVENT_NAME": "issues", "GITHUB_REPOSITORY": "example/sample",
+               "GITHUB_OUTPUT": str(output_path), "WORKFLOW_STATE_KEY": KEY.decode(), "WORKFLOW_BOT_LOGIN": BOT}
+        stdout = io.StringIO()
+        with patch.dict(os.environ, env), patch.object(subject, "IssueGitHub", return_value=self.github), \
+                patch.object(subject, "PlanAnalyzer", return_value=self.analyzer), contextlib.redirect_stdout(stdout):
+            self.assertEqual(subject.main(["--config", str(self.fixture.path), "--repo-root", str(self.fixture.root),
+                                           "--results-dir", str(self.fixture.results), "--defer-execution"]), 1)
+        diagnostic = json.loads(stdout.getvalue())
+        self.assertEqual(diagnostic, {"status": "blocked", "stage": "load workflow configuration",
+                                      "reason": "repository_mismatch"})
+        self.assertEqual(json.loads(output_path.read_text().strip().split("=", 1)[1]), diagnostic)
+        self.analyzer.analyze.assert_not_called()
+        self.engine.assert_not_called()
+        self.assertEqual(self.github.records, [])
+
     def test_missing_or_reassigned_plan_comment_cannot_execute(self):
         self.opened()
         other = self.github.create_comment(1, "Another plan")
@@ -406,6 +431,17 @@ class ControllerTests(unittest.TestCase):
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_active_project_configs_accept_the_actions_repository(self):
+        root = Path(__file__).resolve().parents[3]
+        github = Mock(repository="JunSuHeo/kosa_final-public")
+        with tempfile.TemporaryDirectory() as directory:
+            for name in ("prj.json", "sandbox.json"):
+                with self.subTest(config=name):
+                    controller = subject.IssueController(root / "workflow/config/projects" / name, root,
+                        Path(directory) / "results", github, KEY, BOT, analyzer=Mock(), engine=Mock())
+                    self.assertEqual(controller.repository, github.repository)
+        self.assertEqual(github.mock_calls, [])
+
     def test_analysis_reports_sensitive_source_before_the_model_reads_it(self):
         fixture = test_run.EngineTests(methodName="test_task_parsing")
         fixture.setUp()

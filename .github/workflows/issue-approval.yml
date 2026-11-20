@@ -134,6 +134,7 @@ jobs:
               authentication_failed: ['GitHub 인증 또는 접근 확인에 실패했습니다.', publication.operation ? '`WORKFLOW_PUBLISH_TOKEN`의 만료 여부와 대상 저장소 접근을 확인하세요.' : 'Actions 기본 토큰의 저장소 접근 및 `issues: write` 권한을 확인하세요.'],
               permission_denied: ['이 작업에 필요한 저장소 권한이 확인되지 않았습니다.', publication.operation ? '게시 토큰 계정에 저장소 쓰기 권한이 있고 토큰에 `Contents: Read and write`가 있는지 확인하세요.' : '명령 작성자에게 저장소 Write 이상의 권한이 있는지 확인하세요.'],
               config_error: ['프로젝트 또는 게시 설정이 유효하지 않습니다.', '`WORKFLOW_CONFIG_PATH`가 가리키는 JSON과 Actions 로그의 실패 단계를 확인하세요.'],
+              repository_mismatch: ['프로젝트 설정의 저장소 이름이 Actions 실행 저장소와 다릅니다.', '`WORKFLOW_CONFIG_PATH`가 가리키는 JSON의 `repository.owner`와 `repository.name`을 현재 GitHub 저장소에 맞게 설정하세요.'],
               state_key_invalid: ['이슈 상태 서명 키가 없거나 너무 짧습니다.', 'Actions Secret `WORKFLOW_STATE_KEY`에 기존 서명 키(최소 32바이트)가 등록되어 있는지 확인하세요. 키를 교체하면 기존 계획의 서명을 검증할 수 없습니다.'],
               state_failed: ['이슈 상태를 기록하거나 확인하지 못했습니다.', '기존 봇 댓글과 실행 기록을 확인하고, 원격 상태를 확인하기 전에는 재승인하지 마세요.'],
               approval_invalidated: ['이슈 또는 서명된 승인 상태를 검증하지 못했습니다.', '상태 댓글과 `WORKFLOW_STATE_KEY` 설정을 확인하고 최신 계획이 준비된 후 승인하세요.'],

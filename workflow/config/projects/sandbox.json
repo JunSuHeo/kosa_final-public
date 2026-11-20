@@ -4,8 +4,8 @@
   "project_id": "sandbox",
   "repository": {
     "provider": "github",
-    "owner": "example-owner",
-    "name": "example-repository"
+    "owner": "JunSuHeo",
+    "name": "kosa_final-public"
   },
   "base_branch": "main",
   "project_root": "sandbox",
