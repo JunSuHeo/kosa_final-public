@@ -111,6 +111,8 @@ python3 -B -m unittest discover -s workflow/runtime/tests -p 'test_*.py'
 
 `reason: environment_error`는 `operation`으로 구분한다. `check_codex_platform`은 Python의 플랫폼/아키텍처, `check_codex_version`은 설치 버전 불일치, `check_codex_options`는 필수 CLI 옵션 누락이다. 누락된 옵션은 허용 목록에 있는 `option` 값으로만 보고한다. `inspect_codex_version`, `inspect_codex_help`, `inspect_codex_exec_help`는 해당 조회 명령 실패를, `read_utf8_context`, `check_context_size`, `check_snapshot_size`는 문서 읽기 또는 크기 제한 실패를 뜻한다. 원본 CLI 출력과 예외 원문은 공개하지 않는다.
 
+소스의 민감정보 검사는 `workspace.py`의 파일별 허용 목록에서 검토된 표현만 예외로 처리한다. 계정 소스의 토큰 변수 참조와 비밀번호 파일 입력, 계정 테스트의 고정된 모의 데이터도 해당 파일과 정확한 표현이 일치할 때만 허용한다. 다른 값·다른 파일에는 이 예외를 적용하지 않으며, 환경변수에 등록된 비밀값은 허용 목록보다 먼저 검사한다. 문서·이슈·로그의 값 가리기 규칙은 동일하게 유지한다.
+
 Actions 로그에서 `publishing_failed`가 나오면 `publication`의 `operation`, `reason`, 가능한 경우 `http_status`를 확인한다. `prepare_git_commit`의 `commit_identity_missing`은 GitHub API를 호출하기 전에 커밋 작성자가 누락된 경우다. `get_branch_protection`의 `403`은 게시 토큰의 `Administration: Read` 권한을, `404`는 토큰의 저장소 접근과 `Settings → Branches`의 classic branch protection 설정을 확인한다. Rulesets만 설정한 경우 기존 게시 엔진의 classic protection 조회를 충족하지 않는다. `attempted: false`는 Push나 PR 생성을 시도하기 전에 차단되었음을 뜻한다.
 
 GitHub Issue 변경과 Git Push/PR 생성은 서로 다른 서비스 작업이므로 하나의 원자적 트랜잭션으로 묶을 수 없다. 각 외부 작업 직전에 다시 검사하지만 검사 직후의 극히 짧은 변경 경쟁을 완전히 없애지는 못한다. 이미 Push한 뒤 PR 직전 요구사항이 바뀌면 PR을 차단하고 기존 게시 journal에 외부 작업 이력을 남긴다. 자동으로 Branch를 삭제하거나 다시 Push하지 않는다.

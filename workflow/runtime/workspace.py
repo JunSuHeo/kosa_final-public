@@ -37,12 +37,16 @@ def redact(text: str) -> str:
     return _SECRET.sub("[REDACTED]", _redact_known_values(text))
 
 
-# Documentation placeholders and credentials for checked-in local fixtures.
+# Reviewed source expressions, documentation placeholders and local fixtures.
 _SOURCE_EXAMPLES = {
     "PRJ/README.md": {"API_KEY=\uc11c\ubc84\uc5d0\uc11c\ub9cc_\uc0ac\uc6a9\ud560_\ud0a4\n"},
     "PRJ/compose.yaml": {"PASSWORD: studio}\n"},
     "PRJ/backend/tests/test_auth_and_recovery.py": {'api_key="secret-do-not-print"'},
     "PRJ/backend/tests/test_source_planning.py": {"password = 'fixture-hidden'", 'Bearer alice-fixture"'},
+    "PRJ/frontend/src/accounts/server.ts": {"access_token: result.access_token,"},
+    "PRJ/backend/app/manage.py": {"secret = password(args.password_file)\n", "password=secret),", "password=secret,"},
+    "PRJ/frontend/tests/supabase-accounts.spec.ts": {'access_token: "signed-test-boundary"'},
+    "PRJ/backend/tests/test_accounts.py": {'password="initial-password!"'},
     **dict.fromkeys(
         ("PRJ/frontend/tests/business-helpers.ts", "PRJ/frontend/tests/login.spec.ts",
          "PRJ/frontend/tests/users.spec.ts"),

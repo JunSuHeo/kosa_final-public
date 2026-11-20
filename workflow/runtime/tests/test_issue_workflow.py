@@ -457,6 +457,21 @@ class ControllerTests(unittest.TestCase):
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_prj_analysis_prepares_account_sources_without_a_model_call(self):
+        root = Path(__file__).resolve().parents[3]
+        config_path = root / "workflow/config/projects/prj.json"
+        config, _ = subject.run._load(config_path, root)
+        adapter = Mock()
+        adapter.analyze.return_value = {}
+        subject.PlanAnalyzer(adapter).analyze({"title": "Remove the header settings button", "body": "Keep the menu entry"},
+                                             config, config_path, root)
+        adapter.analyze.assert_called_once()
+        prompt = adapter.analyze.call_args.args[0]
+        for relative in ("PRJ/frontend/src/accounts/server.ts", "PRJ/backend/app/manage.py",
+                         "PRJ/frontend/tests/supabase-accounts.spec.ts", "PRJ/backend/tests/test_accounts.py"):
+            self.assertIn(relative, prompt)
+        adapter.execute.assert_not_called()
+
     def test_environment_diagnostic_identifies_missing_options_without_arbitrary_text(self):
         error = ExecutionError("environment_error", "synthetic-private-value",
                                operation="check_codex_options", option="--strict-config")
