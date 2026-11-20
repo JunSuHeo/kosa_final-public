@@ -67,7 +67,7 @@ def private_file(path, limit=16 * 1024 * 1024):
 
 def load_verified(result_path, config_path, root):
     if runtime_platform() is None:
-        raise ExecutionError("environment_error", "Publication requires Linux/WSL or macOS ARM64.")
+        raise ExecutionError("environment_error", "Publication requires Linux/WSL or macOS x86_64/ARM64.")
     result_path = result_path.absolute()
     directory = result_path.parent
     if result_path.name != "result.json" or directory.resolve().is_relative_to(root) or directory.is_symlink():

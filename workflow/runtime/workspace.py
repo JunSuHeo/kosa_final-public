@@ -108,13 +108,15 @@ def read_context(path: Path) -> str:
             raise ExecutionError("path_violation", "Context must be an existing regular file, not a symlink.")
         data = path.read_bytes()
         if len(data) > 512 * 1024:
-            raise ExecutionError("environment_error", "A context document exceeds the 512 KiB limit.")
+            raise ExecutionError("environment_error", "A context document exceeds the 512 KiB limit.",
+                                 operation="check_context_size")
         text = data.decode("utf-8-sig")
         if redact(text) != text:
             raise ExecutionError("sensitive_content", "Sensitive content was detected in a context document; execution was blocked.")
         return text
     except (OSError, UnicodeError) as exc:
-        raise ExecutionError("environment_error", "Cannot read a UTF-8 context document.") from exc
+        raise ExecutionError("environment_error", "Cannot read a UTF-8 context document.",
+                             operation="read_utf8_context") from exc
 
 
 def _walk_error(exc: OSError) -> None:
@@ -189,7 +191,8 @@ def prepare(root: Path, destination: Path, config: dict[str, Any], config_path: 
             size = path.stat().st_size
             total += size
             if len(copied) >= 10000 or size > 10 * 1024 * 1024 or total > 100 * 1024 * 1024:
-                raise ExecutionError("environment_error", "Approved source snapshot exceeds file/size limits.")
+                raise ExecutionError("environment_error", "Approved source snapshot exceeds file/size limits.",
+                                     operation="check_snapshot_size")
             copied.add(relative)
             target = destination / relative
             target.parent.mkdir(parents=True, exist_ok=True)
