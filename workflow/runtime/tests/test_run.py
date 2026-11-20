@@ -295,6 +295,30 @@ class EngineTests(unittest.TestCase):
                 workspace.inventory(root)
             self.assertEqual(failure.exception.status, "sensitive_content")
 
+    def test_reviewed_account_expressions_and_fixtures_are_allowed_only_in_their_files(self):
+        examples = {
+            "PRJ/frontend/src/accounts/server.ts": 'access_token: result.access_token,',
+            "PRJ/backend/app/manage.py": "secret = password(args.password_file)\npassword=secret),\npassword=secret,",
+            "PRJ/frontend/tests/supabase-accounts.spec.ts": 'access_token: "signed-test-boundary"',
+            "PRJ/backend/tests/test_accounts.py": 'password="initial-password!"',
+        }
+        for path, text in examples.items():
+            with self.subTest(path=path):
+                self.assertFalse(workspace._has_sensitive_source(text, path))
+                self.assertTrue(workspace._has_sensitive_source(text, "other/" + Path(path).name))
+                self.assertTrue(workspace._has_sensitive_source(text + '\npassword="synthetic-private-value"', path))
+
+    def test_account_fixture_exemptions_reject_changed_values_and_inherited_secrets(self):
+        for path, original in (("PRJ/frontend/tests/supabase-accounts.spec.ts", 'access_token: "signed-test-boundary"'),
+                               ("PRJ/backend/tests/test_accounts.py", 'password="initial-password!"')):
+            with self.subTest(path=path):
+                changed = original[:-1] + ' synthetic-extra"'
+                self.assertTrue(workspace._has_sensitive_source(changed, path))
+                self.assertTrue(workspace._has_sensitive_source(original.replace('"', "'"), path))
+                value = original.split('"')[1]
+                with patch.dict(os.environ, {"WORKFLOW_TEST_TOKEN": value}):
+                    self.assertTrue(workspace._has_sensitive_source(original, path))
+
     def test_task_redaction(self):
         with patch.dict(os.environ, {"WORKFLOW_TEST_TOKEN": "synthetic-private-value"}):
             result = self.execute(task="Use synthetic-private-value and password=made-up-value")
