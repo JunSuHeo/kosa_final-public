@@ -82,7 +82,7 @@ npm run build
 
 개발 서버는 `127.0.0.1:5174`, `/api`·`/health` 프록시는 `127.0.0.1:8010`이다. Compose web도 기본 5174이므로 동시 실행 때 포트를 조정한다.
 
-UI 동작 검증은 `PRJ/`에서 `sh scripts/e2e.sh`를 실행한다. 세부 전제는 [infra.md](infra.md)를 따른다. Playwright 기본 대상은 5175이며 설정 파일이 서비스를 자동 기동하지 않는다.
+UI 동작 검증은 `PRJ/`에서 `sh scripts/e2e.sh`를 실행한다. 세부 전제는 [infra.md](infra.md)를 따른다. 스크립트는 테스트 환경을 기동하고 자동 할당된 주소를 Playwright에 전달한다. 스크립트 없이 실행할 때는 준비한 환경의 주소를 `E2E_BASE_URL`로 명시한다.
 
 | 테스트 | 용도 |
 | --- | --- |

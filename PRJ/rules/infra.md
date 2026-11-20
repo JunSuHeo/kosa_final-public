@@ -32,6 +32,8 @@ worker → 모델 공급자 / 허용된 로컬 저장소 / GitHub
 
 ## 서비스 확인과 신규 실행
 
+팀 개발용 `make up`은 저장소 루트에서 실행한다. 체크아웃 전용 Compose 프로젝트와 자동 할당 포트로 mock 앱을 실행한다. 나머지 공용 명령은 [팀 개발 가이드](../../README.md#자주-쓰는-명령)를 참고한다.
+
 기존 상태를 먼저 확인한다. `.env` 원문은 로그에 출력하지 않는다.
 
 ```sh
@@ -93,7 +95,7 @@ UI·API·worker 통합 검증은 다음을 사용한다.
 sh scripts/e2e.sh
 ```
 
-스크립트는 `planning-studio-e2e`, 포트 `54332/8011/5175`, mock auth/AI를 사용한다. `.research/` 아래 임시 Git fixture를 읽기 전용으로 마운트하고 의존성·Chromium 설치 뒤 Playwright를 실행한다. 종료 시 해당 컨테이너·임시 fixture를 정리하며 named volume은 삭제하지 않는다. 고정 이름·포트를 사용하므로 병렬 실행하지 않는다.
+스크립트는 실행마다 별도 Compose 프로젝트, DB 볼륨, 임시 Git fixture와 루프백 포트를 사용한다. `infra/test.compose.yaml`로 mock 인증/AI 및 예제 환경을 지정한다. 종료 시 해당 실행의 컨테이너·볼륨·빌드 이미지를 정리하고 실패 시 브라우저 증거를 보존한다. 같은 호스트에서 병렬로 실행할 수 있다.
 
 운영 검증은 [README](../README.md)의 별도 `planning-studio-ops` / `54333/8012/5176` 전제를 따른다. 원본 DB를 덮어쓰지 않고 별도 DB에 복원한다. dump·민감 원시 로그는 Git 제외 경로에 둔다.
 
@@ -103,4 +105,4 @@ sh scripts/e2e.sh
 - migration·재시작·백업 복구는 격리 환경에서 한다. 사용자 volume의 `down -v` / prune을 사용하지 않는다.
 - 의존성 변경은 uv.lock / package-lock.json과 frozen 설치를 확인한다.
 - 실행법·환경변수·포트 변경은 README.md, .env.example, 이 문서에 반영한다.
-- 실제 명령·결과·mock/live·미확인 사항을 저장소 루트의 `.agents/workflow/`에 기록한다.
+- 실제 명령·결과·mock/live·미확인 사항을 PR에 기록한다.

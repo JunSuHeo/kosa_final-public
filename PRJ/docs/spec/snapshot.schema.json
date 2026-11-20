@@ -39,7 +39,8 @@
             "card",
             "list",
             "stat",
-            "navigation"
+            "navigation",
+            "table"
           ],
           "title": "Type",
           "type": "string"
@@ -64,6 +65,37 @@
             }
           ],
           "title": "Target Screen Id"
+        },
+        "region": {
+          "default": "content",
+          "enum": [
+            "content",
+            "header",
+            "navigation",
+            "filters",
+            "actions"
+          ],
+          "title": "Region",
+          "type": "string"
+        },
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Columns",
+          "type": "array"
+        },
+        "rows": {
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "maxItems": 30,
+          "title": "Rows",
+          "type": "array"
         }
       },
       "required": [
@@ -187,6 +219,80 @@
         "quote"
       ],
       "title": "CodeEvidence",
+      "type": "object"
+    },
+    "DesignProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "primary": {
+          "default": "#2563eb",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "title": "Primary",
+          "type": "string"
+        },
+        "background": {
+          "default": "#ffffff",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "title": "Background",
+          "type": "string"
+        },
+        "surface": {
+          "default": "#f8fafc",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "title": "Surface",
+          "type": "string"
+        },
+        "text": {
+          "default": "#172033",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "title": "Text",
+          "type": "string"
+        },
+        "font": {
+          "default": "system",
+          "enum": [
+            "system",
+            "sans",
+            "serif",
+            "mono"
+          ],
+          "title": "Font",
+          "type": "string"
+        },
+        "spacing": {
+          "default": 16,
+          "maximum": 32,
+          "minimum": 8,
+          "title": "Spacing",
+          "type": "integer"
+        },
+        "radius": {
+          "default": 6,
+          "maximum": 24,
+          "minimum": 0,
+          "title": "Radius",
+          "type": "integer"
+        },
+        "shell": {
+          "default": "header",
+          "enum": [
+            "header",
+            "sidebar",
+            "plain"
+          ],
+          "title": "Shell",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "title": "DesignProfile",
       "type": "object"
     },
     "Edge": {
@@ -660,6 +766,17 @@
           "maxItems": 24,
           "title": "Blocks",
           "type": "array"
+        },
+        "layout": {
+          "default": "form",
+          "enum": [
+            "form",
+            "list",
+            "detail",
+            "dashboard"
+          ],
+          "title": "Layout",
+          "type": "string"
         }
       },
       "required": [
@@ -830,6 +947,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/ImplementationPlan"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "design_profile": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DesignProfile"
         },
         {
           "type": "null"

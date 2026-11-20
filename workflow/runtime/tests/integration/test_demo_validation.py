@@ -6,6 +6,7 @@ WORKFLOW_DEMO_TESTS=1 python3 -B -m unittest discover \
 
 import os
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -37,13 +38,42 @@ class DemoValidationTests(unittest.TestCase):
         self.assertEqual(workspace.inventory(self.candidate), self.before)
 
     def test_broken_candidate_fails_actual_unit_and_e2e(self):
-        project = self.config["project_root"]
-        source = self.candidate / project / "src/calculator.py"
+        source = self.candidate / "sandbox/manual-engine-demo/src/calculator.py"
         source.write_text(source.read_text().replace("return left + right", "return left - right"))
         result = self.validate()
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["tests"]["unit"][0]["status"], "failed")
         self.assertEqual(result["tests"]["e2e"][0]["status"], "failed")
+
+    @unittest.skipUnless(shutil.which("uv", path=test_runner.SYSTEM_PATH), "uv is not installed")
+    def test_uv_run_uses_sandbox_scratch_instead_of_creating_candidate_venv(self):
+        unit = self.config["tests"]["unit"][0]
+        (self.candidate / unit["cwd"] / "pyproject.toml").write_text(
+            '[project]\nname = "workflow-test-fixture"\nversion = "0.1.0"\nrequires-python = ">=3.10"\n'
+        )
+        lock = test_runner.IsolatedTestProcess().run(
+            self.candidate, unit["cwd"], {"program": "uv", "args": ["lock", "--offline"]}, 30
+        )
+        self.assertEqual(lock["status"], "passed", lock)
+        self.before = workspace.inventory(self.candidate)
+
+        unit["command"] = {"program": "uv", "args": [
+            "run", "--frozen", "--offline", "python", "-c", "import sys; print(sys.prefix)"
+        ]}
+        result = self.validate()
+        self.assertEqual(result["status"], "passed", result)
+        self.assertTrue(result["tests"]["unit"][0]["stdout"].startswith("/tmp/"), result)
+        self.assertEqual(workspace.inventory(self.candidate), self.before)
+
+    def test_symlink_in_test_copy_still_blocks_validation(self):
+        self.config["tests"]["unit"][0]["command"] = {
+            "program": "python3", "args": ["-B", "-c", "from pathlib import Path; Path('link').symlink_to('/tmp')"]
+        }
+        result = self.validate()
+        self.assertEqual(result["status"], "failed", result)
+        self.assertEqual(result["scope_status"], "failed", result)
+        self.assertTrue(any("Symlink" in error for error in result["errors"]), result)
+        self.assertEqual(workspace.inventory(self.candidate), self.before)
 
     def test_real_missing_program_is_unavailable(self):
         self.config["tests"]["unit"][0]["command"] = {"program": "workflow-missing-test-tool", "args": []}

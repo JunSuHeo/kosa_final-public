@@ -2,30 +2,59 @@
 set -eu
 cd "$(dirname "$0")/.."
 studio_dir=$(pwd)
-export STUDIO_COMPOSE_PROJECT=planning-studio-e2e
-export STUDIO_DB_PORT=54332
-export STUDIO_API_PORT=8011
-export STUDIO_WEB_PORT=5175
-export AUTH_MODE=mock
-export AI_MODE=mock
 mkdir -p .research
-STUDIO_REPOSITORY_HOST_ROOT=$(mktemp -d "$(pwd)/.research/e2e-repos.XXXXXX")
-export STUDIO_REPOSITORY_HOST_ROOT
-E2E_FIXTURE_REPO="search-${STUDIO_REPOSITORY_HOST_ROOT##*.}"
-export E2E_FIXTURE_REPO
-mkdir "$STUDIO_REPOSITORY_HOST_ROOT/$E2E_FIXTURE_REPO"
-fixture="$STUDIO_REPOSITORY_HOST_ROOT/$E2E_FIXTURE_REPO"
-git -C "$fixture" init -q
-printf '%s\n' 'export function fixtureSearch() { return "fixture result"; }' > "$fixture/search.ts"
-git -C "$fixture" add search.ts
-git -C "$fixture" -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm fixture
+run_dir=$(mktemp -d "$studio_dir/.research/e2e.XXXXXXXX")
+project="kosa-e2e-$(basename "$run_dir" | cut -d. -f2 | tr '[:upper:]' '[:lower:]')"
+STUDIO_REPOSITORY_HOST_ROOT="$run_dir/repositories"
+E2E_FIXTURE_REPO=search-fixture
+export STUDIO_REPOSITORY_HOST_ROOT E2E_FIXTURE_REPO
+compose() {
+  docker compose --project-directory "$studio_dir" --env-file "$studio_dir/.env.example" -p "$project" \
+    -f "$studio_dir/compose.yaml" -f "$studio_dir/infra/test.compose.yaml" \
+    -f "$studio_dir/infra/repositories.compose.yaml" "$@"
+}
+started=false
 cleanup() {
-  docker compose -f "$studio_dir/compose.yaml" -f "$studio_dir/infra/repositories.compose.yaml" down
-  rm -rf "$STUDIO_REPOSITORY_HOST_ROOT"
+  result=$?
+  trap - EXIT
+  if [ "$started" = true ]; then
+    if [ "$result" -ne 0 ]; then compose ps || true; fi
+    if ! compose down -v --rmi local; then
+      echo "Cleanup failed. Fixture retained at $run_dir" >&2
+      exit 1
+    fi
+  fi
+  if [ "$result" -ne 0 ] && [ -d "$run_dir/frontend/test-results" ]; then
+    echo "Playwright evidence retained at $run_dir/frontend/test-results" >&2
+  else
+    rm -rf "$run_dir"
+  fi
+  exit "$result"
 }
 trap cleanup EXIT
-docker compose -f compose.yaml -f infra/repositories.compose.yaml up --build -d db api worker web
-cd frontend
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+fixture="$STUDIO_REPOSITORY_HOST_ROOT/$E2E_FIXTURE_REPO"
+mkdir -p "$fixture" "$run_dir/frontend"
+git -C "$fixture" init -q
+printf '%s\n' 'export function fixtureSearch() { return "fixture result"; }' > "$fixture/search.ts"
+printf '%s\n' ':root { --brand-primary: #0c7a6b; --background: #ffffff; --surface: #f1f7f5; --text: #172033; } .sidebar { border-radius: 4px; gap: 12px; font-family: Arial, sans-serif; }' > "$fixture/theme.css"
+git -C "$fixture" add search.ts theme.css
+git -C "$fixture" -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm fixture
+
+# Per-run npm and Playwright outputs allow two checks from the same checkout.
+cp -R frontend/tests frontend/package.json frontend/package-lock.json frontend/playwright.config.ts "$run_dir/frontend/"
+cd "$run_dir/frontend"
 npm ci
-npx playwright install chromium
-E2E_BASE_URL=http://localhost:5175 npm run test:e2e
+if [ "${GITHUB_ACTIONS:-}" = true ]; then
+  npx playwright install --with-deps chromium
+else
+  npx playwright install chromium
+fi
+started=true
+compose up --build --detach --wait --wait-timeout 120 db api worker web
+endpoint=$(compose port web 80)
+export E2E_BASE_URL="http://$endpoint"
+printf 'E2E project %s at %s\n' "$project" "$E2E_BASE_URL"
+npm run test:e2e -- tests/studio.spec.ts tests/source-planning.spec.ts

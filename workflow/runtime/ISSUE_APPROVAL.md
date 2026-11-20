@@ -19,7 +19,7 @@ Issue 등록은 읽기 전용 요구사항 분석과 계획 댓글 작성까지�
 
 제품 `PRJ/`와 `workflow/specs/` 요구사항·아키텍처 문서는 수정하지 않았다. 수동 `run`/`publish` CLI 인자와 기본 모드를 유지한다.
 
-이후 브랜치명 변경 요청에 따라 `prj.json`의 `publishing.branch_template`을 `ai_feature/{date}/{approver}/{issue_title}`로 변경했다. 실행 시작일의 한국 시간 날짜, 실제 승인자의 GitHub login, 승인된 Issue 제목으로 브랜치명을 생성한다. 제목의 공백·Git에서 허용하지 않는 문자는 정리하며 한글은 유지한다. 수동 CLI 요청은 `manual_branch_template=ai/{project_id}/{run_id}`를 사용한다. Schema와 Validator도 이 두 규칙을 지원하도록 확장했으며 경로·검증·승인 정책은 유지한다. 상세 규칙은 `PUBLISHING.md`를 참고한다.
+`prj.json`과 `sandbox.json`의 `publishing.branch_template`은 `feature/ai/{date}/{approver}/{issue_title}`이다. 실행 시작일의 한국 시간 날짜, 실제 승인자의 GitHub login, 승인된 Issue 제목으로 브랜치명을 생성한다. 제목의 공백·Git에서 허용하지 않는 문자는 정리하며 한글은 유지한다. 수동 CLI 요청은 `manual_branch_template=ai/{project_id}/{run_id}`를 사용한다. Schema와 Validator도 이 두 규칙을 지원하도록 확장했으며 경로·검증·승인 정책은 유지한다. 상세 규칙은 `PUBLISHING.md`를 참고한다.
 
 ## 파일별 변경
 

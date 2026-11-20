@@ -72,7 +72,7 @@ def error_diagnostic(exc):
 
 def validation_failure_reason(validation):
     if validation.get("scope_status") == "failed":
-        return "path_violation"
+        return "sensitive_content" if validation.get("scope_failure_reason") == "sensitive_content" else "path_violation"
     for group in ("unit", "e2e"):
         for check in validation.get("tests", {}).get(group, []):
             status = check.get("status")

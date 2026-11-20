@@ -10,20 +10,22 @@ import {
   GitBranch,
   GitCompareArrows,
   History,
+  Home as HomeIcon,
+  Settings2,
   LayoutDashboard,
   LayoutTemplate,
   LoaderCircle,
   MessageSquare,
+  Menu,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
   Plus,
-  Search,
   ShieldCheck,
   Sparkles,
   X,
 } from "lucide-react";
-import { api, ApiError, download, setToken } from "./api";
+import { api, ApiError, download } from "./api";
 import type {
   Bundle,
   Health,
@@ -31,22 +33,30 @@ import type {
   Project,
   Revision,
   Snapshot,
-  Source,
-  SourcePreview,
-  SourceSelection,
+  BusinessSource as Source,
+  PlanningIntent,
   Tab,
 } from "./types";
 import Chat, { busyStatuses } from "./Chat";
 import Review from "./Review";
+import Login from "./Login";
+import AccountMenu from "./AccountMenu";
+import { useWorkspaceWidth } from "./WorkspaceDivider";
+import AdminNavigation from "./AdminNavigation";
+import UserManagement from "./UserManagement";
+import AssignmentSettings from "./AssignmentSettings";
+import { useAuth } from "./accounts/useAuth";
 import { Canvas, FeaturesView, Inspector, PrdDocument } from "./Documents";
 import Wireframes from "./Wireframes";
-import { CodePreview, ImplementationDocument, SourcePicker } from "./Sources";
+import { ImplementationDocument } from "./Sources";
+import BusinessHome, { Brand, Intake } from "./BusinessHome";
+import SourceSettings from "./SourceSettings";
 
 const tabs: { id: Tab; label: string; icon: typeof FileText }[] = [
-  { id: "prd", label: "PRD", icon: FileText },
-  { id: "features", label: "기능명세서", icon: LayoutDashboard },
-  { id: "flow", label: "유저플로우", icon: GitBranch },
-  { id: "wireframes", label: "와이어프레임", icon: LayoutTemplate },
+  { id: "prd", label: "기획 내용", icon: FileText },
+  { id: "features", label: "기능 상세", icon: LayoutDashboard },
+  { id: "flow", label: "업무 흐름", icon: GitBranch },
+  { id: "wireframes", label: "화면 시안", icon: LayoutTemplate },
 ];
 function hasArtifact(snapshot: Snapshot, tab: Tab) {
   const content = {
@@ -59,296 +69,43 @@ function hasArtifact(snapshot: Snapshot, tab: Tab) {
   return Boolean(content[tab]);
 }
 const panels: { id: Panel; label: string; icon: typeof FileText }[] = [
-  { id: "chat", label: "채팅", icon: MessageSquare },
-  { id: "review", label: "검토", icon: GitCompareArrows },
-  { id: "documents", label: "문서", icon: FolderOpen },
-  { id: "versions", label: "버전", icon: History },
-];
-const examples = [
-  {
-    title: "팀 일정 관리",
-    tag: "업무 도구",
-    idea: "작은 팀이 프로젝트 일정과 할 일을 함께 관리하는 웹 서비스. 담당자와 마감일을 지정하고 진행 상태를 한눈에 확인하고 싶어요.",
-    icon: LayoutDashboard,
-  },
-  {
-    title: "동네 취미 모임",
-    tag: "커뮤니티",
-    idea: "동네에서 같은 취미를 가진 사람들이 소규모 모임을 만들고 참여하는 모바일 앱을 기획해줘.",
-    icon: MessageSquare,
-  },
-  {
-    title: "나만의 독서 기록",
-    tag: "라이프스타일",
-    idea: "읽은 책과 인상 깊은 문장을 기록하고 나의 독서 습관을 돌아보는 모바일 앱을 만들고 싶어요.",
-    icon: FileText,
-  },
+  { id: "chat", label: "업무 대화", icon: MessageSquare },
+  { id: "review", label: "내용 확인", icon: GitCompareArrows },
+  { id: "documents", label: "자료", icon: FolderOpen },
+  { id: "versions", label: "기록", icon: History },
 ];
 const projectFromURL = () =>
   new URLSearchParams(window.location.search).get("project");
-const relativeTime = (date: string) => {
-  const mins = Math.floor((Date.now() - new Date(date).getTime()) / 60000);
-  return mins < 1
-    ? "방금 전"
-    : mins < 60
-      ? `${mins}분 전`
-      : mins < 1440
-        ? `${Math.floor(mins / 60)}시간 전`
-        : new Date(date).toLocaleDateString("ko-KR");
-};
-
+const pageFromURL = () =>
+  new URLSearchParams(window.location.search).get("view") || "home";
 function Logo({ compact = false }: { compact?: boolean }) {
-  return (
-    <div className={`logo ${compact ? "compact" : ""}`}>
-      <span className="logo-mark">
-        <i />
-        <i />
-        <i />
-      </span>
-      {!compact && (
-        <>
-          <strong>기획실</strong>
-          <small>STUDIO</small>
-        </>
-      )}
-    </div>
-  );
-}
-
-function Home({
-  projects,
-  health,
-  onOpen,
-  onCreate,
-  working,
-  onError,
-}: {
-  projects: Project[];
-  health: Health;
-  onOpen: (id: string) => void;
-  onCreate: (idea: string, source?: SourceSelection) => void;
-  onError: (error: unknown) => void;
-  working: boolean;
-}) {
-  const params = new URLSearchParams(window.location.search);
-  const [sourceId, setSourceId] = useState(params.get("source") || "");
-  const [forkId, setForkId] = useState(params.get("from") || "");
-  const origin = projects.find((p) => p.id === forkId && p.source_id === sourceId);
-  const [idea, setIdea] = useState(origin?.idea || "");
-  const [search, setSearch] = useState("");
-  useEffect(() => {
-    if (origin) setIdea((current) => current || origin.idea);
-  }, [origin]);
-  const [sources, setSources] = useState<Source[]>([]);
-  const [preview, setPreview] = useState<SourcePreview | null>(null);
-  const [previewing, setPreviewing] = useState(false);
-  const selectedSource = sources.find((source) => source.id === sourceId);
-  const ready = selectedSource?.status === "ready" && !selectedSource.last_error
-    && selectedSource.current_snapshot_id !== origin?.code_snapshot_id;
-  const shownProjects = projects.filter((p) => (p.source_id || "") === sourceId);
-  const refreshSources = useCallback(async () => setSources(await api<Source[]>("/api/sources")), []);
-  useEffect(() => { refreshSources().catch(onError); }, [refreshSources, onError]);
-  const analyzing = sources.some((source) => source.status === "queued" || source.status === "running");
-  useEffect(() => {
-    if (!analyzing) return;
-    const timer = setInterval(() => refreshSources().catch(onError), 1400);
-    return () => clearInterval(timer);
-  }, [analyzing, refreshSources, onError]);
-  const changeSource = (id: string) => {
-    setSourceId(id);
-    setForkId("");
-    setPreview(null);
-    window.history.replaceState({}, "", id ? `/?source=${encodeURIComponent(id)}` : "/");
-  };
-  const start = async () => {
-    if (!sourceId) return onCreate(idea.trim());
-    if (!ready || !selectedSource.current_snapshot_id || previewing) return;
-    setPreviewing(true);
-    try {
-      setPreview(await api<SourcePreview>(
-        `/api/sources/${sourceId}/snapshots/${selectedSource.current_snapshot_id}/preview`,
-        { idea: idea.trim() },
-      ));
-    } catch (error) {
-      onError(error);
-    } finally {
-      setPreviewing(false);
-    }
-  };
-  const shownPreview = preview?.context.source_id === sourceId &&
-    preview.context.snapshot_id === selectedSource?.current_snapshot_id ? preview : null;
-  return (
-    <div className="home">
-      <header className="home-header">
-        <Logo />
-        <div className="home-header-right">
-          <span className="environment-tag">
-            <span className="status-dot" />
-            {health.ai_mode === "mock" ? "로컬 데모" : "AI 연결됨"}
-          </span>
-          <span className="avatar">나</span>
-        </div>
-      </header>
-      <main className="home-main">
-        <div className="home-hero">
-          <span className="hero-badge">
-            <Sparkles size={13} /> 생각의 다음 단계를 함께
-          </span>
-          <h1>
-            어떤 제품을
-            <br />
-            <span>만들고 싶으세요?</span>
-          </h1>
-          <p>
-            아이디어 하나에서 시작해 보세요.
-            <br />
-            PRD부터 화면 설계까지, 기획 파트너가 함께할게요.
-          </p>
-        </div>
-        <div className="planning-composer">
-          <SourcePicker sources={sources} selected={selectedSource} onSelect={changeSource} refresh={refreshSources} onError={onError} />
-          {origin && <p className="source-fork">이전 기획에서 분기 · {origin.title}</p>}
-          <form
-            className="idea-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (idea.trim().length >= 3) void start();
-            }}
-          >
-            <textarea
-              aria-label="만들고 싶은 제품 아이디어"
-              value={idea}
-              onChange={(e) => { setIdea(e.target.value); setPreview(null); }}
-              disabled={previewing || working}
-              placeholder={sourceId ? "기준 프로젝트에 추가하거나 개선할 기능을 입력하세요" : "예: 우리 팀의 일정과 할 일을 한눈에 관리하는 서비스를 만들고 싶어"}
-              maxLength={8000}
-            />
-            <div>
-              <span>
-                <Sparkles size={14} /> 아이디어를 구체적으로 적을수록 좋아요
-              </span>
-              <button
-                className="primary"
-                disabled={working || previewing || idea.trim().length < 3 || (!!sourceId && !ready)}
-              >
-                {working ? (
-                  <LoaderCircle size={16} className="spin" />
-                ) : (
-                  <ArrowUpRightIcon />
-                )}{" "}
-                {sourceId ? "코드 범위 확인" : "기획 시작하기"}
-              </button>
-            </div>
-          </form>
-        </div>
-        {shownPreview && <CodePreview preview={shownPreview} working={working || !ready} onConfirm={() =>
-          onCreate(idea.trim(), { source_id: sourceId, code_snapshot_id: shownPreview.context.snapshot_id,
-            ...(origin ? { forked_from: origin.id } : {}), code_consent: shownPreview.fingerprint })
-        } />}
-        {!sourceId && <>
-        <div className="example-label">이런 아이디어로 시작해 볼까요?</div>
-        <div className="examples">
-          {examples.map(({ title, tag, idea: sample, icon: Icon }) => (
-            <button
-              className="example-card"
-              key={title}
-              onClick={() => setIdea(sample)}
-            >
-              <span className="example-icon">
-                <Icon size={18} />
-              </span>
-              <div>
-                <small>{tag}</small>
-                <strong>{title}</strong>
-              </div>
-              <ArrowRight size={16} />
-            </button>
-          ))}
-        </div>
-        </>}
-        <section className="projects-section">
-          <div className="projects-heading">
-            <h2>
-              {selectedSource ? `${selectedSource.name} 기획 작업` : "나의 프로젝트"} <span>{shownProjects.length}</span>
-            </h2>
-            <div className="search-field">
-              <Search size={14} />
-              <input
-                aria-label="프로젝트 검색"
-                placeholder="프로젝트 검색"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-          </div>
-          {shownProjects.length ? (
-            <div className="project-grid">
-              {shownProjects
-                .filter((p) =>
-                  p.title.toLowerCase().includes(search.toLowerCase()),
-                )
-                .map((p) => (
-                  <button
-                    className="project-card"
-                    key={p.id}
-                    onClick={() => onOpen(p.id)}
-                  >
-                    <div className="project-card-top">
-                      <span className="project-icon">
-                        <FileText size={20} />
-                      </span>
-                      <ChevronRight size={16} />
-                    </div>
-                    <h3>{p.title}</h3>
-                    <p>{p.idea}</p>
-                    <div>
-                      <span className="version-tag">
-                        {p.current_version
-                          ? `확정 v${p.current_version}`
-                          : "작성 중"}
-                      </span>
-                      <small>{relativeTime(p.updated_at)}</small>
-                    </div>
-                  </button>
-                ))}
-            </div>
-          ) : (
-            <div className="empty-projects">
-              <FolderOpen size={23} />
-              <p>아직 시작한 프로젝트가 없어요.</p>
-              <span>위에 아이디어를 적고 첫 기획을 만들어 보세요.</span>
-            </div>
-          )}
-        </section>
-      </main>
-      <footer className="home-footer">
-        <span>기획실 STUDIO</span>
-        <span>아이디어와 구현 사이, 더 명확한 기획.</span>
-        {health.auth_mode === "mock" && (
-          <span>로컬 인증 · 운영 환경 사용 금지</span>
-        )}
-      </footer>
-    </div>
-  );
-}
-
-function ArrowUpRightIcon() {
-  return <ArrowRight size={16} />;
+  return compact ? <HomeIcon size={23} /> : <Brand />;
 }
 
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
-  const [authed, setAuthed] = useState(false);
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
+  const {
+    identity,
+    authed,
+    ready: authReady,
+    notice: authNotice,
+    login,
+    logout,
+    allowed,
+  } = useAuth(health?.auth_mode);
+  const [adminNavOpen, setAdminNavOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [page, setPage] = useState(pageFromURL);
+  const [mobileView, setMobileView] = useState<"chat" | "artifacts">("chat");
   const [projectId, setProjectId] = useState<string | null>(projectFromURL);
   const idRef = useRef(projectId);
   idRef.current = projectId;
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [tab, setTab] = useState<Tab>("prd");
   const [panel, setPanel] = useState<Panel>("chat");
+  const [reviewVisit, setReviewVisit] = useState(0);
   const [sideOpen, setSideOpen] = useState(true);
+  const workspaceWidth = useWorkspaceWidth();
   const [candidate, setCandidate] = useState(true);
   const [historical, setHistorical] = useState<Revision | null>(null);
   const historyRequest = useRef(0);
@@ -358,14 +115,16 @@ export default function App() {
   const [error, setError] = useState("");
   const [exportMenu, setExportMenu] = useState(false);
   const [title, setTitle] = useState("");
-  const [checkedSource, setCheckedSource] = useState<{ projectId: string; commit_sha?: string; error?: string } | null>(null);
   const proposalRef = useRef<string | null>(null);
   const generationRequest = useRef(0);
+  const logoutRef = useRef(logout);
+  logoutRef.current = logout;
   const handleError = useCallback((e: unknown) => {
     if (e instanceof DOMException && e.name === "AbortError") return;
     if (e instanceof ApiError && e.status === 401) {
-      setToken("");
-      setAuthed(false);
+      void logoutRef.current();
+      setProjects([]);
+      setBundle(null);
     }
     setError(e instanceof Error ? e.message : "작업을 완료하지 못했습니다.");
   }, []);
@@ -375,8 +134,10 @@ export default function App() {
     setError("");
     try {
       await fn();
+      return true;
     } catch (e) {
       handleError(e);
+      return false;
     } finally {
       setWorking(false);
     }
@@ -386,18 +147,15 @@ export default function App() {
     api<Health>("/health", undefined, undefined, controller.signal)
       .then((h) => {
         setHealth(h);
-        if (h.auth_mode === "mock") {
-          setToken("local:demo-user");
-          setAuthed(true);
-        } else setAuthed(!!sessionStorage.getItem("studio-token"));
       })
       .catch(handleError);
     return () => controller.abort();
   }, [handleError]);
-  const refreshProjects = useCallback(
-    async () => setProjects(await api<Project[]>("/api/projects")),
-    [],
-  );
+  const refreshProjects = useCallback(async () => {
+    const request = generationRequest.current;
+    const data = await api<Project[]>("/api/projects");
+    if (request === generationRequest.current) setProjects(data);
+  }, []);
   const refresh = useCallback(async () => {
     const id = idRef.current;
     if (!id) return;
@@ -413,8 +171,24 @@ export default function App() {
     }
   }, []);
   useEffect(() => {
-    if (authed) refreshProjects().catch(handleError);
-  }, [authed, refreshProjects, handleError]);
+    if (authed && allowed("plans.read")) refreshProjects().catch(handleError);
+    if (!authed) {
+      generationRequest.current++;
+      historyRequest.current++;
+      setProjects([]);
+      setBundle(null);
+      setEdit(null);
+      setHistorical(null);
+      setSelected(null);
+      setAdminNavOpen(false);
+    }
+  }, [
+    authed,
+    identity?.account.id,
+    identity?.policy,
+    refreshProjects,
+    handleError,
+  ]);
   useEffect(() => {
     setBundle(null);
     setHistorical(null);
@@ -423,8 +197,13 @@ export default function App() {
     setCandidate(true);
     proposalRef.current = null;
     historyRequest.current++;
-    if (projectId && authed) refresh().catch(handleError);
-  }, [projectId, authed, refresh, handleError]);
+    if (projectId && authed && allowed("plans.read"))
+      refresh().catch(handleError);
+  }, [projectId, authed, identity?.account.id, refresh, handleError]);
+  useEffect(() => {
+    if (!authed || !projectId || !allowed("plans.read")) return;
+    void refresh().catch(handleError);
+  }, [authed, projectId, identity?.policy, refresh, handleError]);
   const busy = !!bundle?.job && busyStatuses.includes(bundle.job.status);
   useEffect(() => {
     if (
@@ -440,6 +219,7 @@ export default function App() {
   useEffect(() => {
     const back = () => {
       setProjectId(projectFromURL());
+      setPage(pageFromURL());
       setTab("prd");
     };
     window.addEventListener("popstate", back);
@@ -447,22 +227,77 @@ export default function App() {
   }, []);
   const navigate = (id: string | null, origin?: Project) => {
     const source = origin?.source_id;
-    window.history.pushState({}, "", id ? `/?project=${id}`
-      : source ? `/?source=${source}&from=${origin.id}` : "/");
+    window.history.pushState(
+      {},
+      "",
+      id
+        ? `/?project=${id}`
+        : source
+          ? `/?source=${source}&from=${origin.id}`
+          : "/",
+    );
     idRef.current = id;
     setProjectId(id);
+    setPage("home");
+    setMobileView("chat");
     setTab("prd");
     setPanel("chat");
     setSideOpen(true);
     setError("");
     if (!id) refreshProjects().catch(handleError);
   };
-  const create = (idea: string, source?: SourceSelection) =>
+  const openPage = (next: string, source?: Source, intent?: PlanningIntent) => {
+    window.history.pushState(
+      {},
+      "",
+      next === "home"
+        ? "/"
+        : `/?view=${next}${source ? `&source=${source.id}&intent=${intent || "improve"}` : ""}`,
+    );
+    idRef.current = null;
+    setProjectId(null);
+    setPage(next);
+    setError("");
+    if (next === "home") refreshProjects().catch(handleError);
+  };
+  useEffect(() => {
+    if (!authed || !health) return;
+    const needed =
+      page === "accounts"
+        ? "accounts.manage"
+        : page === "permissions"
+          ? "roles.manage"
+          : page === "audit"
+            ? "audit.read"
+            : page === "assignments"
+              ? "sources.assign"
+              : page === "settings"
+                ? "sources.manage"
+                : page === "intake"
+                  ? "plans.create"
+                  : projectId
+                    ? "plans.read"
+                    : null;
+    if (needed && !allowed(needed)) {
+      window.history.replaceState({}, "", "/");
+      idRef.current = null;
+      setProjectId(null);
+      setPage("home");
+      setBundle(null);
+      setEdit(null);
+      setError("이 화면을 사용할 권한이 없어 업무 홈으로 이동했습니다.");
+    }
+  }, [authed, health, page, projectId, identity]);
+  const create = (idea: string, source: Source, intent: PlanningIntent) =>
     run(async () => {
       const p = await api<Project>("/api/projects", {
         id: crypto.randomUUID(),
         idea,
-        ...source,
+        source_id: source.id,
+        code_snapshot_id: source.published_snapshot_id,
+        source_publication_id: source.publication_id,
+        start_mode: "conversation",
+        planning_intent: intent,
       });
       await refreshProjects();
       navigate(p.id);
@@ -486,35 +321,86 @@ export default function App() {
       ? bundle.proposal.candidate
       : bundle?.revision.snapshot);
   const basis = snapshot?.source_context;
-  const visibleTabs = basis ? [...tabs, { id: "implementation" as const, label: "구현 지침", icon: FileText }] : tabs;
-  const comparison = checkedSource?.projectId === projectId ? checkedSource : null;
+  const visibleTabs = tabs;
   const isPast =
     !!historical && historical.version !== bundle?.project.current_version;
   const visibleVersion =
     historical?.version ?? bundle?.project.current_version ?? 0;
   const viewIsCandidate = !!bundle?.proposal && candidate && !historical;
-  const hasAnyArtifact = snapshot && visibleTabs.some(({ id }) => hasArtifact(snapshot, id));
-  const openDraft = (review = false) => {
+  const hasAnyArtifact =
+    snapshot && visibleTabs.some(({ id }) => hasArtifact(snapshot, id));
+  const showReviewGuide = () => {
+    setReviewVisit((value) => value + 1);
+    setPanel("review");
+    setSideOpen(true);
+    setMobileView("chat");
+  };
+  const openReview = () => {
+    if (edit) return;
+    historyRequest.current++;
+    setHistorical(null);
+    setCandidate(!!bundle?.proposal);
+    setSelected(null);
+    setTab("prd");
+    showReviewGuide();
+  };
+  const openDraft = () => {
     const draft = bundle?.proposal?.candidate;
     if (!draft || edit) return;
     historyRequest.current++;
     setHistorical(null);
     setCandidate(true);
     const firstAvailable = visibleTabs.find(({ id }) => hasArtifact(draft, id));
-    if (!hasArtifact(draft, tab) && firstAvailable) changeTab(firstAvailable.id);
-    if (review || !firstAvailable) {
-      setPanel("review");
-      setSideOpen(true);
-    }
+    if (!hasArtifact(draft, tab) && firstAvailable)
+      changeTab(firstAvailable.id);
+    if (!firstAvailable) openReview();
+  };
+  const viewReviewDocument = (next: Tab, id?: string) => {
+    if (edit) return;
+    historyRequest.current++;
+    setHistorical(null);
+    setCandidate(!!bundle?.proposal);
+    setTab(next);
+    setSelected(id || null);
+    setMobileView("artifacts");
+  };
+  const discussReviewItem = (id?: string) => {
+    if (edit || busy || working) return;
+    historyRequest.current++;
+    setHistorical(null);
+    setCandidate(!!bundle?.proposal);
+    setSelected(id || null);
+    setPanel("chat");
+    setSideOpen(true);
+    setMobileView("chat");
   };
   const select = (id: string) => {
     setSelected(id || null);
   };
   useEffect(() => {
-    if (panel === "review" && (tab === "prd" || tab === "implementation") && selected) {
-      document.getElementById(selected)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (
+      basis?.source_id &&
+      bundle?.source_access?.can_manage &&
+      allowed("sources.manage")
+    )
+      void api(`/api/sources/${basis.source_id}/check`, {}).catch(handleError);
+  }, [
+    basis?.source_id,
+    bundle?.source_access?.can_manage,
+    identity?.policy,
+    handleError,
+  ]);
+  useEffect(() => {
+    if (
+      panel === "review" &&
+      ["prd", "features", "implementation"].includes(tab) &&
+      selected
+    ) {
+      document
+        .getElementById(selected)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, [panel, tab, selected]);
+  }, [panel, tab, selected, snapshot, mobileView]);
   const selectedItem =
     selected && snapshot
       ? [
@@ -537,17 +423,37 @@ export default function App() {
       });
       await refresh();
     });
-  const send = (request: string) =>
-    run(async () => {
+  const send = async (request: string) =>
+    !!(await run(async () => {
       if (!bundle) return;
       await api(`/api/projects/${projectId}/jobs`, {
         id: crypto.randomUUID(),
         base_version: bundle.project.current_version,
+        kind: "discuss",
         request,
-        target_id: selected,
+        target_id: selectedItem?.id || null,
+        base_proposal_id: bundle.proposal?.id || null,
       });
-      setCandidate(false);
-      setHistorical(null);
+      await refresh();
+    }));
+  const writeDraft = (repair = false) =>
+    run(async () => {
+      if (!bundle) return;
+      const hasDraft = !!bundle.proposal || bundle.project.current_version > 0;
+      const request = repair
+        ? "지적된 연결 오류만 정리해 주세요."
+        : bundle.messages.filter((message) => message.role === "user").at(-1)
+            ?.content || bundle.project.idea;
+      await api(`/api/projects/${projectId}/jobs`, {
+        id: crypto.randomUUID(),
+        base_version: bundle.project.current_version,
+        kind: repair ? "repair" : hasDraft ? "revise" : "generate",
+        request,
+        target_id: repair ? null : selectedItem?.id || null,
+        base_proposal_id: bundle.proposal?.id || null,
+      });
+      setPanel("chat");
+      setSideOpen(true);
       await refresh();
     });
   const decide = (decision: "approve" | "reject", ack: boolean) =>
@@ -563,6 +469,7 @@ export default function App() {
       setCandidate(false);
       setHistorical(null);
       setEdit(null);
+      setSelected(null);
       await refresh();
       await refreshProjects();
     });
@@ -572,11 +479,13 @@ export default function App() {
       await api(`/api/projects/${projectId}/proposals`, {
         base_version: bundle.project.current_version,
         snapshot: edit,
+        base_proposal_id: viewIsCandidate ? bundle.proposal?.id : null,
         summary: "문서와 화면 직접 편집",
       });
       setEdit(null);
-      setPanel("review");
-      setSideOpen(true);
+      setSelected(null);
+      setTab("prd");
+      showReviewGuide();
       await refresh();
     });
   const past = (version: number) =>
@@ -599,7 +508,7 @@ export default function App() {
       );
       setExportMenu(false);
     });
-  if (!health)
+  if (!health || !authReady)
     return (
       <div className="boot-screen">
         <Logo />
@@ -619,55 +528,50 @@ export default function App() {
     );
   if (!authed)
     return (
-      <div className="login-screen">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            run(async () => {
-              const result = await api<{ access_token: string }>(
-                "/api/auth/login",
-                { email: loginEmail, password: loginPassword },
-              );
-              setToken(result.access_token);
-              setLoginPassword("");
-              setAuthed(true);
-            });
-          }}
-        >
-          <Logo />
-          <h1>생각을 이어갈 시간이에요.</h1>
-          <p>등록된 계정으로 로그인해 주세요.</p>
-          <label>
-            이메일
-            <input
-              type="email"
-              required
-              value={loginEmail}
-              onChange={(e) => setLoginEmail(e.target.value)}
-            />
-          </label>
-          <label>
-            비밀번호
-            <input
-              type="password"
-              required
-              value={loginPassword}
-              onChange={(e) => setLoginPassword(e.target.value)}
-            />
-          </label>
-          {error && (
-            <p role="alert" className="danger-text">
-              {error}
-            </p>
-          )}
-          <button className="primary" disabled={working}>
-            로그인 <ArrowRight size={16} />
-          </button>
-        </form>
-      </div>
+      <Login
+        mock={health.auth_mode === "mock"}
+        notice={error || authNotice}
+        onLogin={async (identifier, password) => {
+          setError("");
+          await login(identifier, password);
+        }}
+      />
     );
+  const accountMenu = (
+    <AccountMenu
+      name={identity?.account.loginId || "내 계정"}
+      displayName={identity?.account.name}
+      role={identity?.account.role}
+      onLogout={() => {
+        void logout().then(() => window.location.replace("/"));
+      }}
+    />
+  );
+  const navigation =
+    allowed("accounts.manage") && health.auth_mode === "mock" ? (
+      <button
+        className="admin-navigation-toggle"
+        aria-label="관리자 메뉴 열기"
+        aria-expanded={adminNavOpen}
+        onClick={() => setAdminNavOpen(true)}
+      >
+        <Menu size={22} />
+      </button>
+    ) : null;
+  const editable =
+    allowed("plans.edit") && bundle?.source_access?.can_use !== false;
   return (
     <>
+      {adminNavOpen && navigation && (
+        <AdminNavigation
+          page={page}
+          onClose={() => setAdminNavOpen(false)}
+          onNavigate={(next) => {
+            setAdminNavOpen(false);
+            openPage(next);
+          }}
+        />
+      )}
       {error && (
         <div className="error-toast" role="alert">
           <span>{error}</span>
@@ -677,14 +581,64 @@ export default function App() {
         </div>
       )}
       {!projectId ? (
-        <Home
-          projects={projects}
-          health={health}
-          onOpen={navigate}
-          onError={handleError}
-          onCreate={create}
-          working={working}
-        />
+        ["accounts", "permissions", "audit"].includes(page) &&
+        identity &&
+        allowed("accounts.manage") ? (
+          <UserManagement
+            page={page}
+            identity={identity}
+            navigation={navigation}
+            accountMenu={accountMenu}
+            onHome={() => openPage("home")}
+            onError={handleError}
+          />
+        ) : page === "assignments" && allowed("sources.assign") ? (
+          <AssignmentSettings
+            navigation={navigation}
+            accountMenu={accountMenu}
+            onHome={() => openPage("home")}
+            onError={handleError}
+          />
+        ) : page === "settings" && allowed("sources.manage") ? (
+          <SourceSettings
+            onAssignments={
+              health.auth_mode === "mock" && allowed("sources.assign")
+                ? () => openPage("assignments")
+                : undefined
+            }
+            navigation={navigation}
+            accountMenu={accountMenu}
+            onHome={() => openPage("home")}
+            onError={handleError}
+          />
+        ) : page === "intake" && allowed("plans.create") ? (
+          <Intake
+            navigation={navigation}
+            accountMenu={accountMenu}
+            health={health}
+            onHome={() => openPage("home")}
+            onCreate={create}
+            onError={handleError}
+            working={working}
+          />
+        ) : (
+          <BusinessHome
+            navigation={navigation}
+            accountMenu={accountMenu}
+            canCreate={allowed("plans.create")}
+            canManage={allowed("sources.manage")}
+            canAssign={health.auth_mode === "mock" && allowed("sources.assign")}
+            canRead={allowed("plans.read")}
+            projects={projects}
+            health={health}
+            onOpen={navigate}
+            onStart={(source, intent) => openPage("intake", source, intent)}
+            onSettings={() =>
+              openPage(allowed("sources.manage") ? "settings" : "assignments")
+            }
+            onError={handleError}
+          />
+        )
       ) : !bundle || !snapshot ? (
         <div className="boot-screen">
           <Logo />
@@ -694,8 +648,55 @@ export default function App() {
           </button>
         </div>
       ) : (
-        <div className="studio">
+        <div
+          className="studio"
+          data-mobile-view={mobileView}
+          data-resizing={workspaceWidth.resizing}
+          style={workspaceWidth.style}
+        >
+          <div className="mobile-switch">
+            {navigation}
+            <button aria-label="업무 선택" onClick={() => navigate(null)}>
+              <HomeIcon size={20} />
+            </button>
+            <strong>{title}</strong>
+            <button
+              className={mobileView === "chat" ? "active" : ""}
+              onClick={() => {
+                setMobileView("chat");
+                setSideOpen(true);
+              }}
+            >
+              대화
+            </button>
+            <button
+              className={mobileView === "artifacts" ? "active" : ""}
+              onClick={() => setMobileView("artifacts")}
+            >
+              산출물
+            </button>
+            <select
+              aria-label="기획 도구"
+              value={panel}
+              onChange={(e) => {
+                if (e.target.value === "review") openReview();
+                else {
+                  setPanel(e.target.value as Panel);
+                  setSideOpen(true);
+                  setMobileView("chat");
+                }
+              }}
+            >
+              {panels.map((item) => (
+                <option value={item.id} key={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            {accountMenu}
+          </div>
           <nav className="rail" aria-label="작업 도구">
+            {navigation}
             <button
               className="rail-logo"
               aria-label="프로젝트 목록"
@@ -709,8 +710,11 @@ export default function App() {
                   className={panel === id && sideOpen ? "active" : ""}
                   key={id}
                   onClick={() => {
-                    setPanel(id);
-                    setSideOpen(panel !== id || !sideOpen);
+                    if (id === "review") openReview();
+                    else {
+                      setPanel(id);
+                      setSideOpen(panel !== id || !sideOpen);
+                    }
                   }}
                   title={label}
                   aria-label={label}
@@ -736,15 +740,29 @@ export default function App() {
                 className="avatar"
                 title={health.auth_mode === "mock" ? "로컬 사용자" : "로그인됨"}
               >
-                나
+                {health.auth_mode === "mock" ? "A" : "나"}
               </div>
             </div>
           </nav>
           {sideOpen && (
             <aside className="side-panel">
+              {bundle.source_access?.can_use === false && (
+                <p className="access-notice">
+                  업무 배정이 해제되어 새 대화와 생성을 진행할 수 없습니다. 기존
+                  문서 조회와 확인본 내보내기는 가능합니다.
+                </p>
+              )}
+              {!allowed("plans.edit") && (
+                <p className="access-notice">
+                  기획 수정 권한이 없습니다. 관리자에게 문의해 주세요.
+                </p>
+              )}
               {panel === "chat" ? (
                 <Chat
+                  key={bundle.project.id}
                   bundle={bundle}
+                  onGenerate={() => void writeDraft()}
+                  disabled={!!edit || isPast || !editable}
                   health={health}
                   selected={selectedItem || null}
                   onClear={() => setSelected(null)}
@@ -759,15 +777,17 @@ export default function App() {
                       await refresh();
                     })
                   }
-                  onReview={() => openDraft(true)}
+                  onReview={openReview}
                   onRetry={() =>
                     run(async () => {
                       await api(`/api/projects/${projectId}/jobs`, {
                         id: crypto.randomUUID(),
                         base_version: bundle.project.current_version,
-                        kind: bundle.project.current_version
-                          ? "revise"
-                          : "generate",
+                        kind: bundle.job?.kind || "discuss",
+                        base_proposal_id: bundle.job?.base_proposal_id || null,
+                        target_id:
+                          (bundle.job?.partial?.target_id as string | null) ||
+                          null,
                         request: bundle.job?.request || bundle.project.idea,
                       });
                       await refresh();
@@ -777,22 +797,54 @@ export default function App() {
                 />
               ) : panel === "review" ? (
                 <Review
+                  visit={reviewVisit}
                   proposal={bundle.proposal}
+                  confirmed={bundle.revision.snapshot}
+                  currentVersion={bundle.project.current_version}
+                  onView={viewReviewDocument}
+                  onDiscuss={discussReviewItem}
+                  onRepair={() => void writeDraft(true)}
+                  busy={busy}
                   projectId={bundle.project.id}
                   proposalId={viewIsCandidate ? bundle.proposal!.id : null}
-                  version={viewIsCandidate ? bundle.proposal!.base_version : visibleVersion}
+                  version={
+                    viewIsCandidate
+                      ? bundle.proposal!.base_version
+                      : visibleVersion
+                  }
                   disabled={!!edit}
+                  canEdit={editable}
+                  canConfirm={allowed("plans.confirm")}
                   onLocate={(id) => {
-                    if (!snapshot) return;
-                    if (snapshot.prd.sections.some((s) => s.id === id)) setTab("prd");
-                    else if ([...snapshot.features, ...snapshot.requirements].some((s) => s.id === id)) setTab("features");
-                    else if (snapshot.screens.some((s) => s.id === id || s.blocks.some((b) => b.id === id))) setTab("wireframes");
-                    else if (id === "source-implementation" ||
-                      snapshot.source_context?.evidence.some((item) => item.id === id) ||
-                      snapshot.implementation?.tasks.some((item) => item.id === id) ||
-                      snapshot.implementation?.acceptance.some((item) => item.id === id)) setTab("implementation");
-                    else setTab("flow");
-                    setSelected(id);
+                    const current =
+                      bundle.proposal?.candidate || bundle.revision.snapshot;
+                    const next: Tab = current.prd.sections.some(
+                      (x) => x.id === id,
+                    )
+                      ? "prd"
+                      : [...current.features, ...current.requirements].some(
+                            (x) => x.id === id,
+                          )
+                        ? "features"
+                        : current.screens.some(
+                              (x) =>
+                                x.id === id ||
+                                x.blocks.some((b) => b.id === id),
+                            )
+                          ? "wireframes"
+                          : id === "source-implementation" ||
+                              current.source_context?.evidence.some(
+                                (x) => x.id === id,
+                              ) ||
+                              current.implementation?.tasks.some(
+                                (x) => x.id === id,
+                              ) ||
+                              current.implementation?.acceptance.some(
+                                (x) => x.id === id,
+                              )
+                            ? "implementation"
+                            : "flow";
+                    viewReviewDocument(next, id);
                   }}
                   onDecide={decide}
                   working={working}
@@ -802,15 +854,15 @@ export default function App() {
                   <div className="panel-heading">
                     <div>
                       <History size={17} />
-                      <strong>버전 기록</strong>
+                      <strong>확인본 기록</strong>
                     </div>
                     <span className="count-pill">
                       {bundle.revisions.length}
                     </span>
                   </div>
                   <div className="versions-list">
-                    <p>확정된 기획은 버전마다 보관됩니다.</p>
-                    {basis && <p>코드 기준 <code>{basis.commit_sha}</code></p>}
+                    <p>내용을 확인해 저장한 기획은 버전마다 보관됩니다.</p>
+
                     {bundle.revisions.map((rev) => (
                       <button
                         key={rev.version}
@@ -825,7 +877,7 @@ export default function App() {
                         <div className="version-line">
                           <strong>v{rev.version}</strong>
                           {rev.version === bundle.project.current_version && (
-                            <span className="version-tag">현재 확정본</span>
+                            <span className="version-tag">현재 확인본</span>
                           )}
                         </div>
                         <span>{rev.summary}</span>
@@ -841,7 +893,7 @@ export default function App() {
                   <div className="panel-heading">
                     <div>
                       <FolderOpen size={17} />
-                      <strong>문서 탐색</strong>
+                      <strong>기획 자료</strong>
                     </div>
                   </div>
                   <div className="document-nav">
@@ -856,7 +908,15 @@ export default function App() {
                         <ChevronRight size={14} />
                       </button>
                     ))}
-                    <div className="eyebrow">PRD 항목</div>
+                    {basis && (
+                      <button onClick={() => changeTab("implementation")}>
+                        <Settings2 size={16} /> IT 전달자료
+                      </button>
+                    )}
+                    <button onClick={() => openPage("settings")}>
+                      <Settings2 size={16} /> 업무 연결 설정
+                    </button>
+                    <div className="eyebrow">기획 내용</div>
                     {snapshot.prd.sections.map((s) => (
                       <button
                         key={s.id}
@@ -865,12 +925,10 @@ export default function App() {
                           setSelected(s.id);
                           setTimeout(
                             () =>
-                              document
-                                .getElementById(s.id)
-                                ?.scrollIntoView({
-                                  behavior: "smooth",
-                                  block: "center",
-                                }),
+                              document.getElementById(s.id)?.scrollIntoView({
+                                behavior: "smooth",
+                                block: "center",
+                              }),
                             60,
                           );
                         }}
@@ -884,6 +942,7 @@ export default function App() {
               )}
             </aside>
           )}
+          {sideOpen && workspaceWidth.divider}
           <main className="workspace">
             <header className="workspace-header">
               <button
@@ -922,24 +981,14 @@ export default function App() {
                 <span className="status-dot" />
                 {busy ? "생성 중" : "저장됨"}
               </div>
-              <span className="avatar small-avatar">나</span>
+              {accountMenu}
             </header>
             {basis && (
               <div className="workspace-source">
-                <span><strong>{basis.name}</strong> · <code title={basis.commit_sha}>{basis.commit_sha}</code></span>
-                <button className="secondary small" disabled={working} onClick={() => run(async () => {
-                  const result = await api<{ commit_sha?: string; error?: string }>(`/api/sources/${basis.source_id}/analyze`, {});
-                  setCheckedSource({ projectId: bundle.project.id, ...result });
-                })}>최신 코드 확인</button>
-                {comparison?.error && <span role="status">{comparison.error}</span>}
-                {comparison?.commit_sha && (
-                  comparison.commit_sha === basis.commit_sha ? <span role="status">현재 기준과 동일</span> :
-                    <>
-                      <span role="status">새 커밋 <code>{comparison.commit_sha}</code></span>
-                      <button className="secondary small" onClick={() => navigate(null, bundle.project)}>새 코드 기준으로 분기</button>
-                    </>
-                )}
-                {bundle.project.forked_from && <button className="text-button" onClick={() => navigate(bundle.project.forked_from)}>이전 기획 보기</button>}
+                <span>
+                  <FolderOpen size={14} /> <strong>{basis.name}</strong>의
+                  업무를 기획하고 있어요.
+                </span>
               </div>
             )}
             <div
@@ -957,16 +1006,19 @@ export default function App() {
                 >
                   <Icon size={15} />
                   {label}
-                  {hasArtifact(snapshot, id) && (
-                    <span className="tab-ready" />
-                  )}
+                  {hasArtifact(snapshot, id) && <span className="tab-ready" />}
                 </button>
               ))}
               <div className="tab-spacer" />
               <div className="export-wrap">
                 <button
                   className="secondary small"
-                  disabled={viewIsCandidate || !visibleVersion || !!edit}
+                  disabled={
+                    viewIsCandidate ||
+                    !visibleVersion ||
+                    !!edit ||
+                    !allowed("plans.export")
+                  }
                   onClick={() => setExportMenu(!exportMenu)}
                   title={
                     viewIsCandidate
@@ -980,7 +1032,11 @@ export default function App() {
                 </button>
                 {exportMenu && (
                   <div className="dropdown">
-                    {basis && <small className="export-basis">{basis.name} · <code>{basis.commit_sha.slice(0, 12)}</code></small>}
+                    {basis && (
+                      <small className="export-basis">
+                        {basis.name} · 현업 확인본 v{visibleVersion}
+                      </small>
+                    )}
                     <button onClick={() => exportFile("markdown")}>
                       <FileText size={15} />
                       Markdown (.md)
@@ -993,6 +1049,31 @@ export default function App() {
                 )}
               </div>
             </div>
+            {panel === "review" && (
+              <div className="review-document-bar">
+                <span>
+                  {viewIsCandidate
+                    ? "작성 중인 초안을 확인하고 있어요"
+                    : isPast
+                      ? "과거 확인본을 보고 있어요"
+                      : visibleVersion
+                        ? `현업 확인본 v${visibleVersion} · 읽기 전용`
+                        : "아직 확인할 문서가 없어요"}
+                </span>
+                {selectedItem && !isPast && (
+                  <button
+                    className="text-button"
+                    disabled={busy || working || !!edit || !editable}
+                    onClick={() => discussReviewItem(selectedItem.id)}
+                  >
+                    이 내용 수정하기
+                  </button>
+                )}
+                <button className="text-button" onClick={openReview}>
+                  확인 안내로 돌아가기
+                </button>
+              </div>
+            )}
             <div className="version-bar">
               <div className="snapshot-switch">
                 <button
@@ -1004,7 +1085,9 @@ export default function App() {
                     setCandidate(false);
                   }}
                 >
-                  확정본 v{bundle.project.current_version}
+                  {bundle.project.current_version
+                    ? `현업 확인본 v${bundle.project.current_version}`
+                    : "아직 확인본이 없어요"}
                 </button>
                 {bundle.proposal && (
                   <button
@@ -1012,7 +1095,7 @@ export default function App() {
                     className={viewIsCandidate ? "active candidate" : ""}
                     onClick={() => openDraft()}
                   >
-                    검토 중인 초안
+                    작성 중인 초안
                     <span />
                   </button>
                 )}
@@ -1042,13 +1125,13 @@ export default function App() {
                       onClick={save}
                     >
                       <Check size={14} />
-                      수정안 검토
+                      수정 내용 확인
                     </button>
                   </>
                 ) : isPast ? (
                   <button
                     className="secondary small"
-                    disabled={working || busy || !!bundle.proposal}
+                    disabled={working || busy || !!bundle.proposal || !editable}
                     onClick={() =>
                       run(async () => {
                         await api(`/api/projects/${projectId}/proposals`, {
@@ -1056,9 +1139,7 @@ export default function App() {
                           snapshot: historical!.snapshot,
                           summary: `v${historical!.version} 복원 제안`,
                         });
-                        setHistorical(null);
-                        setPanel("review");
-                        setSideOpen(true);
+                        openReview();
                         await refresh();
                       })
                     }
@@ -1068,7 +1149,7 @@ export default function App() {
                 ) : (
                   <button
                     className="text-button"
-                    disabled={working || busy || !hasAnyArtifact}
+                    disabled={working || busy || !hasAnyArtifact || !editable}
                     onClick={() => setEdit(structuredClone(snapshot))}
                   >
                     <Pencil size={13} />
@@ -1088,17 +1169,51 @@ export default function App() {
                 {hasAnyArtifact || viewIsCandidate ? (
                   <>
                     <h1>이 탭에 표시할 산출물이 없어요.</h1>
-                    <p>{hasAnyArtifact ? "내용이 있는 탭은 위에 점으로 표시돼요." : "검토 패널에서 생성 결과와 해결할 항목을 확인해 주세요."}</p>
+                    <p>
+                      {hasAnyArtifact
+                        ? "내용이 있는 탭은 위에 점으로 표시돼요."
+                        : "검토 패널에서 생성 결과와 해결할 항목을 확인해 주세요."}
+                    </p>
                   </>
                 ) : (
                   <>
-                    <span className="eyebrow">YOUR NEXT PRODUCT STARTS HERE</span>
-                    <h1>아이디어가 기획이 되는 공간.</h1>
+                    <span className="eyebrow">업무 정리</span>
+                    <h1>업무를 정리하면 기획이 시작됩니다.</h1>
                     <p>
-                      왼쪽에서 기획 파트너와 방향을 맞추면
-                      <br />
-                      PRD부터 와이어프레임까지 이곳에 채워집니다.
+                      대화로 현재 업무와 바꾸고 싶은 내용을 정리한 뒤<br />
+                      ‘기획 초안 만들기’를 눌러 주세요.
                     </p>
+                    {bundle.project.conversation_brief && (
+                      <div className="brief-summary">
+                        <h3>지금까지 정리한 내용</h3>
+                        <dl>
+                          <dt>현재 업무</dt>
+                          <dd>
+                            {bundle.project.conversation_brief.current_work ||
+                              "확인 중"}
+                          </dd>
+                          <dt>불편한 점</dt>
+                          <dd>
+                            {bundle.project.conversation_brief.problem ||
+                              "확인 중"}
+                          </dd>
+                          <dt>원하는 변화</dt>
+                          <dd>
+                            {bundle.project.conversation_brief.desired_change ||
+                              "확인 중"}
+                          </dd>
+                        </dl>
+                      </div>
+                    )}
+                    {bundle.project.conversation_brief && (
+                      <button
+                        className="primary"
+                        disabled={busy || working}
+                        onClick={() => void writeDraft()}
+                      >
+                        기획 초안 만들기 <ArrowRight size={16} />
+                      </button>
+                    )}
                   </>
                 )}
                 <div className="output-path">
@@ -1136,6 +1251,7 @@ export default function App() {
                   {tab === "prd" ? (
                     <PrdDocument
                       snapshot={snapshot}
+                      selected={selected}
                       editing={!!edit}
                       update={update}
                       onSelect={(id) => {
@@ -1157,10 +1273,10 @@ export default function App() {
                       <div className="view-toolbar">
                         <span className="flow-toolbar-title">
                           <GitBranch size={16} />
-                          사용자의 여정을 한눈에
+                          업무 처리 순서를 한눈에
                         </span>
                         <span className="toolbar-count">
-                          노드 {snapshot.flow.nodes.length} · 연결{" "}
+                          업무 단계 {snapshot.flow.nodes.length} · 흐름{" "}
                           {snapshot.flow.edges.length}
                         </span>
                       </div>
@@ -1176,7 +1292,11 @@ export default function App() {
                     </>
                   ) : tab === "implementation" ? (
                     <div className="document-scroll">
-                      <ImplementationDocument snapshot={snapshot} selected={selected} update={edit ? update : undefined} />
+                      <ImplementationDocument
+                        snapshot={snapshot}
+                        selected={selected}
+                        update={edit ? update : undefined}
+                      />
                     </div>
                   ) : (
                     <Wireframes
@@ -1185,27 +1305,35 @@ export default function App() {
                       screenPreviews={bundle.screen_previews}
                       editing={!!edit}
                       update={update}
-                      onSelectItem={select}
+                      onSelectItem={(id) => {
+                        select(id);
+                        setPanel("chat");
+                        setSideOpen(true);
+                      }}
+                      previousSnapshot={bundle.revision.snapshot}
+                      changedBlockIds={bundle.changed_block_ids}
                       focusId={selected}
                       onFlow={() => changeTab("flow")}
                     />
                   )}
                 </div>
-                {selected && ["features", "flow"].includes(tab) && (
-                  <Inspector
-                    snapshot={snapshot}
-                    selected={selected}
-                    tab={tab}
-                    editing={!!edit}
-                    update={update}
-                    onClose={() => setSelected(null)}
-                    onAsk={() => {
-                      setPanel("chat");
-                      setSideOpen(true);
-                    }}
-                    onTab={changeTab}
-                  />
-                )}
+                {selected &&
+                  panel !== "review" &&
+                  ["features", "flow"].includes(tab) && (
+                    <Inspector
+                      snapshot={snapshot}
+                      selected={selected}
+                      tab={tab}
+                      editing={!!edit}
+                      update={update}
+                      onClose={() => setSelected(null)}
+                      onAsk={() => {
+                        setPanel("chat");
+                        setSideOpen(true);
+                      }}
+                      onTab={changeTab}
+                    />
+                  )}
               </div>
             )}
             <footer className="workspace-footer">
@@ -1219,10 +1347,12 @@ export default function App() {
               <span>
                 <ShieldCheck size={12} />{" "}
                 {edit
-                  ? "수정 내용은 승인 후 확정됩니다"
+                  ? "수정 내용을 확인한 뒤 확인본으로 저장해 주세요"
                   : viewIsCandidate
-                    ? "검토 중인 초안 · 아직 확정되지 않았어요"
-                    : `확정본 v${visibleVersion}`}
+                    ? "작성 중인 초안 · 아직 확인본으로 저장하지 않았어요"
+                    : visibleVersion
+                      ? `현업 확인본 v${visibleVersion}`
+                      : "업무를 정리하고 있어요"}
               </span>
             </footer>
           </main>

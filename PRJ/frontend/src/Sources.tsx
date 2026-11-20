@@ -53,7 +53,7 @@ export function SourcePicker({
         </button>
       </div>
       <select id="source-choice" value={selected?.id || ""} onChange={(event) => onSelect(event.target.value)}>
-        <option value="">신규 서비스</option>
+        <option value="">연결할 업무를 선택해 주세요</option>
         {sources.map((source) => <option key={source.id} value={source.id}>{source.name} · {sourceStatus(source)}</option>)}
       </select>
       {selected && (

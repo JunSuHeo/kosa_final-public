@@ -18,17 +18,11 @@
 기준 저장소의 특정 커밋을 분석하고 코드 근거와 구현 지침이 포함된 변경 기획을 만드는 기능도 구현되어 있다. 대상 저장소에 구현 코드를 자동 적용하는 기능은 아니다.
 
 ```text
-kosa_final/
+kosa_final-public/
 ├── AGENTS.md                # 전체 작업 진입점
-├── .agents/                 # 팀 공용 하네스
-│   ├── skills/              # Issue 준비·검증·인계 절차
-│   └── workflow/            # 팀 공통 규칙·작업 목록과 개발 기록
-│       ├── JS/              # JS 담당 작업과 참여 AI의 기록
-│       ├── SY/              # SY 담당 작업과 참여 AI의 기록
-│       └── SW/              # SW 담당 작업과 참여 AI의 기록
 └── PRJ/                     # 실제 서비스 개발 영역
     ├── AGENTS.md            # 제품 개발 규칙
-    ├── agents/              # 개발 전 읽는 안내 문서
+    ├── rules/               # 개발 전 읽는 안내 문서
     ├── frontend/src/        # React UI와 API 클라이언트
     ├── frontend/tests/      # Playwright 시나리오
     ├── backend/app/         # FastAPI, worker, 모델 호출, 저장소 분석
@@ -42,9 +36,7 @@ kosa_final/
     └── compose.yaml         # 서비스·테스트 구성
 ```
 
-`.agents/workflow/`의 개발 기록과 제품의 역할별 AI 검토는 별개다. 제품의 검토 데이터는 PostgreSQL의 `studio_reviews` / `studio_review_agents`에 저장한다.
-
-팀 공용 스킬은 [루트 지침의 사용 조건](../../AGENTS.md#9-팀-공용-스킬)에 따라 적용하고, [공용 스킬 관리](../../.agents/workflow/README.md#공용-스킬-관리) 절차로 변경한다. `agents/`는 프로젝트 맥락, `.agents/skills/`는 개발 반복 절차, `prompts/`는 서비스 내부 모델 프롬프트를 담당한다.
+제품의 역할별 검토 데이터는 PostgreSQL의 `studio_reviews` / `studio_review_agents`에 저장한다.
 
 ## 실제 사용 흐름과 코드 연결
 
@@ -74,11 +66,11 @@ kosa_final/
 
 ## 작업과 검증
 
-1. 목표·완료 조건을 정하고 [workflow 규칙](../../.agents/workflow/README.md)에 따라 저장소 루트의 `.agents/workflow/{JS|SY|SW}/YYYY-MM-DD-작업명/`에서 기록을 시작한다. 공동 작업은 대표 기록과 참여 팀원의 기록을 서로 연결한다.
+1. 목표와 완료 조건을 정한다.
 2. 관련 안내 → 계약 → 실제 구현·테스트를 확인하고 필요한 코드만 변경한다.
 3. 변경 규모에 맞는 검증을 수행한다. 실행 위치와 전제는 각 영역 문서를 따른다.
-4. 구조·사용법·계약 변경은 해당 `agents/*.md`와 원래 소유 문서에 함께 반영한다.
-5. 기록에 실제 명령·결과·미실행·미확인 항목과 후속 작업을 남긴다.
+4. 구조·사용법·계약 변경은 해당 `rules/*.md`와 원래 소유 문서에 함께 반영한다.
+5. PR에 실제 실행 결과와 미확인 항목을 기록한다.
 
 소스 기본 모델과 현재 실행 모델은 구분한다. 실제 설정은 `/health`와 API/worker 환경을 확인하되 비밀값을 출력하지 않는다. 후속 품질·사용성 항목은 [remaining-work.md](../docs/remaining-work.md)의 날짜와 검증 환경을 확인한다.
 

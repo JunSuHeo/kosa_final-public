@@ -109,7 +109,7 @@ class IsolatedTestProcess:
         self.error = None
         self.checked = False
 
-    def _command(self, root: Path, cwd: str, argv: list[str]) -> list[str]:
+    def _command(self, root: Path, cwd: str, argv: list[str], *, prj_cache: Path | None = None) -> list[str]:
         command = [self.executable, "--unshare-all", "--die-with-parent", "--new-session", "--cap-drop", "ALL"]
         # Approved system runtime only; no /root, /home, /mnt or full /etc bind.
         for value in ("/usr", "/bin", "/lib", "/lib64", "/etc/alternatives", "/etc/ld.so.cache"):
@@ -120,9 +120,19 @@ class IsolatedTestProcess:
                         "--chdir", "/workspace" if cwd == "." else "/workspace/" + cwd,
                         "--clearenv", "--setenv", "PATH", SYSTEM_PATH,
                         "--setenv", "HOME", "/home/test", "--setenv", "TMPDIR", "/tmp",
-                        "--setenv", "LANG", "C.UTF-8", "--setenv", "PYTHONDONTWRITEBYTECODE", "1",
-                        "--", *argv])
-        return command
+                        "--setenv", "LANG", "C.UTF-8", "--setenv", "PYTHONDONTWRITEBYTECODE", "1"])
+        if Path(argv[0]).name == "uv":
+            # uv otherwise puts venv symlinks in the test copy, which inventory rejects.
+            command.extend(["--setenv", "UV_PROJECT_ENVIRONMENT", "/tmp/uv-venv",
+                            "--setenv", "UV_CACHE_DIR", "/tmp/uv-cache"])
+        if prj_cache is not None:
+            if os.geteuid() == 0:
+                # initdb refuses root. Map the caller to a non-root UID only in this namespace.
+                command.extend(["--uid", "65534", "--gid", "65534"])
+            launcher = Path(__file__).resolve().with_name("prj_backend_check.sh")
+            command.extend(["--ro-bind", str(launcher), "/workflow/prj_backend_check.sh",
+                            "--ro-bind", str(prj_cache), "/workflow/uv-cache"])
+        return [*command, "--", *argv]
 
     def run(self, root: Path, cwd: str, command: dict[str, Any], timeout: float) -> dict[str, Any]:
         if not self.checked:
@@ -137,13 +147,25 @@ class IsolatedTestProcess:
         if self.error:
             return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
                     "stdout": "", "stderr": "", "reason": self.error}
-        executable = shutil.which(command["program"], path=SYSTEM_PATH)
-        if executable is None:
-            return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
-                    "stdout": "", "stderr": "", "reason": "Configured test executable is not available on the isolated system PATH."}
-        result = _process(self._command(root, cwd, [executable, *command["args"]]), timeout)
+        prj_check = command["program"] == "prj-backend-check"
+        if prj_check:
+            cache = Path(os.environ.get("WORKFLOW_PRJ_UV_CACHE", ""))
+            if not cache.is_absolute() or not (cache / "CACHEDIR.TAG").is_file():
+                return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
+                        "stdout": "", "stderr": "", "reason": "WORKFLOW_PRJ_UV_CACHE must point to a prepared offline uv cache."}
+            sandbox_command = self._command(root, cwd, ["/bin/bash", "/workflow/prj_backend_check.sh"],
+                                            prj_cache=cache.resolve())
+        else:
+            executable = shutil.which(command["program"], path=SYSTEM_PATH)
+            if executable is None:
+                return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
+                        "stdout": "", "stderr": "", "reason": "Configured test executable is not available on the isolated system PATH."}
+            sandbox_command = self._command(root, cwd, [executable, *command["args"]])
+        result = _process(sandbox_command, timeout)
         if result["stderr"].startswith("bwrap:"):
             result.update(status="unavailable", reason="The isolated runtime or executable could not be initialized.")
+        elif prj_check and result["status"] == "failed" and result["return_code"] == 78:
+            result.update(status="unavailable", reason="Offline dependencies or isolated studio_test PostgreSQL could not be prepared.")
         elif result["status"] == "failed" and re.search(
             r"ModuleNotFoundError: No module named|Error: Cannot find module|Executable doesn't exist",
             result["stderr"] + result["stdout"],
@@ -248,8 +270,10 @@ def validate_workspace(candidate: Path, config: dict[str, Any], before: dict[str
             raise ExecutionError("validation_failed", "Candidate changed during validation; test results no longer apply.")
     except ExecutionError as exc:
         validation["status"] = "failed"
-        if exc.status == "path_violation":
+        if exc.status in ("path_violation", "sensitive_content"):
             validation["scope_status"] = "failed"
+            if exc.status == "sensitive_content":
+                validation["scope_failure_reason"] = exc.status
         validation["errors"].append(workspace.redact(str(exc)))
     except (OSError, ValueError, TypeError):
         validation["status"] = "failed"

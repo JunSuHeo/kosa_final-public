@@ -1,4 +1,8 @@
+import { login } from "./business-helpers";
 import { test, expect } from "@playwright/test";
+test.beforeEach(async ({ page }) => {
+  await login(page);
+});
 
 test("실제 다섯 역할 검토의 화면과 근거 이동", async ({ page }) => {
   const id = process.env.LIVE_PREVIEW_PROJECT_ID;
@@ -10,10 +14,8 @@ test("실제 다섯 역할 검토의 화면과 근거 이동", async ({ page }) 
   page.on("pageerror", (e) => errors.push(e.message));
   await page.setViewportSize({ width: 1600, height: 1100 });
   await page.goto(`/?project=${id}`);
-  await page.getByRole("button", { name: "검토", exact: true }).click();
-  await page
-    .getByRole("button", { name: "역할별 AI 검토", exact: true })
-    .click();
+  await page.getByRole("button", { name: "내용 확인", exact: true }).click();
+  await page.getByRole("button", { name: "IT 상세 검토", exact: true }).click();
   await expect(page.locator(".role-progress")).toContainText("5/5 역할 완료");
   await page
     .getByRole("group", { name: "검토 역할" })
@@ -34,9 +36,10 @@ test("실제 다섯 역할 검토의 화면과 근거 이동", async ({ page }) 
     .filter({ hasText: "screen-" });
   if (await evidence.count()) {
     await evidence.first().click();
-    await expect(
-      page.getByRole("tab", { name: "와이어프레임" }),
-    ).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: "화면 시안" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     await expect(page.locator(".wire-page")).toBeVisible();
   }
   await page.setViewportSize({ width: 390, height: 844 });

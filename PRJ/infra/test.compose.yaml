@@ -1,0 +1,13 @@
+# Run with a unique Compose project on the base stack.
+services:
+  db:
+    ports: !override ["127.0.0.1::5432"]
+  api:
+    env_file: !override [.env.example]
+    environment: {APP_ENV: local, AUTH_MODE: mock, AI_MODE: mock}
+    ports: !override ["127.0.0.1::8000"]
+  worker:
+    env_file: !override [.env.example]
+    environment: {APP_ENV: local, AUTH_MODE: mock, AI_MODE: mock}
+  web:
+    ports: !override ["127.0.0.1::80"]

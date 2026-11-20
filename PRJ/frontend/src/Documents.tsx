@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -15,12 +15,8 @@ import type { Node as CanvasNode, NodeProps, Edge } from "@xyflow/react";
 import {
   ArrowUpRight,
   Check,
-  ChevronRight,
   FileText,
   GitBranch,
-  LayoutList,
-  Network,
-  Search,
   Sparkles,
   Tag,
   Users,
@@ -117,7 +113,7 @@ export function Canvas({
         label,
         type: "smoothstep",
         markerEnd: { type: MarkerType.ArrowClosed },
-        style: { stroke: "#777385" },
+        style: { stroke: "#94a3b8" },
       });
     if (mode === "features") {
       add(
@@ -192,11 +188,11 @@ export function Canvas({
         fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
         minZoom={0.15}
         maxZoom={1.8}
-        colorMode="dark"
+        colorMode="light"
         attributionPosition="bottom-left"
       >
         <Background
-          color="#3a3842"
+          color="#c7d3e4"
           gap={22}
           size={1}
           variant={BackgroundVariant.Dots}
@@ -205,8 +201,14 @@ export function Canvas({
         <MiniMap
           pannable
           zoomable
-          nodeColor={(n) => (n.data.kind === "screen" ? "#7c68ba" : "#4c4958")}
-          maskColor="#1a1a20aa"
+          nodeColor={(n) =>
+            n.data.kind === "decision"
+              ? "#f2d78e"
+              : ["screen", "start", "end"].includes(String(n.data.kind))
+                ? "#b7cdef"
+                : "#dbe4ef"
+          }
+          maskColor="rgba(226, 232, 240, 0.6)"
         />
       </ReactFlow>
       <div className="canvas-legend">
@@ -235,11 +237,13 @@ export function Canvas({
 
 export function PrdDocument({
   snapshot,
+  selected,
   editing,
   update,
   onSelect,
 }: {
   snapshot: Snapshot;
+  selected?: string | null;
   editing: boolean;
   update: Update;
   onSelect: Selection;
@@ -256,7 +260,7 @@ export function PrdDocument({
     <>
       <div className="document-toolbar">
         <div className="completion">
-          <span>PRD 작성률</span>
+          <span>기획 내용 작성률</span>
           <div>
             <i style={{ width: `${completion}%` }} />
           </div>
@@ -268,10 +272,10 @@ export function PrdDocument({
         <div className="document-page">
           <div className="document-cover">
             <span className="eyebrow">
-              <FileText size={13} /> PRODUCT REQUIREMENTS
+              <FileText size={13} /> 업무 기획서
             </span>
             <h1>{snapshot.prd.title}</h1>
-            <p>제품의 방향부터 실행 가능한 요구사항까지.</p>
+            <p>현재 업무와 바꾸려는 내용을 정리합니다.</p>
           </div>
           {groups.map((group, index) => (
             <section className="prd-group" key={group}>
@@ -282,7 +286,11 @@ export function PrdDocument({
               {snapshot.prd.sections
                 .filter((s) => s.group === group)
                 .map((section) => (
-                  <div id={section.id} key={section.id} className="prd-field">
+                  <div
+                    id={section.id}
+                    key={section.id}
+                    className={`prd-field ${selected === section.id ? "review-focused" : ""}`}
+                  >
                     <div className="field-title">
                       <h3>{section.title}</h3>
                       <button
@@ -323,12 +331,12 @@ export function PrdDocument({
           <section className="prd-group">
             <div className="section-heading">
               <span>05</span>
-              <h2>제품 속성</h2>
+              <h2>업무 담당자와 사용 환경</h2>
             </div>
             <div className="attribute-row">
               <span>
                 <Users size={15} />
-                사용자 역할
+                업무 담당자
               </span>
               <div>
                 {snapshot.prd.roles.map((r) => (
@@ -354,7 +362,7 @@ export function PrdDocument({
           </section>
           {snapshot.prd.assumptions.length > 0 && (
             <section className="assumptions">
-              <h3>함께 확인할 가정</h3>
+              <h3>함께 확인할 업무 기준</h3>
               {snapshot.prd.assumptions.map((a, i) => (
                 <p key={i}>
                   <span>{i + 1}</span>
@@ -364,7 +372,7 @@ export function PrdDocument({
             </section>
           )}
           <div className="document-end">
-            <Check size={14} /> 기능명세·유저플로우·와이어프레임과 연결됩니다.
+            <Check size={14} /> 기능 상세·업무 흐름·화면 시안과 연결됩니다.
           </div>
         </div>
       </div>
@@ -376,8 +384,6 @@ export function FeaturesView({
   snapshot,
   selected,
   onSelect,
-  editing,
-  update,
 }: {
   snapshot: Snapshot;
   selected: string | null;
@@ -385,144 +391,82 @@ export function FeaturesView({
   editing: boolean;
   update: Update;
 }) {
-  const [view, setView] = useState("graph");
-  const [query, setQuery] = useState("");
   return (
     <>
       <div className="view-toolbar">
-        <div className="segmented">
-          {[
-            ["graph", Network, "그래프"],
-            ["directory", LayoutList, "디렉토리"],
-            ["document", FileText, "문서"],
-          ].map(([key, Icon, label]) => {
-            const I = Icon as typeof Network;
-            return (
-              <button
-                key={String(key)}
-                className={view === key ? "active" : ""}
-                onClick={() => setView(String(key))}
-              >
-                <I size={14} />
-                {String(label)}
-              </button>
-            );
-          })}
-        </div>
+        <strong>업무별 기능과 처리 순서</strong>
         <span className="toolbar-count">
           요구사항 {snapshot.requirements.length} · 기능{" "}
           {snapshot.features.length}
         </span>
       </div>
-      {view === "graph" ? (
-        <Canvas
-          key="features"
-          snapshot={snapshot}
-          mode="features"
-          selected={selected}
-          onSelect={onSelect}
-          editing={editing}
-          update={update}
-        />
-      ) : (
-        <div className="feature-scroll">
-          {view === "directory" && (
-            <div className="search-field">
-              <Search size={15} />
-              <input
-                aria-label="기능 검색"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="요구사항이나 기능 검색"
-              />
-            </div>
-          )}
-          {snapshot.requirements
-            .filter(
-              (r) =>
-                !query ||
-                [
-                  r.title,
-                  ...snapshot.features
-                    .filter((f) => f.requirement_id === r.id)
-                    .map((f) => f.title),
-                ]
-                  .join(" ")
-                  .includes(query),
-            )
-            .map((r) => (
-              <section className="requirement-group" key={r.id}>
-                <button
-                  className={`requirement-heading ${selected === r.id ? "selected" : ""}`}
-                  onClick={() => onSelect(r.id)}
+      <div className="feature-scroll">
+        {snapshot.requirements.map((requirement) => (
+          <section
+            className="requirement-group"
+            id={requirement.id}
+            key={requirement.id}
+          >
+            <button
+              className={`requirement-heading ${selected === requirement.id ? "selected" : ""}`}
+              onClick={() => onSelect(requirement.id)}
+            >
+              <strong>{requirement.title}</strong>
+              <span className="priority">
+                {{ P0: "필수", P1: "중요", P2: "추후" }[requirement.priority]}
+              </span>
+              <ArrowUpRight size={15} />
+            </button>
+            <p className="req-description">{requirement.description}</p>
+            {snapshot.features
+              .filter((feature) => feature.requirement_id === requirement.id)
+              .map((feature) => (
+                <article
+                  id={feature.id}
+                  className={`feature-article ${selected === feature.id ? "review-focused" : ""}`}
+                  key={feature.id}
                 >
-                  <span className="id-badge">{r.id}</span>
-                  <strong>{r.title}</strong>
-                  <span className="priority">{r.priority}</span>
-                  <ArrowUpRight size={15} />
-                </button>
-                {view === "document" && (
-                  <p className="req-description">{r.description}</p>
-                )}
-                {snapshot.features
-                  .filter(
-                    (f) =>
-                      f.requirement_id === r.id &&
-                      (!query ||
-                        r.title.includes(query) ||
-                        f.title.includes(query)),
-                  )
-                  .map((f) =>
-                    view === "directory" ? (
-                      <button
-                        className={`feature-row ${selected === f.id ? "selected" : ""}`}
-                        key={f.id}
-                        onClick={() => onSelect(f.id)}
-                      >
-                        <GitBranch size={14} />
-                        <code>{f.id}</code>
-                        <span>{f.title}</span>
-                        <small>{f.actor}</small>
-                        <ChevronRight size={15} />
-                      </button>
-                    ) : (
-                      <article className="feature-article" key={f.id}>
-                        <button
-                          className="text-button"
-                          onClick={() => onSelect(f.id)}
-                        >
-                          <span className="id-badge">{f.id}</span>
-                          <h3>{f.title}</h3>
-                          <ArrowUpRight size={15} />
-                        </button>
-                        <p>{f.description}</p>
-                        <div className="feature-columns">
-                          <div>
-                            <h4>정상 동작</h4>
-                            <ol>
-                              {f.steps.map((step, i) => (
-                                <li key={i}>{step}</li>
-                              ))}
-                            </ol>
-                          </div>
-                          <div>
-                            <h4>예외와 검수</h4>
-                            <ul>
-                              {[...f.exceptions, ...f.acceptance].map(
-                                (step, i) => (
-                                  <li key={i}>{step}</li>
-                                ),
-                              )}
-                            </ul>
-                          </div>
-                        </div>
-                      </article>
-                    ),
+                  <button
+                    className="text-button"
+                    onClick={() => onSelect(feature.id)}
+                  >
+                    <h3>{feature.title}</h3>
+                    <ArrowUpRight size={15} />
+                  </button>
+                  <p>{feature.description}</p>
+                  <div className="feature-actor">
+                    업무 담당자 · {feature.actor}
+                  </div>
+                  {!!feature.preconditions.length && (
+                    <p className="feature-rules">
+                      시작 조건 · {feature.preconditions.join(" / ")}
+                    </p>
                   )}
-              </section>
-            ))}
-        </div>
-      )}
+                  <div className="feature-columns">
+                    <div>
+                      <h4>처리 순서</h4>
+                      <ol>
+                        {feature.steps.map((step, i) => (
+                          <li key={i}>{step}</li>
+                        ))}
+                      </ol>
+                    </div>
+                    <div>
+                      <h4>예외와 완료 조건</h4>
+                      <ul>
+                        {[...feature.exceptions, ...feature.acceptance].map(
+                          (item, i) => (
+                            <li key={i}>{item}</li>
+                          ),
+                        )}
+                      </ul>
+                    </div>
+                  </div>
+                </article>
+              ))}
+          </section>
+        ))}
+      </div>
     </>
   );
 }
@@ -600,7 +544,6 @@ export function Inspector({
         </button>
       </div>
       <div className="inspector-body">
-        <span className="id-badge">{item.id}</span>
         {editing ? (
           <input
             className="inspector-title-input"
@@ -631,15 +574,25 @@ export function Inspector({
             <span className="chip">{feature.actor}</span>
           </div>
         )}
-        {list("preconditions", "사전 조건")}
-        {list("steps", "정상 동작")}
+        {list("preconditions", "업무 시작 조건")}
+        {list("steps", "처리 순서")}
         {list("exceptions", "예외 처리")}
-        {list("acceptance", "검수 조건")}
+        {list("acceptance", "완료 조건")}
         {node && (
           <>
             <div className="attribute-row">
               <span>유형</span>
-              <span className="chip">{node.type}</span>
+              <span className="chip">
+                {
+                  {
+                    start: "시작",
+                    screen: "화면",
+                    action: "업무 처리",
+                    decision: "조건 확인",
+                    end: "종료",
+                  }[node.type]
+                }
+              </span>
             </div>
             <div className="inspector-field">
               <h4>연결된 기능</h4>
@@ -658,7 +611,7 @@ export function Inspector({
                   onClick={() => onTab("wireframes")}
                 >
                   <FileText size={15} />
-                  {w.title} 와이어프레임
+                  {w.title} 화면 시안
                   <ArrowUpRight size={14} />
                 </button>
               ))}
@@ -670,7 +623,7 @@ export function Inspector({
             .length > 0 && (
             <button className="link-card" onClick={() => onTab("flow")}>
               <GitBranch size={15} />
-              연결된 유저플로우
+              연결된 업무 흐름
               <ArrowUpRight size={14} />
             </button>
           )}

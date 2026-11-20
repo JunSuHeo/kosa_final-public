@@ -16,7 +16,7 @@ from .role_reviews import (
     Role, ROLES, snapshot_hash, read_report, review_prompt_version,
 )
 
-from .source_api import router as source_router, owned_source, ready_basis, model_consent, require_code_consent, source_fingerprint
+from .source_api import router as source_router, owned_source, ready_basis, model_consent, require_code_consent, source_fingerprint, published_basis, require_project_source, project_source_access
 from .source_review import HANDOFF, source_markdown
 
 User = Annotated[str, Depends(current_user)]
@@ -28,7 +28,7 @@ async def lifespan(app):
     yield
 
 
-app = FastAPI(title="기획실 Studio API", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="H-PlanIT API", version="2.1.0", lifespan=lifespan)
 
 
 app.include_router(source_router)
@@ -46,6 +46,9 @@ class ProjectInput(Input):
     code_snapshot_id: UUID | None = None
     forked_from: UUID | None = None
     code_consent: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    start_mode: Literal["generate", "conversation"] = "generate"
+    planning_intent: Literal["new_feature", "improve", "process"] = "improve"
+    source_publication_id: UUID | None = None
 
     @model_validator(mode="after")
     def check_source_pair(self):
@@ -53,6 +56,10 @@ class ProjectInput(Input):
             raise ValueError("기준 프로젝트와 코드 스냅샷을 함께 지정해 주세요.")
         if not self.source_id and (self.forked_from or self.code_consent):
             raise ValueError("기준 프로젝트를 지정해 주세요.")
+        if self.start_mode == "conversation" and (not self.source_id or not self.source_publication_id):
+            raise ValueError("게시된 업무를 선택해 주세요.")
+        if self.start_mode != "conversation" and self.source_publication_id:
+            raise ValueError("업무 대화 시작 모드가 필요합니다.")
         return self
 
 
@@ -63,9 +70,10 @@ class TitleInput(Input):
 class JobInput(Input):
     id: UUID = Field(default_factory=uuid4)
     base_version: int = Field(ge=0)
-    kind: Literal["generate", "revise"] = "revise"
+    kind: Literal["generate", "revise", "discuss", "repair"] = "revise"
     request: str = Field(min_length=1, max_length=8000)
     target_id: str | None = None
+    base_proposal_id: UUID | None = None
 
 
 class AnswerInput(Input):
@@ -77,6 +85,7 @@ class ManualInput(Input):
     base_version: int = Field(ge=0)
     snapshot: Snapshot
     summary: str = Field(default="문서 직접 편집", min_length=1, max_length=200)
+    base_proposal_id: UUID | None = None
 
 
 class DecisionInput(Input):
@@ -116,28 +125,54 @@ def add_job(c, p, inp):
             old["request"],
             old["kind"],
             old["partial"].get("target_id"),
-        ) != (p["id"], inp.base_version, inp.request, inp.kind, inp.target_id):
+            old["base_proposal_id"],
+        ) != (p["id"], inp.base_version, inp.request, inp.kind, inp.target_id, inp.base_proposal_id):
             raise HTTPException(409, "같은 실행 ID가 다른 요청에 사용되었습니다.")
         return old
     check_version(p, inp.base_version)
     if c.execute(
-        "SELECT 1 FROM studio_jobs WHERE project_id=%s AND status IN ('queued','running','awaiting_answers','waiting_review')",
+        "SELECT 1 FROM studio_jobs WHERE project_id=%s AND status IN ('queued','running','awaiting_answers')",
         (p["id"],),
     ).fetchone():
         raise HTTPException(409, "진행 중인 실행 또는 검토할 수정안이 있습니다.")
-    if c.execute(
-        "SELECT 1 FROM studio_proposals WHERE project_id=%s AND status='pending'",
+    pending = c.execute(
+        "SELECT * FROM studio_proposals WHERE project_id=%s AND status='pending'",
         (p["id"],),
-    ).fetchone():
-        raise HTTPException(409, "먼저 현재 수정안을 승인하거나 거절해 주세요.")
-    if inp.kind == "revise" and not p["current_version"]:
+    ).fetchone()
+    if inp.base_proposal_id and (not pending or pending["id"] != inp.base_proposal_id):
+        raise HTTPException(409, "초안이 변경되었습니다. 현재 초안을 불러온 후 다시 시도해 주세요.")
+    if pending and inp.kind != "discuss" and not inp.base_proposal_id:
+        raise HTTPException(409, "수정할 초안을 지정해 주세요.")
+    if inp.kind in {"revise", "repair"} and not (p["current_version"] or inp.base_proposal_id):
         raise HTTPException(409, "먼저 기획 초안을 생성하고 확정해 주세요.")
+    if inp.kind == "repair" and not inp.base_proposal_id:
+        raise HTTPException(422, "정리할 초안을 지정해 주세요.")
+    require_project_source(c, p)
     require_code_consent(p)
     s = settings()
-    stage = "questions" if inp.kind == "generate" else "revise"
+    stage = ("prd" if p["start_mode"] == "conversation" else "questions") if inp.kind == "generate" else inp.kind
+    history = c.execute(
+        "SELECT role,content FROM studio_messages WHERE project_id=%s ORDER BY id DESC LIMIT 30", (p["id"],)
+    ).fetchall()
+    history_size = 0
+    bounded_history = []
+    for message in history:
+        content = message["content"][:8000]
+        if history_size + len(content) > 24000:
+            break
+        bounded_history.append({"role": message["role"], "content": content})
+        history_size += len(content)
+    partial = {"target_id": inp.target_id, "conversation_brief": p["conversation_brief"],
+               "history": list(reversed(bounded_history)), "planning_intent": p["planning_intent"]}
+    if inp.target_id:
+        snapshot = pending["candidate"] if pending else c.execute("SELECT snapshot FROM studio_revisions WHERE project_id=%s AND version=%s", (p["id"], p["current_version"])).fetchone()["snapshot"]
+        ids = {item["id"] for items in [snapshot["prd"]["sections"], snapshot["requirements"], snapshot["features"], snapshot["flow"]["nodes"], snapshot["screens"], [block for screen in snapshot["screens"] for block in screen["blocks"]]] for item in items}
+        if inp.target_id not in ids:
+            raise HTTPException(422, "선택한 업무 항목이 현재 초안에 없습니다.")
+    c.execute("UPDATE studio_jobs SET status='completed',updated_at=now() WHERE project_id=%s AND status='waiting_review'", (p["id"],))
     job = c.execute(
-        "INSERT INTO studio_jobs(id,project_id,base_version,kind,status,stage,request,provider,model,ai_mode,partial,code_snapshot_id) "
-        "VALUES (%s,%s,%s,%s,'queued',%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+        "INSERT INTO studio_jobs(id,project_id,base_version,kind,status,stage,request,provider,model,ai_mode,partial,code_snapshot_id,base_proposal_id,prompt_version) "
+        "VALUES (%s,%s,%s,%s,'queued',%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
         (
             inp.id,
             p["id"],
@@ -148,8 +183,10 @@ def add_job(c, p, inp):
             s.llm_provider,
             s.model,
             s.ai_mode,
-            Jsonb({"target_id": inp.target_id}),
+            Jsonb(partial),
             p["code_snapshot_id"],
+            inp.base_proposal_id,
+            "business.v2" if p["start_mode"] == "conversation" or inp.kind in {"discuss", "repair"} else "studio.v1",
         ),
     ).fetchone()
     c.execute(
@@ -171,7 +208,7 @@ def health():
         "ai_mode": s.ai_mode,
         "provider": s.llm_provider,
         "model": s.model,
-        "version": "2.0.0",
+        "version": "2.1.0",
     }
 
 
@@ -227,8 +264,8 @@ def create_project(inp: ProjectInput, owner: User):
         if old:
             if old["owner_id"] != owner:
                 raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
-            if (old["idea"], old["title"], old["source_id"], old["code_snapshot_id"], old["forked_from"]) != (
-                idea, title, inp.source_id, inp.code_snapshot_id, inp.forked_from
+            if (old["idea"], old["title"], old["source_id"], old["code_snapshot_id"], old["forked_from"], old["start_mode"], old["planning_intent"], old["source_publication_id"]) != (
+                idea, title, inp.source_id, inp.code_snapshot_id, inp.forked_from, inp.start_mode, inp.planning_intent, inp.source_publication_id
             ):
                 raise HTTPException(
                     409, "같은 프로젝트 ID가 다른 요청에 사용되었습니다."
@@ -237,26 +274,33 @@ def create_project(inp: ProjectInput, owner: User):
         initial = empty_snapshot(title)
         consent = None
         if inp.source_id:
-            context = ready_basis(c, inp.source_id, inp.code_snapshot_id, owner, idea)
-            consent = model_consent()
-            if consent and inp.code_consent != source_fingerprint(context, consent, idea):
-                raise HTTPException(409, "모델에 전달할 코드 범위를 확인해 주세요.")
+            if inp.start_mode == "conversation":
+                context, publication = published_basis(c, inp.source_id, inp.source_publication_id, owner, idea)
+                if str(inp.code_snapshot_id) != context["snapshot_id"]:
+                    raise HTTPException(409, "선택한 업무 기준이 다릅니다. 업무를 다시 선택해 주세요.")
+                consent = publication["consent"]
+                initial["design_profile"] = publication["design_profile"]
+            else:
+                context = ready_basis(c, inp.source_id, inp.code_snapshot_id, owner, idea)
+                consent = model_consent()
+                if consent and inp.code_consent != source_fingerprint(context, consent, idea):
+                    raise HTTPException(409, "모델에 전달할 코드 범위를 확인해 주세요.")
             if inp.forked_from:
                 origin = project(c, inp.forked_from, owner)
                 if origin["source_id"] != inp.source_id or origin["code_snapshot_id"] == inp.code_snapshot_id:
                     raise HTTPException(409, "같은 저장소의 새 코드 스냅샷으로만 분기할 수 있습니다.")
             initial["source_context"] = context
         p = c.execute(
-            "INSERT INTO studio_projects(id,owner_id,title,idea,planning_type,source_id,code_snapshot_id,forked_from,code_model_consent) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+            "INSERT INTO studio_projects(id,owner_id,title,idea,planning_type,source_id,code_snapshot_id,forked_from,code_model_consent,start_mode,planning_intent,source_publication_id) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
             (inp.id, owner, title, idea, "existing" if inp.source_id else "new", inp.source_id,
-             inp.code_snapshot_id, inp.forked_from, Jsonb(consent) if consent else None),
+             inp.code_snapshot_id, inp.forked_from, Jsonb(consent) if consent else None, inp.start_mode, inp.planning_intent, inp.source_publication_id),
         ).fetchone()
         c.execute(
             "INSERT INTO studio_revisions(project_id,version,snapshot,summary) VALUES (%s,0,%s,'프로젝트 시작')",
             (p["id"], Jsonb(initial)),
         )
-        add_job(c, p, JobInput(base_version=0, kind="generate", request=idea))
+        add_job(c, p, JobInput(base_version=0, kind="discuss" if inp.start_mode == "conversation" else "generate", request=idea))
         return p
 
 
@@ -275,6 +319,9 @@ def rename(project_id: UUID, inp: TitleInput, owner: User):
 @app.get("/api/projects/{project_id}")
 def get_project(project_id: UUID, owner: User):
     with connect() as c:
+        # A worker may commit between reads. Keep the draft, job and messages
+        # at one snapshot so a completed job cannot hide its newly saved draft.
+        c.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         p = project(c, project_id, owner)
         revision = c.execute(
             "SELECT * FROM studio_revisions WHERE project_id=%s AND version=%s",
@@ -296,14 +343,26 @@ def get_project(project_id: UUID, owner: User):
             "SELECT version,summary,created_at FROM studio_revisions WHERE project_id=%s ORDER BY version DESC",
             (project_id,),
         ).fetchall()
+        changed_block_ids = []
+        if proposal:
+            comparison = revision["snapshot"]
+            if proposal["job_id"]:
+                previous = c.execute("SELECT bp.candidate FROM studio_jobs j JOIN studio_proposals bp ON bp.id=j.base_proposal_id WHERE j.id=%s", (proposal["job_id"],)).fetchone()
+                if previous:
+                    comparison = previous["candidate"]
+            old_blocks = {block["id"]: block for screen in comparison["screens"] for block in screen["blocks"]}
+            if comparison["screens"]:
+                changed_block_ids = [block["id"] for screen in proposal["candidate"]["screens"] for block in screen["blocks"] if old_blocks.get(block["id"]) != block]
         return {
             "project": p,
+            "source_access": project_source_access(c, p),
             "revision": revision,
             "proposal": proposal,
             "job": job,
             "messages": messages,
             "revisions": revisions,
             "screen_previews": settings().local_screen_previews.get(str(project_id), {}) if p["code_snapshot_id"] else {},
+            "changed_block_ids": changed_block_ids,
         }
 
 
@@ -368,6 +427,7 @@ def start_role_review(project_id: UUID, inp: ReviewInput, owner: User):
         ).fetchone()
         if old:
             return read_report(c, old["id"])
+        require_project_source(c, p)
         require_code_consent(p)
         s = settings()
         report_id = uuid4()
@@ -401,7 +461,8 @@ def retry_role_review(
     project_id: UUID, review_id: UUID, inp: RetryReviewInput, owner: User
 ):
     with connect() as c:
-        project(c, project_id, owner, True)
+        p = project(c, project_id, owner, True)
+        require_project_source(c, p)
         report = c.execute(
             "SELECT * FROM studio_reviews WHERE id=%s AND project_id=%s FOR UPDATE",
             (review_id, project_id),
@@ -470,6 +531,7 @@ def answer(project_id: UUID, job_id: UUID, inp: AnswerInput, owner: User):
             }:
                 return job
             raise HTTPException(409, "답변을 기다리는 실행이 아닙니다.")
+        require_project_source(c, p)
         result = c.execute(
             "UPDATE studio_jobs SET answers=%s,status='queued',updated_at=now() WHERE id=%s RETURNING *",
             (Jsonb(inp.answers), job_id),
@@ -511,6 +573,9 @@ def manual_edit(project_id: UUID, inp: ManualInput, owner: User):
     with connect() as c:
         p = project(c, project_id, owner, True)
         check_version(p, inp.base_version)
+        pending = c.execute("SELECT id FROM studio_proposals WHERE project_id=%s AND status='pending'", (project_id,)).fetchone()
+        if (inp.base_proposal_id or p["start_mode"] == "conversation") and (pending["id"] if pending else None) != inp.base_proposal_id:
+            raise HTTPException(409, "초안이 변경되었습니다. 현재 초안을 불러온 후 편집해 주세요.")
         if c.execute(
             "SELECT 1 FROM studio_jobs WHERE project_id=%s AND status IN ('running','queued','awaiting_answers')",
             (project_id,),
@@ -523,6 +588,8 @@ def manual_edit(project_id: UUID, inp: ManualInput, owner: User):
         issues, diff = review(before, candidate)
         if before.get("source_context") != candidate.get("source_context"):
             raise HTTPException(422, "기획에 고정된 코드 기준과 근거를 변경할 수 없습니다.")
+        if before.get("design_profile") != candidate.get("design_profile"):
+            raise HTTPException(422, "업무에 고정된 디자인 설정을 변경할 수 없습니다.")
         if not diff:
             raise HTTPException(422, "변경된 내용이 없습니다.")
         c.execute(
@@ -568,6 +635,8 @@ def decide(
             return {"status": wanted, "version": proposal["approved_version"]}
         if proposal["status"] != "pending":
             raise HTTPException(409, "이미 처리된 수정안입니다.")
+        if c.execute("SELECT 1 FROM studio_jobs WHERE project_id=%s AND status IN ('queued','running','awaiting_answers')", (project_id,)).fetchone():
+            raise HTTPException(409, "대화와 초안 처리가 끝난 후 내용을 확인해 주세요.")
         version = None
         if decision == "approve":
             check_version(p, inp.expected_version)
@@ -609,9 +678,9 @@ def decide(
             "INSERT INTO studio_messages(project_id,role,content) VALUES (%s,'assistant',%s)",
             (
                 project_id,
-                f"v{version}으로 확정했어요. 이 버전을 기준으로 다음 작업을 이어갈 수 있어요."
+                f"현업 확인본 v{version}으로 저장했어요. 이 내용을 기준으로 다음 작업을 이어갈 수 있어요."
                 if version
-                else "수정안을 거절했어요. 확정된 기획은 유지됩니다.",
+                else "이 초안은 사용하지 않기로 했어요. 대화를 이어서 새 초안을 만들 수 있어요.",
             ),
         )
         return {"status": wanted, "version": version}
@@ -656,16 +725,27 @@ def markdown(s):
     for e in s["flow"]["edges"]:
         lines += [f"- {e['id']}: {e['source']} → {e['target']} {e['label']}"]
     lines += ["", "# 와이어프레임"]
+    if s.get("design_profile"):
+        profile = s["design_profile"]
+        lines += ["## 디자인 기준", f"주요 색상 {profile['primary']} · 배경 {profile['background']} · 글자 {profile['text']}",
+                  f"글꼴 {profile['font']} · 간격 {profile['spacing']}px · 모서리 {profile['radius']}px · 공통 배치 {profile['shell']}"]
     for w in s["screens"]:
         lines += [
             f"## {w['id']} {w['title']}",
             f"화면 노드: {w['node_id']} · {w['device']}",
+            f"화면 배치: {w.get('layout', 'form')}",
         ]
         for b in w["blocks"]:
             lines += [
                 f"- {b['id']} [{b['type']}] {b['label']}: {b['content']}"
                 + (" → " + b["target_screen_id"] if b["target_screen_id"] else "")
             ]
+            if b["type"] == "table":
+                def cell(value):
+                    return value.replace("|", "\\|").replace("\n", " ")
+                lines += ["| " + " | ".join(map(cell, b["columns"])) + " |",
+                          "| " + " | ".join("---" for _ in b["columns"]) + " |"]
+                lines += ["| " + " | ".join(map(cell, row)) + " |" for row in b["rows"]]
     return "\n".join(lines + source_markdown(s))
 
 

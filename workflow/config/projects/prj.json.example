@@ -4,8 +4,8 @@
   "project_id": "prj",
   "repository": {
     "provider": "github",
-    "owner": "JunSuHeo",
-    "name": "kosa_final"
+    "owner": "example-owner",
+    "name": "example-repository"
   },
   "base_branch": "main",
   "project_root": "PRJ",

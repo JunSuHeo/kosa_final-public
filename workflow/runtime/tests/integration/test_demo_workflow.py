@@ -19,15 +19,15 @@ from workflow.runtime.github_adapter import GitHubCLI
 
 
 class DemoWorker:
-    def __init__(self, project_root, broken=False):
-        self.project_root = project_root
+    def __init__(self, demo_path, broken=False):
+        self.demo_path = demo_path
         self.broken = broken
 
     def preflight(self, settings):
         return {"adapter": "offline_fake", "version": settings["version"], "platform": "linux"}
 
     def execute(self, prompt, destination, settings):
-        project = destination / self.project_root
+        project = destination / self.demo_path
         source = project / "src/calculator.py"
         expression = "return left - right" if self.broken else "return sum((left, right))"
         source.write_text(source.read_text(encoding="utf-8").replace("return left + right", expression), encoding="utf-8")
@@ -50,6 +50,7 @@ class DemoWorkflowTests(unittest.TestCase):
         self.config["repository"].update(owner="example", name="temp-workflow")
         self.config["publishing"]["commit_author"] = {"name": "Local Test", "email": "test@example.test"}
         self.project_root = self.config["project_root"]
+        self.demo_path = Path(self.project_root) / "manual-engine-demo"
         self.source_demo = source_repo / self.project_root
         self.source_before = workspace.inventory(self.source_demo)
         shutil.copytree(self.source_demo, self.root / self.project_root,
@@ -75,7 +76,7 @@ class DemoWorkflowTests(unittest.TestCase):
             return original(git, *args, **kwargs)
 
         output = io.StringIO()
-        with patch.object(run, "CodexCLI", return_value=DemoWorker(self.project_root, broken)), \
+        with patch.object(run, "CodexCLI", return_value=DemoWorker(self.demo_path, broken)), \
                 patch.object(git_tools.Git, "run", local_only), \
                 patch.object(GitHubCLI, "preflight", side_effect=AssertionError("Real gh forbidden")), \
                 patch("workflow.runtime.publish.authenticated_git", side_effect=AssertionError("Real credentials forbidden")), \
@@ -86,7 +87,7 @@ class DemoWorkflowTests(unittest.TestCase):
         self.assertEqual(self.git.text("rev-parse", "HEAD"), self.head)
         self.assertEqual(self.git.run("status", "--porcelain"), self.before)
         self.assertEqual(workspace.inventory(self.source_demo), self.source_before)
-        self.assertIn("return left + right", (self.root / self.project_root / "src/calculator.py").read_text())
+        self.assertIn("return left + right", (self.root / self.demo_path / "src/calculator.py").read_text())
         return code, result
 
     def test_actual_cli_and_unit_e2e_reach_simulated_pr(self):

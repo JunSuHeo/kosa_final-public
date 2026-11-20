@@ -1,10 +1,10 @@
 # GitHub Actions 및 저장소 설정
 
-이 문서는 `.github/workflows/issue-approval.yml`을 해당 GitHub 저장소에서 작동시키기 위한 운영 설정을 설명합니다. 현재 workflow와 실행 코드는 저장소 로컬에 있습니다. Issue 이벤트를 받는 기본 브랜치에 workflow가 검토·반영되기 전에는 GitHub Actions가 이를 실행하지 않습니다.
+이 문서는 `.github/workflows/issue-approval.yml`을 비공개 GitHub 저장소에서 구성하기 위한 운영 설정을 설명합니다. 공개본은 실행 엔진을 제공합니다. Issue 이벤트를 받는 기본 브랜치에 workflow가 검토·반영되기 전에는 GitHub Actions가 이를 실행하지 않습니다.
 
 ## 먼저 대상 프로젝트를 확인하세요
 
-프로젝트 설정은 두 가지입니다. [PRJ 설정](../config/projects/prj.json)은 `project_root`와 `allowed_paths`를 `PRJ/`로 제한하고, [sandbox 설정](../config/projects/sandbox.json)은 `sandbox/`로 제한합니다. GitHub Issue 작업은 Repository Variable `WORKFLOW_CONFIG_PATH`에 지정한 설정 하나만 사용합니다. PRJ 설정은 PostgreSQL 백엔드 테스트를 필수로 요구하므로, 격리 runner에서 PostgreSQL 서비스를 제공하지 못하면 테스트가 실패해 게시가 차단됩니다. 실행 대상과 테스트 인프라를 확인한 뒤 적절한 설정 파일을 선택하세요.
+프로젝트 설정은 두 가지입니다. [PRJ 설정](../config/projects/prj.json)은 `project_root`와 `allowed_paths`를 `PRJ/`로 제한하고, [sandbox 설정](../config/projects/sandbox.json)은 `sandbox/`로 제한합니다. GitHub Issue 작업은 Repository Variable `WORKFLOW_CONFIG_PATH`에 지정한 설정 하나만 사용합니다. PRJ 설정의 필수 백엔드 검사를 사용하려면 [러너 준비 요건](github_runner.md)에 따라 Python 패키지 다운로드와 PostgreSQL 바이너리를 준비하세요.
 
 ## 1. Workflow 반영과 Actions 정책
 
@@ -76,7 +76,7 @@ Issue 본문은 외부 사용자가 제출하는 입력이므로 개인 개발 P
 Issue Branch template은 다음 설정을 사용합니다.
 
 ```json
-"branch_template": "ai_feature/{date}/{approver}/{issue_title}",
+"branch_template": "feature/ai/{date}/{approver}/{issue_title}",
 "manual_branch_template": "ai/{project_id}/{run_id}"
 ```
 

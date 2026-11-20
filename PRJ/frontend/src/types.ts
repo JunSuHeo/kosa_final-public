@@ -45,13 +45,17 @@ export type BlockType =
   | "card"
   | "list"
   | "stat"
-  | "navigation";
+  | "navigation"
+  | "table";
 export type Block = {
   id: string;
   type: BlockType;
   label: string;
   content: string;
   target_screen_id: string | null;
+  region?: "content" | "header" | "navigation" | "filters" | "actions";
+  columns?: string[];
+  rows?: string[][];
 };
 export type Screen = {
   id: string;
@@ -59,7 +63,31 @@ export type Screen = {
   title: string;
   device: "mobile" | "desktop";
   blocks: Block[];
+  layout?: "form" | "list" | "detail" | "dashboard";
 };
+export type DesignProfile = {
+  primary: string;
+  background: string;
+  surface: string;
+  text: string;
+  font: "system" | "sans" | "serif" | "mono";
+  spacing: number;
+  radius: number;
+  shell: "header" | "sidebar" | "plain";
+  evidence: string[];
+};
+export type ConversationBrief = {
+  current_work: string;
+  problem: string;
+  desired_change: string;
+  actors: string[];
+  rules: string[];
+  exceptions: string[];
+  confirmed_facts: string[];
+  user_statements: string[];
+  open_questions: string[];
+};
+export type PlanningIntent = "new_feature" | "improve" | "process";
 export type Snapshot = {
   prd: {
     title: string;
@@ -74,6 +102,7 @@ export type Snapshot = {
   screens: Screen[];
   source_context?: SourceContext;
   implementation?: Implementation;
+  design_profile?: DesignProfile;
 };
 export type Project = {
   id: string;
@@ -85,6 +114,10 @@ export type Project = {
   current_version: number;
   created_at: string;
   updated_at: string;
+  start_mode?: "generate" | "conversation";
+  planning_intent?: PlanningIntent;
+  conversation_brief?: ConversationBrief | null;
+  source_publication_id?: string | null;
 };
 export type Question = { key: string; title: string; options: string[] };
 export type Job = {
@@ -92,7 +125,7 @@ export type Job = {
   code_snapshot_id?: string | null;
   status: string;
   stage: string;
-  kind: "generate" | "revise";
+  kind: "generate" | "revise" | "discuss" | "repair";
   base_version: number;
   request: string;
   error: string | null;
@@ -100,6 +133,8 @@ export type Job = {
   answers: Record<string, string>;
   partial: Record<string, unknown>;
   usage: unknown[];
+  base_proposal_id?: string | null;
+  prompt_version?: string;
 };
 export type Issue = {
   severity: "blocking" | "warning";
@@ -127,6 +162,7 @@ export type Revision = {
   snapshot: Snapshot;
 };
 export type Bundle = {
+  source_access?: { can_use: boolean; can_manage: boolean };
   project: Project;
   revision: Revision;
   proposal: Proposal | null;
@@ -134,6 +170,7 @@ export type Bundle = {
   messages: { id: number; role: "user" | "assistant"; content: string }[];
   revisions: Omit<Revision, "snapshot">[];
   screen_previews?: Record<string, string>;
+  changed_block_ids?: string[];
 };
 export type Health = {
   status: string;
@@ -167,7 +204,11 @@ export type RoleReport = {
     role: ReviewRole;
     status: string;
     attempts: { status: string; usage: unknown; error: string | null }[];
-    result: { summary: string; reviewed_checks: string[]; findings: ReviewFinding[] } | null;
+    result: {
+      summary: string;
+      reviewed_checks: string[];
+      findings: ReviewFinding[];
+    } | null;
     error: string | null;
   }[];
 };
@@ -194,6 +235,8 @@ export type SourceContext = {
   evidence: CodeEvidence[];
 };
 export type Source = {
+  can_manage?: boolean;
+  published_at?: string;
   id: string;
   name: string;
   description: string;
@@ -206,7 +249,22 @@ export type Source = {
   status: "queued" | "running" | "ready" | "failed" | null;
   error: string | null;
   last_error: string | null;
+  publication_id?: string | null;
+  published_snapshot_id?: string | null;
+  published_model?: { provider: string; model: string } | null;
+  design_profile?: DesignProfile;
 };
+export type BusinessSource = Pick<
+  Source,
+  | "id"
+  | "name"
+  | "description"
+  | "can_manage"
+  | "publication_id"
+  | "published_snapshot_id"
+  | "published_model"
+  | "published_at"
+>;
 export type SourcePreview = {
   context: SourceContext;
   model: { provider: string; model: string } | null;
@@ -217,6 +275,11 @@ export type SourceSelection = {
   code_snapshot_id: string;
   forked_from?: string;
   code_consent?: string;
+  source_publication_id?: string;
+};
+export type PublicationPreview = SourcePreview & {
+  scope: { path: string; sha256: string }[];
+  design_profile: DesignProfile;
 };
 export type Implementation = {
   current_behavior: string;
@@ -226,10 +289,21 @@ export type Implementation = {
   exceptions: string[];
   assumptions: string[];
   unresolved: string[];
-  scope: { area: string; disposition: string; reason: string; evidence_ids: string[] }[];
+  scope: {
+    area: string;
+    disposition: string;
+    reason: string;
+    evidence_ids: string[];
+  }[];
   tasks: {
-    id: string; requirement_ids: string[]; evidence_ids: string[]; acceptance_ids: string[];
-    existing_targets: string[]; proposed_targets: string[]; reuse: string; implementation: string;
+    id: string;
+    requirement_ids: string[];
+    evidence_ids: string[];
+    acceptance_ids: string[];
+    existing_targets: string[];
+    proposed_targets: string[];
+    reuse: string;
+    implementation: string;
   }[];
   acceptance: { id: string; scenario: string }[];
 };

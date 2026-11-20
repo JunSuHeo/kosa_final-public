@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import httpx
 from .config import settings
-from .schema import Questions, Prd, Features, Flow, Wireframes, DraftSnapshot, SourceDraft, ImplementationPlan
+from .schema import Questions, Prd, Features, Flow, Wireframes, DraftSnapshot, SourceDraft, ImplementationPlan, Discussion, DiscussionV1
 
 class ModelError(RuntimeError):
     """Sanitized message safe to show in the UI."""
@@ -15,6 +15,7 @@ class ModelError(RuntimeError):
 
 PROMPT_VERSION = "studio.v1"
 STAGE_MODELS = {
+    "discuss": Discussion,
     "questions": Questions,
     "prd": Prd,
     "features": Features,
@@ -48,13 +49,19 @@ def strict_schema(model):
 def generate(stage: str, context: dict, job: dict):
     source = context.get("source_context")
     result_model = SourceDraft if source and stage in {"revise", "repair"} else STAGE_MODELS[stage]
+    version = job.get("prompt_version", PROMPT_VERSION)
+    if stage == "discuss" and version != "business.v2":
+        result_model = DiscussionV1
     if job["ai_mode"] == "mock":
-        return result_model.model_validate(
-            mock_result(stage, context)
-        ).model_dump(), {"mode": "mock", "stage": stage}
-    prompt_file = Path(__file__).resolve().parents[2] / "prompts/studio.v1.md"
+        result = mock_result(stage, context)
+        if stage == "discuss" and version != "business.v2":
+            result.pop("questions", None)
+        return result_model.model_validate(result).model_dump(), {"mode": "mock", "stage": stage}
+    if version not in {"studio.v1", "business.v1", "business.v2"}:
+        raise ModelError("지원되지 않는 기획 지침 버전입니다. 새 대화를 시작해 주세요.")
+    prompt_file = Path(__file__).resolve().parents[2] / f"prompts/{version}.md"
     if not prompt_file.exists():
-        prompt_file = Path("/prompts/studio.v1.md")
+        prompt_file = Path(f"/prompts/{version}.md")
     system = (
         prompt_file.read_text()
         + "\n현재 단계: "
@@ -64,7 +71,7 @@ def generate(stage: str, context: dict, job: dict):
     if source:
         source_prompt = prompt_file.with_name("source.v1.md")
         system += "\n" + source_prompt.read_text()
-    return structured_completion(stage, context, job, system, result_model, PROMPT_VERSION)
+    return structured_completion(stage, context, job, system, result_model, version)
 
 
 def structured_completion(stage, context, job, system, result_model, prompt_version, max_tokens=16000):
@@ -166,6 +173,19 @@ def mock_result(stage, ctx):
     actor = answers.get("audience") or "일반 사용자"
     device = "mobile" if "모바일" in answers.get("platform", "") else "desktop"
     source = ctx.get("source_context")
+    if stage == "discuss":
+        previous = ctx.get("conversation_brief") or {}
+        statements = previous.get("user_statements", []) + [ctx["request"]]
+        return {"reply": "말씀하신 업무 내용을 정리했어요. " + ctx["request"][:250] + "\n아래 질문에 답하거나 자유롭게 대화를 이어가 주세요. 준비되면 ‘기획 초안 만들기’를 눌러 주세요.",
+                "brief": {"current_work": previous.get("current_work") or (source or {}).get("name", "현재 업무"),
+                          "problem": previous.get("problem") or ctx["request"], "desired_change": ctx["request"],
+                          "actors": previous.get("actors", []), "rules": previous.get("rules", []),
+                          "exceptions": previous.get("exceptions", []), "confirmed_facts": previous.get("confirmed_facts", []),
+                          "user_statements": statements[-20:], "open_questions": ["담당자와 예외 처리 기준 확인"]},
+                "suggestions": [],
+                "questions": [{"key": "next_business_decision",
+                               "title": "예외가 발생하면 어떻게 처리할까요?" if len(statements) > 1 else "이 업무의 확인과 승인은 누가 하나요?",
+                               "options": ["담당자가 확인 후 다시 요청해요", "팀장에게 전달해요", "아직 정하지 않았어요"] if len(statements) > 1 else ["담당자가 직접 처리해요", "담당자가 요청하고 팀장이 승인해요", "아직 정하지 않았어요"]}]}
     if source and stage == "questions":
         return {"questions": [
             {"key": "scope", "title": "변경 정책의 범위를 어디까지 적용할까요?",
@@ -523,13 +543,25 @@ def mock_result(stage, ctx):
         }
     if stage in {"revise", "repair"}:
         result = copy.deepcopy(ctx["snapshot"])
+        result.pop("design_profile", None)
         if stage == "revise":
             request = ctx.get("request", "수정")
             target = ctx.get("target_id")
+            selected_block = next((b for screen in result["screens"] for b in screen["blocks"] if b["id"] == target), None)
+            if selected_block:
+                selected_block["label"] = request[:100]
+                return result
             selected = next(
                 (x for x in result["prd"]["sections"] if x["id"] == target),
                 result["prd"]["sections"][1],
             )
             selected["content"] += "\n\n수정 요청 반영(로컬 데모): " + request
+        else:
+            # The mock repair resolves a missing screen target without rewriting unrelated content.
+            screens = {s["id"] for s in result["screens"]}
+            for screen in result["screens"]:
+                for block in screen["blocks"]:
+                    if block["target_screen_id"] and block["target_screen_id"] not in screens:
+                        block["target_screen_id"] = None
         return result
     raise ValueError("알 수 없는 생성 단계")

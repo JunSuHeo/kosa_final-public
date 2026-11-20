@@ -62,5 +62,9 @@ playwright-report/
 *.pyc
 *.tsbuildinfo
 
-# Private runner integration
+# Internal rollout evidence and runner integration
+/PRJ/docs/*-rollout-smoke.json
+/PRJ/docs/business-live-*.json
+/PRJ/docs/business-questions-live.json
+/.agents/workflow/
 /.github/workflows/issue-approval.yml

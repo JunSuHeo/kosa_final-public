@@ -227,6 +227,34 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(command[-1], "literal; echo injected")
         self.assertNotIn(str(Path.home()), command)
 
+    def test_prj_backend_check_without_prepared_cache_is_unavailable(self):
+        executor = test_runner.IsolatedTestProcess()
+        executor.checked, executor.executable = True, "/fake/bwrap"
+        with patch.dict(os.environ, {"WORKFLOW_PRJ_UV_CACHE": ""}), patch.object(test_runner, "_process") as process:
+            result = executor.run(self.candidate, "sample/tests", {"program": "prj-backend-check", "args": []}, 2)
+        self.assertEqual(result["status"], "unavailable")
+        self.assertIn("WORKFLOW_PRJ_UV_CACHE", result["reason"])
+        process.assert_not_called()
+
+    def test_prj_backend_check_mounts_only_trusted_launcher_and_read_only_cache(self):
+        executor = test_runner.IsolatedTestProcess()
+        executor.checked, executor.executable = True, "/fake/bwrap"
+        cache = Path(self.temp.name) / "uv-cache"
+        cache.mkdir()
+        (cache / "CACHEDIR.TAG").touch()
+        passed = {"status": "passed", "return_code": 0, "stderr": "", "stdout": ""}
+        with patch.dict(os.environ, {"WORKFLOW_PRJ_UV_CACHE": str(cache)}), \
+                patch.object(test_runner, "_process", return_value=passed) as process:
+            result = executor.run(self.candidate, "sample/tests", {"program": "prj-backend-check", "args": []}, 2)
+        self.assertEqual(result["status"], "passed")
+        command = process.call_args.args[0]
+        self.assertEqual(command[-3:], ["--", "/bin/bash", "/workflow/prj_backend_check.sh"])
+        index = command.index("/workflow/uv-cache")
+        self.assertEqual(command[index - 2:index], ["--ro-bind", str(cache.resolve())])
+        self.assertIn("--unshare-all", command)
+        self.assertIn("--clearenv", command)
+        self.assertNotIn("--share-net", command)
+
     def test_oversized_output_is_omitted_entirely(self):
         output = test_runner._Output(io.BytesIO(b"x" * (test_runner.OUTPUT_LIMIT + 1)))
         output.drain()

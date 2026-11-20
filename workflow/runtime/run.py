@@ -229,7 +229,7 @@ def execute_request(config_path: Path, task: str, repo_root: Path, results_dir: 
                                 for message in report["validation"]["errors"])
     except ExecutionError as exc:
         report["final_status"] = exc.status
-        if stage == "collect" and exc.status == "path_violation":
+        if stage == "collect" and exc.status in ("path_violation", "sensitive_content"):
             report["validation_status"] = "failed"
         report["errors"].append({"status": exc.status, "message": workspace.redact(str(exc))})
     except KeyboardInterrupt:

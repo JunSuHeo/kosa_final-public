@@ -1,8 +1,8 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "기획실 Studio API",
-    "version": "2.0.0"
+    "title": "H-PlanIT API",
+    "version": "2.1.0"
   },
   "paths": {
     "/api/sources": {
@@ -89,6 +89,166 @@
         }
       }
     },
+    "/api/sources/{source_id}/assignments": {
+      "get": {
+        "summary": "List Assignments",
+        "operationId": "list_assignments_api_sources__source_id__assignments_get",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sources/{source_id}/assignments/{account_id}": {
+      "put": {
+        "summary": "Assign Source",
+        "operationId": "assign_source_api_sources__source_id__assignments__account_id__put",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Unassign Source",
+        "operationId": "unassign_source_api_sources__source_id__assignments__account_id__delete",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sources/{source_id}/analyze": {
       "post": {
         "summary": "Refresh Source",
@@ -115,6 +275,180 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sources/{source_id}/check": {
+      "post": {
+        "summary": "Check Source",
+        "operationId": "check_source_api_sources__source_id__check_post",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sources/{source_id}/snapshots/{snapshot_id}/publication-preview": {
+      "post": {
+        "summary": "Preview Publication",
+        "operationId": "preview_publication_api_sources__source_id__snapshots__snapshot_id__publication_preview_post",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "snapshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Snapshot Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicationPreviewInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sources/{source_id}/publish": {
+      "post": {
+        "summary": "Publish Source",
+        "operationId": "publish_source_api_sources__source_id__publish_post",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishInput"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1300,7 +1634,8 @@
               "card",
               "list",
               "stat",
-              "navigation"
+              "navigation",
+              "table"
             ],
             "title": "Type"
           },
@@ -1324,6 +1659,37 @@
               }
             ],
             "title": "Target Screen Id"
+          },
+          "region": {
+            "type": "string",
+            "enum": [
+              "content",
+              "header",
+              "navigation",
+              "filters",
+              "actions"
+            ],
+            "title": "Region",
+            "default": "content"
+          },
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Columns"
+          },
+          "rows": {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Rows"
           }
         },
         "additionalProperties": false,
@@ -1469,6 +1835,80 @@
           "expected_version"
         ],
         "title": "DecisionInput"
+      },
+      "DesignProfile": {
+        "properties": {
+          "primary": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Primary",
+            "default": "#2563eb"
+          },
+          "background": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Background",
+            "default": "#ffffff"
+          },
+          "surface": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Surface",
+            "default": "#f8fafc"
+          },
+          "text": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Text",
+            "default": "#172033"
+          },
+          "font": {
+            "type": "string",
+            "enum": [
+              "system",
+              "sans",
+              "serif",
+              "mono"
+            ],
+            "title": "Font",
+            "default": "system"
+          },
+          "spacing": {
+            "type": "integer",
+            "maximum": 32.0,
+            "minimum": 8.0,
+            "title": "Spacing",
+            "default": 16
+          },
+          "radius": {
+            "type": "integer",
+            "maximum": 24.0,
+            "minimum": 0.0,
+            "title": "Radius",
+            "default": 6
+          },
+          "shell": {
+            "type": "string",
+            "enum": [
+              "header",
+              "sidebar",
+              "plain"
+            ],
+            "title": "Shell",
+            "default": "header"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Evidence"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DesignProfile"
       },
       "Edge": {
         "properties": {
@@ -1731,7 +2171,9 @@
             "type": "string",
             "enum": [
               "generate",
-              "revise"
+              "revise",
+              "discuss",
+              "repair"
             ],
             "title": "Kind",
             "default": "revise"
@@ -1752,6 +2194,18 @@
               }
             ],
             "title": "Target Id"
+          },
+          "base_proposal_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Proposal Id"
           }
         },
         "additionalProperties": false,
@@ -1800,6 +2254,18 @@
             "minLength": 1,
             "title": "Summary",
             "default": "문서 직접 편집"
+          },
+          "base_proposal_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Proposal Id"
           }
         },
         "additionalProperties": false,
@@ -2007,6 +2473,37 @@
               }
             ],
             "title": "Code Consent"
+          },
+          "start_mode": {
+            "type": "string",
+            "enum": [
+              "generate",
+              "conversation"
+            ],
+            "title": "Start Mode",
+            "default": "generate"
+          },
+          "planning_intent": {
+            "type": "string",
+            "enum": [
+              "new_feature",
+              "improve",
+              "process"
+            ],
+            "title": "Planning Intent",
+            "default": "improve"
+          },
+          "source_publication_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Publication Id"
           }
         },
         "additionalProperties": false,
@@ -2015,6 +2512,48 @@
           "idea"
         ],
         "title": "ProjectInput"
+      },
+      "PublicationPreviewInput": {
+        "properties": {
+          "design_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DesignProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PublicationPreviewInput"
+      },
+      "PublishInput": {
+        "properties": {
+          "snapshot_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Snapshot Id"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Fingerprint"
+          },
+          "design_profile": {
+            "$ref": "#/components/schemas/DesignProfile"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "snapshot_id",
+          "fingerprint",
+          "design_profile"
+        ],
+        "title": "PublishInput"
       },
       "Requirement": {
         "properties": {
@@ -2191,6 +2730,17 @@
             "type": "array",
             "maxItems": 24,
             "title": "Blocks"
+          },
+          "layout": {
+            "type": "string",
+            "enum": [
+              "form",
+              "list",
+              "detail",
+              "dashboard"
+            ],
+            "title": "Layout",
+            "default": "form"
           }
         },
         "additionalProperties": false,
@@ -2286,6 +2836,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ImplementationPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "design_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DesignProfile"
               },
               {
                 "type": "null"

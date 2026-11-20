@@ -1,9 +1,14 @@
 let accessToken = sessionStorage.getItem("studio-token") || "";
-export function setToken(token: string) {
+export function setToken(token: string, persist = true) {
   accessToken = token;
-  token
+  token && persist
     ? sessionStorage.setItem("studio-token", token)
     : sessionStorage.removeItem("studio-token");
+}
+let accessGuard: ((path: string, method: string) => Promise<void>) | null =
+  null;
+export function setAccessGuard(guard: typeof accessGuard) {
+  accessGuard = guard;
 }
 export async function api<T>(
   path: string,
@@ -11,6 +16,7 @@ export async function api<T>(
   method?: string,
   signal?: AbortSignal,
 ): Promise<T> {
+  await accessGuard?.(path, method || (body === undefined ? "GET" : "POST"));
   const res = await fetch(path, {
     method: method || (body === undefined ? "GET" : "POST"),
     headers: {
@@ -44,6 +50,7 @@ export class ApiError extends Error {
   }
 }
 export async function download(path: string) {
+  await accessGuard?.(path, "GET");
   const res = await fetch(path, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });

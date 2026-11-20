@@ -63,13 +63,12 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ## Project instructions
 
 - 2026-10-15 사용자가 기존 구현 전체 폐기와 REA 기반 재구축을 승인했다. 1차 범위는 핵심 기능과 와이어프레임이다.
-- 기존 구현은 ../PRJ-backups/20261015-122148/에 보관했다. 보관본 코드를 새 구현에 복사하지 않는다.
 - 새 계약은 docs/spec/README.md, 구현/검증 상태는 docs/implementation-plan.md와 docs/verification.md를 기준으로 한다.
 - frontend/는 React+TypeScript+Vite, backend/app/는 FastAPI, backend/migrations/는 PostgreSQL migration이다.
 - 승인된 revision만 기획 기준이다. revision은 DB에서도 불변이며 AI와 직접 편집은 새 proposal이다.
   프로젝트와 revision 0은 같은 트랜잭션으로 만든다. 승인만 current_version을 변경한다.
 - 모든 리소스는 서버에서 소유권을 검증한다. 인증 실패 401, 없는/다른 사용자의 리소스는 동일 404,
-  버전/멱등성 충돌은 409다. 사용자 ID를 body에서 받지 않는다.
+  버전/멱등성 충돌은 409다. actor 사용자 ID를 body에서 받지 않는다. 배정 대상 account_id만 배정 API 경로로 받는다.
 - AUTH_MODE=mock은 APP_ENV=local에서만 허용하며 UI에 표시한다. 실제 인증은 Supabase JWT/JWKS다.
 - AI_MODE=mock/live는 인증과 독립이다. live는 서버 API 키/모델이 필요하고 자동 mock fallback을 금지한다.
   LLM_PROVIDER=openai/openrouter, 기본 OpenRouter 모델은 openai/gpt-6.1-sol이다.
@@ -97,8 +96,6 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ## Development harness
 
 - 전체 작업 규칙은 상위 `../AGENTS.md`를 함께 따른다. 이 파일의 기존 프로젝트 계약은 계속 적용한다.
-- 개발 전 `agents/project.md`를 읽고 변경 영역의 `agents/frontend.md`, `agents/backend.md`, `agents/infra.md`를 읽는다. 여러 영역이면 관련 문서를 모두 확인한다.
+- 개발 전 `rules/project.md`를 읽고 변경 영역의 `rules/frontend.md`, `rules/backend.md`, `rules/infra.md`를 읽는다. 여러 영역이면 관련 문서를 모두 확인한다.
 - 안내는 소스·테스트를 찾는 진입점이다. 계약은 `docs/spec/`, 구현은 소스·테스트를 확인한다. 차이가 있으면 기록하고 작업 범위에서 함께 갱신한다.
-- 계획·판단 요약·변경·검증·인계는 담당 팀원의 `../.agents/workflow/{JS|SY|SW}/YYYY-MM-DD-작업명/`에 남긴다. 형식과 공동 작업 연결 규칙은 `../.agents/workflow/README.md`를 따른다.
-- 구조·API·실행법·사용 예시를 바꾸면 해당 `agents/*.md`와 기존 계약/실행 문서를 함께 갱신한다. 미실행 예시와 실제 검증 결과를 구분한다.
-- 팀 공용 스킬은 상위 `../.agents/skills/`를 사용한다. 적용 조건은 `../AGENTS.md`의 팀 공용 스킬 표, 관리 방법은 `../.agents/workflow/README.md`를 따른다.
+- 구조·API·실행법·사용 예시를 바꾸면 해당 `rules/*.md`와 기존 계약/실행 문서를 함께 갱신한다. 미실행 예시와 실제 검증 결과를 구분한다.

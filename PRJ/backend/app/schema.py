@@ -71,11 +71,22 @@ class Flow(StrictModel):
 class Block(StrictModel):
     id: str = Field(min_length=1, max_length=80)
     type: Literal[
-        "heading", "text", "input", "button", "card", "list", "stat", "navigation"
+        "heading", "text", "input", "button", "card", "list", "stat", "navigation", "table"
     ]
     label: str = Field(max_length=500)
     content: str = Field(max_length=3000)
     target_screen_id: str | None
+    region: Literal["content", "header", "navigation", "filters", "actions"] = "content"
+    columns: list[str] = Field(default_factory=list, max_length=12)
+    rows: list[list[str]] = Field(default_factory=list, max_length=30)
+
+    @model_validator(mode="after")
+    def table_shape(self):
+        if self.type == "table" and (not self.columns or any(len(row) != len(self.columns) for row in self.rows)):
+            raise ValueError("표에는 열 제목과 열 수가 일치하는 행이 필요합니다.")
+        if any(len(cell) > 500 for row in self.rows for cell in row) or any(len(c) > 120 for c in self.columns):
+            raise ValueError("표 내용이 너무 깁니다.")
+        return self
 
 
 class Screen(StrictModel):
@@ -84,6 +95,19 @@ class Screen(StrictModel):
     title: str = Field(min_length=1, max_length=160)
     device: Literal["mobile", "desktop"]
     blocks: list[Block] = Field(max_length=24)
+    layout: Literal["form", "list", "detail", "dashboard"] = "form"
+
+
+class DesignProfile(StrictModel):
+    primary: str = Field(default="#2563eb", pattern=r"^#[0-9a-fA-F]{6}$")
+    background: str = Field(default="#ffffff", pattern=r"^#[0-9a-fA-F]{6}$")
+    surface: str = Field(default="#f8fafc", pattern=r"^#[0-9a-fA-F]{6}$")
+    text: str = Field(default="#172033", pattern=r"^#[0-9a-fA-F]{6}$")
+    font: Literal["system", "sans", "serif", "mono"] = "system"
+    spacing: int = Field(default=16, ge=8, le=32)
+    radius: int = Field(default=6, ge=0, le=24)
+    shell: Literal["header", "sidebar", "plain"] = "header"
+    evidence: list[str] = Field(default_factory=list, max_length=12)
 
 
 class Wireframes(StrictModel):
@@ -164,6 +188,7 @@ class SourceDraft(DraftSnapshot):
 class Snapshot(DraftSnapshot):
     source_context: SourceContext | None = None
     implementation: ImplementationPlan | None = None
+    design_profile: DesignProfile | None = None
 
 
 class Question(StrictModel):
@@ -180,6 +205,28 @@ class Questions(StrictModel):
         if len({q.key for q in self.questions}) != len(self.questions):
             raise ValueError("질문 key가 중복되었습니다.")
         return self
+
+
+class ConversationBrief(StrictModel):
+    current_work: str = Field(max_length=4000)
+    problem: str = Field(max_length=4000)
+    desired_change: str = Field(max_length=4000)
+    actors: list[str] = Field(max_length=10)
+    rules: list[str] = Field(max_length=20)
+    exceptions: list[str] = Field(max_length=15)
+    confirmed_facts: list[str] = Field(max_length=20)
+    user_statements: list[str] = Field(max_length=20)
+    open_questions: list[str] = Field(max_length=10)
+
+
+class DiscussionV1(StrictModel):
+    reply: str = Field(min_length=1, max_length=6000)
+    brief: ConversationBrief
+    suggestions: list[str] = Field(max_length=3)
+
+
+class Discussion(DiscussionV1):
+    questions: list[Question] = Field(max_length=1)
 
 
 class Issue(StrictModel):
@@ -301,6 +348,8 @@ def changes(before: dict, after: dict) -> list[dict]:
                 out[prefix + ":" + item["id"]] = item
         if s.get("implementation"):
             out["implementation"] = s["implementation"]
+        if s.get("design_profile"):
+            out["design_profile"] = s["design_profile"]
         return out
 
     a, b = flatten(before), flatten(after)

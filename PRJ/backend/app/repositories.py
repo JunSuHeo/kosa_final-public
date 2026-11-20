@@ -63,7 +63,9 @@ def git(args, *, directory=None, deadline, limit=8192):
     }
     command = ["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"]
     if directory:
-        command += ["-C", str(directory)]
+        # A validated, read-only bind mount can have a different owner from the worker.
+        # Trust only this checked path; never change Git's global safety configuration.
+        command += ["-c", "safe.directory=" + str(directory), "-C", str(directory)]
     try:
         with subprocess.Popen(command + args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                               stderr=subprocess.DEVNULL, env=env) as proc, selectors.DefaultSelector() as sel:

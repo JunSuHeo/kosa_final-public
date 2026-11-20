@@ -406,6 +406,20 @@ class ControllerTests(unittest.TestCase):
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_analysis_reports_sensitive_source_before_the_model_reads_it(self):
+        fixture = test_run.EngineTests(methodName="test_task_parsing")
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        fixture.write()
+        (fixture.root / "sample/src/secret.ts").write_text('const password = "synthetic-private-value";\n')
+        adapter = Mock()
+        analyzer = subject.PlanAnalyzer(adapter)
+        with self.assertRaises(ExecutionError) as failure:
+            analyzer.analyze(MemoryGitHub().current, fixture.config, fixture.path, fixture.root)
+        self.assertEqual(subject.error_diagnostic(failure.exception), {"reason": "sensitive_content"})
+        self.assertNotIn("synthetic-private-value", str(failure.exception))
+        adapter.analyze.assert_not_called()
+
     def test_analysis_reads_real_structure_and_disallows_file_changes(self):
         fixture = test_run.EngineTests(methodName="test_task_parsing")
         fixture.setUp()

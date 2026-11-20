@@ -270,8 +270,30 @@ class EngineTests(unittest.TestCase):
     def test_generated_sensitive_content_is_discarded(self):
         self.fake.action = lambda destination: (destination / "sample/src/main.py").write_text("password=synthetic-private-value", encoding="utf-8")
         result = self.execute()
-        self.assertEqual(result["final_status"], "path_violation")
+        self.assertEqual(result["final_status"], "sensitive_content")
+        self.assertIsNone(result["workspace_path"])
         self.assertNotIn("synthetic-private-value", json.dumps(result))
+
+    def test_normal_source_declarations_and_references_allow_changes(self):
+        source = self.root / "sample/src/auth.ts"
+        source.write_text('type Login = { login(password: string): void };\nlet accessToken = sessionStorage.getItem("local");\n')
+        self.fake.action = lambda destination: (destination / "sample/src/auth.ts").write_text(
+            'type Login = { password: string };\naccessToken = token;\n')
+        result = self.execute()
+        self.assertEqual(result["final_status"], "completed", result["errors"])
+        self.assertIn("sample/src/auth.ts", result["changed_files"])
+
+    def test_known_fixture_does_not_allow_a_different_literal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "PRJ/backend/tests/test_auth_and_recovery.py"
+            source.parent.mkdir(parents=True)
+            source.write_text('settings = Settings(llm_api_key="secret-do-not-print")\n')
+            self.assertIn(source.relative_to(root).as_posix(), workspace.inventory(root))
+            source.write_text('settings = Settings(llm_api_key="secret-do-not-print synthetic-extra")\n')
+            with self.assertRaises(ExecutionError) as failure:
+                workspace.inventory(root)
+            self.assertEqual(failure.exception.status, "sensitive_content")
 
     def test_task_redaction(self):
         with patch.dict(os.environ, {"WORKFLOW_TEST_TOKEN": "synthetic-private-value"}):

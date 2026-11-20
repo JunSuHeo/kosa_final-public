@@ -24,13 +24,62 @@ _SECRET = re.compile(
 )
 
 
-def redact(text: str) -> str:
+def _redact_known_values(text: str) -> str:
     # Known inherited secret values are only used in memory as redaction targets.
     text = _PRIVATE_KEY.sub("[REDACTED]", text)
     for key, value in os.environ.items():
         if re.search(r"TOKEN|SECRET|PASSWORD|API_KEY", key, re.I) and len(value) >= 4:
             text = text.replace(value, "[REDACTED]")
-    return _SECRET.sub("[REDACTED]", text)
+    return text
+
+
+def redact(text: str) -> str:
+    return _SECRET.sub("[REDACTED]", _redact_known_values(text))
+
+
+# Documentation placeholders and credentials for checked-in local fixtures.
+_SOURCE_EXAMPLES = {
+    "PRJ/README.md": {"API_KEY=\uc11c\ubc84\uc5d0\uc11c\ub9cc_\uc0ac\uc6a9\ud560_\ud0a4\n"},
+    "PRJ/compose.yaml": {"PASSWORD: studio}\n"},
+    "PRJ/backend/tests/test_auth_and_recovery.py": {'api_key="secret-do-not-print"'},
+    "PRJ/backend/tests/test_source_planning.py": {"password = 'fixture-hidden'", 'Bearer alice-fixture"'},
+    **dict.fromkeys(
+        ("PRJ/frontend/tests/business-helpers.ts", "PRJ/frontend/tests/login.spec.ts",
+         "PRJ/frontend/tests/users.spec.ts"),
+        {'password = "a123456789!"'},
+    ),
+}
+_TS_SOURCE_EXPRESSION = re.compile(
+    r"(?i:(?:password|access[_-]?token))[ \t]*:[ \t]*string(?:\):?|,)?|"
+    r"password[ \t]*:[ \t]*e\.target\.value|"
+    r"accessToken[ \t]*=[ \t]*(?:sessionStorage\.getItem\(|token)"
+)
+
+
+def _has_sensitive_source(text: str, relative: str) -> bool:
+    if _redact_known_values(text) != text:
+        return True
+    suffix = Path(relative).suffix
+    for match in _SECRET.finditer(text):
+        value = match.group()
+        following = text[match.end():match.end() + 1]
+        if value + following in _SOURCE_EXAMPLES.get(relative, ()):
+            continue
+        if suffix in (".ts", ".tsx") and _TS_SOURCE_EXPRESSION.fullmatch(value):
+            continue
+        if suffix == ".py":
+            if re.fullmatch(r"SECRET[ \t]*=[ \t]*re\.compile\(", value):
+                continue
+            if re.fullmatch(r"api_key:[ \t]*\r?\n[ \t]*raise", value):
+                start = text.rfind("\n", 0, match.start()) + 1
+                if re.fullmatch(r"[ \t]*if [^\n]+ self\.", text[start:match.start()]):
+                    continue
+        if (suffix == ".json" and re.fullmatch(r"sk-[a-z0-9]{8}-[a-z0-9]{8}", value)
+                and text[:match.start()].endswith('"id": "ta')
+                and following == '"'):
+            continue
+        return True
+    return False
 
 
 def protected(relative: str) -> bool:
@@ -62,7 +111,7 @@ def read_context(path: Path) -> str:
             raise ExecutionError("environment_error", "A context document exceeds the 512 KiB limit.")
         text = data.decode("utf-8-sig")
         if redact(text) != text:
-            raise ExecutionError("path_violation", "Sensitive content was detected in a context document; execution was blocked.")
+            raise ExecutionError("sensitive_content", "Sensitive content was detected in a context document; execution was blocked.")
         return text
     except (OSError, UnicodeError) as exc:
         raise ExecutionError("environment_error", "Cannot read a UTF-8 context document.") from exc
@@ -94,14 +143,14 @@ def inventory(root: Path) -> dict[str, dict[str, Any]]:
     for path in _files(root):
         relative = path.relative_to(root).as_posix()
         if redact(relative) != relative:
-            raise ExecutionError("path_violation", "Sensitive filenames are not permitted in results.")
+            raise ExecutionError("sensitive_content", "Sensitive filenames are not permitted in results.")
         size = path.stat().st_size
         total += size
         if len(items) >= 10000 or size > 10 * 1024 * 1024 or total > 100 * 1024 * 1024:
             raise ExecutionError("result_collection_failed", "Workspace exceeds file/size collection limits.")
         data = path.read_bytes()
-        if redact(data.decode("utf-8", errors="replace")) != data.decode("utf-8", errors="replace"):
-            raise ExecutionError("path_violation", "Sensitive content was detected; candidate files will not be retained.")
+        if _has_sensitive_source(data.decode("utf-8", errors="replace"), relative):
+            raise ExecutionError("sensitive_content", "Sensitive content was detected in the workspace.")
         items[relative] = {
             "sha256": hashlib.sha256(data).hexdigest(),
             "executable": bool(path.stat().st_mode & stat.S_IXUSR),

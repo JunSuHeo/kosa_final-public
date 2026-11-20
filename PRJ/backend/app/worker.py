@@ -80,6 +80,12 @@ def _process(job_id):
             "SELECT snapshot FROM studio_revisions WHERE project_id=%s AND version=%s",
             (job["project_id"], job["base_version"]),
         ).fetchone()["snapshot"]
+        if job["base_proposal_id"]:
+            proposal = c.execute("SELECT * FROM studio_proposals WHERE id=%s AND project_id=%s AND status='pending'",
+                                 (job["base_proposal_id"], job["project_id"])).fetchone()
+            if not proposal or proposal["base_version"] != job["base_version"]:
+                raise RuntimeError("초안 기준이 변경되었습니다. 현재 초안에서 다시 시작해 주세요.")
+            revision = proposal["candidate"]
     s = settings()
     if (job["provider"], job["model"], job["ai_mode"]) != (
         s.llm_provider,
@@ -103,12 +109,35 @@ def _process(job_id):
         "answers": job["answers"],
         "snapshot": revision,
         "target_id": job["partial"].get("target_id"),
+        "conversation_brief": job["partial"].get("conversation_brief"),
+        "history": job["partial"].get("history", []),
+        "planning_intent": job["partial"].get("planning_intent", "improve"),
+        "design_profile": revision.get("design_profile"),
     }
     basis = revision.get("source_context")
     if basis:
-        context["snapshot"] = {k: v for k, v in revision.items() if k != "source_context"}
+        context["snapshot"] = {k: v for k, v in revision.items() if k not in {"source_context", "design_profile"}}
         context["source_context"] = basis
     partial, usage = job["partial"], job["usage"]
+    if job["kind"] == "discuss":
+        result, tokens = generate("discuss", context, job)
+        with connect() as c:
+            p = c.execute("SELECT * FROM studio_projects WHERE id=%s FOR UPDATE", (job["project_id"],)).fetchone()
+            current = c.execute("SELECT * FROM studio_jobs WHERE id=%s FOR UPDATE", (job_id,)).fetchone()
+            if current["status"] != "running":
+                return
+            if p["current_version"] != job["base_version"]:
+                raise RuntimeError("대화 중 확인본이 변경되었습니다. 다시 말씀해 주세요.")
+            c.execute("UPDATE studio_projects SET conversation_brief=%s,updated_at=now() WHERE id=%s",
+                      (Jsonb(result["brief"]), p["id"]))
+            c.execute("UPDATE studio_jobs SET status='completed',stage='done',partial=%s,usage=%s,updated_at=now() WHERE id=%s",
+                      (Jsonb({**partial, "discussion": result}), Jsonb(usage + [tokens]), job_id))
+            # Preserve the question and choices in history for the next dialogue turn.
+            content = result["reply"]
+            for question in result.get("questions", []):
+                content += "\n\n" + question["title"] + "\n" + " / ".join(question["options"])
+            c.execute("INSERT INTO studio_messages(project_id,role,content) VALUES (%s,'assistant',%s)", (p["id"], content))
+        return
     if job["stage"] == "questions":
         result, tokens = generate("questions", context, job)
         with connect() as c:
@@ -126,8 +155,10 @@ def _process(job_id):
                     ),
                 )
         return
-    if job["kind"] == "revise":
-        candidate, tokens = generate("revise", context, job)
+    if job["kind"] in {"revise", "repair"}:
+        if job["kind"] == "repair":
+            context["issues"] = review(revision, revision)[0]
+        candidate, tokens = generate(job["kind"], context, job)
         usage += [tokens]
     else:
         for stage in STAGES[STAGES.index(job["stage"]) :]:
@@ -159,21 +190,25 @@ def _process(job_id):
             candidate["implementation"] = partial["implementation"]
     if basis:
         candidate["source_context"] = basis
+    if revision.get("design_profile"):
+        candidate["design_profile"] = revision["design_profile"]
     issues, diff = review(revision, candidate)
     if any(i["severity"] == "blocking" for i in issues):
         repaired, tokens = generate(
-            "repair", {**context, "snapshot": {k: v for k, v in candidate.items() if k != "source_context"}, "issues": issues}, job
+            "repair", {**context, "snapshot": {k: v for k, v in candidate.items() if k not in {"source_context", "design_profile"}}, "issues": issues}, job
         )
         usage += [tokens]
         if basis:
             repaired["source_context"] = basis
+        if revision.get("design_profile"):
+            repaired["design_profile"] = revision["design_profile"]
         if all(not original or updated for original, updated in zip(
             artifact_parts(candidate), artifact_parts(repaired)
         )):
             candidate = repaired
             issues, diff = review(revision, candidate)
     blocked = any(issue["severity"] == "blocking" for issue in issues)
-    summary = "기획 초안 생성" if job["kind"] == "generate" else job["request"][:160]
+    summary = "기획 초안 작성" if job["kind"] == "generate" else "기획 연결 오류 정리" if job["kind"] == "repair" else job["request"][:160]
     with connect() as c:
         p = c.execute(
             "SELECT * FROM studio_projects WHERE id=%s FOR UPDATE", (job["project_id"],)
@@ -185,6 +220,15 @@ def _process(job_id):
             return
         if p["current_version"] != job["base_version"]:
             raise RuntimeError("생성 중 기준 버전이 변경되었습니다.")
+        pending = c.execute("SELECT id FROM studio_proposals WHERE project_id=%s AND status='pending'", (p["id"],)).fetchone()
+        if job["base_proposal_id"] and (not pending or pending["id"] != job["base_proposal_id"]):
+            raise RuntimeError("생성 중 초안이 변경되었습니다. 현재 초안에서 다시 시작해 주세요.")
+        if pending and pending["id"] != job["base_proposal_id"]:
+            raise RuntimeError("새 초안이 이미 있습니다. 현재 초안에서 다시 시작해 주세요.")
+        confirmed = c.execute("SELECT snapshot FROM studio_revisions WHERE project_id=%s AND version=%s", (p["id"], p["current_version"])).fetchone()["snapshot"]
+        # Approval always compares against the confirmed revision, even when editing a draft.
+        issues, diff = review(confirmed, candidate)
+        c.execute("UPDATE studio_proposals SET status='superseded' WHERE project_id=%s AND status='pending'", (p["id"],))
         c.execute(
             "INSERT INTO studio_proposals(id,project_id,job_id,base_version,candidate,summary,issues,diff) "
             "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(job_id) DO NOTHING",
@@ -207,9 +251,9 @@ def _process(job_id):
             "INSERT INTO studio_messages(project_id,role,content) VALUES (%s,'assistant',%s)",
             (
                 p["id"],
-                "초안을 준비했어요. 검토 패널에서 승인 전에 해결할 항목을 확인해 주세요."
+                "초안을 준비했어요. 내용 확인에서 정리가 필요한 항목과 해결 방법을 확인해 주세요."
                 if blocked
-                else "PRD부터 와이어프레임까지 연결된 초안을 준비했어요. 내용을 살펴보고 검토 패널에서 확정해 주세요.",
+                else "기획 내용·기능 상세·업무 흐름·화면 시안을 준비했어요. 대화로 더 다듬거나 내용 확인에서 현업 확인본으로 저장해 주세요.",
             ),
         )
 

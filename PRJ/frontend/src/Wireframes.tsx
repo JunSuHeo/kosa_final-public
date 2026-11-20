@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -17,7 +18,13 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import type { Block, BlockType, Screen, Snapshot } from "./types";
+import type {
+  Block,
+  BlockType,
+  Screen,
+  Snapshot,
+  DesignProfile,
+} from "./types";
 type Update = (fn: (s: Snapshot) => void) => void;
 const blockLabels: Record<BlockType, string> = {
   heading: "제목",
@@ -28,6 +35,7 @@ const blockLabels: Record<BlockType, string> = {
   list: "목록",
   stat: "지표",
   navigation: "탐색 메뉴",
+  table: "업무 표",
 };
 export function WirePage({
   screen,
@@ -35,125 +43,251 @@ export function WirePage({
   onSelect,
   onNavigate,
   interactive = false,
+  designProfile,
+  changedIds = [],
 }: {
   screen: Screen;
   selectedBlock?: string;
   onSelect?: (id: string) => void;
   onNavigate?: (id: string) => void;
   interactive?: boolean;
+  designProfile?: DesignProfile;
+  changedIds?: string[];
 }) {
   const activate = (block: Block) => {
     if (interactive && block.target_screen_id)
       onNavigate?.(block.target_screen_id);
     else onSelect?.(block.id);
   };
+  const style = designProfile
+    ? ({
+        "--wire-primary": designProfile.primary,
+        "--wire-bg": designProfile.background,
+        "--wire-surface": designProfile.surface,
+        "--wire-text": designProfile.text,
+        "--wire-gap": `${designProfile.spacing}px`,
+        "--wire-radius": `${designProfile.radius}px`,
+        fontFamily: {
+          system: "system-ui, sans-serif",
+          sans: "Arial, sans-serif",
+          serif: "Georgia, serif",
+          mono: "monospace",
+        }[designProfile.font],
+      } as CSSProperties)
+    : undefined;
+  const region = (block: Block) =>
+    block.region && block.region !== "content"
+      ? block.region
+      : block.type === "navigation"
+        ? "navigation"
+        : block.type === "heading"
+          ? "header"
+          : block.type === "button"
+            ? "actions"
+            : "content";
+  const render = (block: Block) => (
+    <div
+      key={block.id}
+      tabIndex={
+        onSelect || (interactive && block.target_screen_id) ? 0 : undefined
+      }
+      role={
+        onSelect || (interactive && block.target_screen_id)
+          ? "button"
+          : undefined
+      }
+      aria-label={
+        onSelect
+          ? `요소 선택 ${block.label}`
+          : interactive && block.target_screen_id
+            ? block.label
+            : undefined
+      }
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          activate(block);
+        }
+      }}
+      className={`wire-block wire-${block.type} ${selectedBlock === block.id ? "block-selected" : ""} ${changedIds.includes(block.id) ? "block-changed" : ""} ${interactive && block.target_screen_id ? "can-navigate" : ""}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        activate(block);
+      }}
+    >
+      {changedIds.includes(block.id) && (
+        <span className="changed-marker">수정됨</span>
+      )}
+      {block.type === "navigation" ? (
+        <>
+          <strong>{block.label}</strong>
+          <span>{block.content}</span>
+        </>
+      ) : block.type === "heading" ? (
+        <>
+          <h1>{block.label}</h1>
+          {block.content && <p>{block.content}</p>}
+        </>
+      ) : block.type === "input" ? (
+        <>
+          <label>{block.label}</label>
+          <div className="fake-input">{block.content || "입력해 주세요"}</div>
+        </>
+      ) : block.type === "button" ? (
+        <div className="wire-button-surface">
+          {block.label}
+          <ArrowUpRight size={15} />
+        </div>
+      ) : block.type === "table" ? (
+        <>
+          <h3>{block.label}</h3>
+          <div className="wire-table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  {block.columns?.map((column, i) => (
+                    <th key={i}>{column}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {block.rows?.map((row, i) => (
+                  <tr key={i}>
+                    {row.map((cell, j) => (
+                      <td key={j}>{cell}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : block.type === "list" ? (
+        <>
+          <h3>{block.label}</h3>
+          {block.content
+            .split("\n")
+            .filter(Boolean)
+            .map((text, i) => (
+              <div className="wire-list-item" key={i}>
+                <span className="wire-checkbox" />
+                {text}
+                <ChevronRight size={13} />
+              </div>
+            ))}
+        </>
+      ) : block.type === "stat" ? (
+        <>
+          <span>{block.label}</span>
+          <strong>{block.content}</strong>
+        </>
+      ) : (
+        <>
+          <h3>{block.label}</h3>
+          <p>{block.content}</p>
+        </>
+      )}
+    </div>
+  );
   return (
-    <div className={`wire-page ${screen.device}`}>
+    <div
+      style={style}
+      className={`wire-page ${screen.device} layout-${screen.layout || "form"} shell-${designProfile?.shell || "plain"}`}
+    >
       <div className="wire-browser">
-        {screen.device === "desktop" ? (
-          <>
-            <i />
-            <i />
-            <i />
-            <span>preview / {screen.title}</span>
-          </>
-        ) : (
-          <>
-            <span>9:41</span>
-            <div className="phone-notch" />
-            <span>▰ ▪</span>
-          </>
-        )}
+        <i />
+        <i />
+        <i />
+        <span>업무 화면 · {screen.title}</span>
       </div>
       <div className="wire-page-body">
-        {screen.blocks.map((block) => (
-          <div
-            tabIndex={
-              onSelect || (interactive && block.target_screen_id)
-                ? 0
-                : undefined
-            }
-            role={
-              onSelect || (interactive && block.target_screen_id)
-                ? "button"
-                : undefined
-            }
-            aria-label={
-              onSelect
-                ? `블록 선택 ${block.label}`
-                : interactive && block.target_screen_id
-                  ? block.label
-                  : undefined
-            }
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                activate(block);
-              }
-            }}
-            key={block.id}
-            className={`wire-block wire-${block.type} ${block.type === "stat" && block.content.length > 32 ? "long-stat" : ""} ${selectedBlock === block.id ? "block-selected" : ""} ${interactive && block.target_screen_id ? "can-navigate" : ""}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              activate(block);
-            }}
-          >
-            {block.type === "navigation" ? (
-              <>
-                <strong>{block.label}</strong>
-                <span>{block.content}</span>
-              </>
-            ) : block.type === "heading" ? (
-              <>
-                <h1>{block.label}</h1>
-                {block.content && <p>{block.content}</p>}
-              </>
-            ) : block.type === "input" ? (
-              <>
-                <label>{block.label}</label>
-                <div className="fake-input">
-                  {block.content || "입력해 주세요"}
-                </div>
-              </>
-            ) : block.type === "button" ? (
-              <div className="wire-button-surface">
-                {block.label}
-                <ArrowUpRight size={15} />
+        {["navigation", "header", "filters", "content", "actions"].map(
+          (area) => {
+            const blocks = screen.blocks.filter(
+              (block) => region(block) === area,
+            );
+            return blocks.length ? (
+              <div className={`wire-region wire-region-${area}`} key={area}>
+                {blocks.map(render)}
               </div>
-            ) : block.type === "list" ? (
-              <>
-                <h3>{block.label}</h3>
-                {block.content
-                  .split("\n")
-                  .filter(Boolean)
-                  .map((text, i) => (
-                    <div className="wire-list-item" key={i}>
-                      <span className="wire-checkbox" />
-                      {text}
-                      <ChevronRight size={13} />
-                    </div>
-                  ))}
-              </>
-            ) : block.type === "stat" ? (
-              <>
-                <span>{block.label}</span>
-                <strong>{block.content}</strong>
-                <div className="mini-bars">
-                  {[34, 48, 39, 63, 55, 77, 68, 90].map((h, i) => (
-                    <i key={i} style={{ height: h + "%" }} />
-                  ))}
-                </div>
-              </>
-            ) : (
-              <>
-                <h3>{block.label}</h3>
-                <p>{block.content}</p>
-              </>
-            )}
-          </div>
-        ))}
+            ) : null;
+          },
+        )}
       </div>
-      {screen.device === "mobile" && <div className="phone-home" />}
+    </div>
+  );
+}
+
+function ScreenThumbnail({
+  screen,
+  designProfile,
+}: {
+  screen: Screen;
+  designProfile?: DesignProfile;
+}) {
+  const viewport = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState<{
+    width: number;
+    height: number;
+    scale: number;
+  } | null>(null);
+  useEffect(() => {
+    const frame = viewport.current!;
+    const page = content.current!;
+    const measure = () => {
+      const width = page.offsetWidth,
+        height = page.offsetHeight;
+      const availableWidth = frame.clientWidth - 24,
+        availableHeight = frame.clientHeight - 24;
+      if (
+        width <= 0 ||
+        height <= 0 ||
+        availableWidth <= 0 ||
+        availableHeight <= 0
+      )
+        return;
+      const scale = Math.min(
+        1,
+        availableWidth / width,
+        availableHeight / height,
+      );
+      setFit((previous) =>
+        previous?.width === width &&
+        previous.height === height &&
+        previous.scale === scale
+          ? previous
+          : { width, height, scale },
+      );
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(frame);
+    observer.observe(page);
+    measure();
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div
+      ref={viewport}
+      className="thumbnail-viewport"
+      data-screen-id={screen.id}
+    >
+      <div
+        className="thumbnail-fit"
+        style={{
+          width: fit ? fit.width * fit.scale : 0,
+          height: fit ? fit.height * fit.scale : 0,
+          visibility: fit ? "visible" : "hidden",
+        }}
+      >
+        <div
+          ref={content}
+          className="thumbnail-scale"
+          style={{ transform: `scale(${fit?.scale ?? 1})` }}
+        >
+          <WirePage screen={screen} designProfile={designProfile} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -166,9 +300,13 @@ export default function Wireframes({
   onFlow,
   focusId,
   screenPreviews,
+  previousSnapshot,
+  changedBlockIds,
 }: {
   snapshot: Snapshot;
   screenPreviews?: Record<string, string>;
+  previousSnapshot?: Snapshot;
+  changedBlockIds?: string[];
   editing: boolean;
   update: Update;
   onSelectItem: (id: string) => void;
@@ -176,7 +314,7 @@ export default function Wireframes({
   focusId?: string | null;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
-  const [showSource, setShowSource] = useState(true);
+  const [showSource, setShowSource] = useState(false);
   const [blockId, setBlockId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(85);
   const [preview, setPreview] = useState(false);
@@ -189,12 +327,14 @@ export default function Wireframes({
   }, [snapshot.screens, selected]);
   useEffect(() => {
     if (!focusId) return;
-    const target = snapshot.screens.find((s) => s.id === focusId || s.blocks.some((b) => b.id === focusId));
+    const target = snapshot.screens.find(
+      (s) => s.id === focusId || s.blocks.some((b) => b.id === focusId),
+    );
     if (target) {
       setSelected(target.id);
       setBlockId(target.id === focusId ? null : focusId);
       setPreview(false);
-      if (target.id !== focusId) setShowSource(false);
+      setShowSource(false);
     }
   }, [focusId, snapshot.screens]);
   const screen = snapshot.screens.find((s) => s.id === selected);
@@ -205,7 +345,7 @@ export default function Wireframes({
   const pick = (id: string) => {
     setSelected(id);
     setBlockId(null);
-    setShowSource(!preview);
+    setShowSource(false);
     setProperties(window.innerWidth > 900);
   };
   const editBlock = (patch: Partial<Block>) =>
@@ -272,11 +412,23 @@ export default function Wireframes({
         <div className="toolbar-actions">
           {sourcePreview && !editing && (
             <div className="segmented" aria-label="화면 보기 방식">
-              <button className={displayingSource ? "active" : ""} aria-pressed={displayingSource} onClick={() => {
-                setPreview(false);
-                setShowSource(true);
-              }}>소스 화면</button>
-              <button className={!displayingSource ? "active" : ""} aria-pressed={!displayingSource} onClick={() => setShowSource(false)}>생성 설계안</button>
+              <button
+                className={displayingSource ? "active" : ""}
+                aria-pressed={displayingSource}
+                onClick={() => {
+                  setPreview(false);
+                  setShowSource(true);
+                }}
+              >
+                기존 화면
+              </button>
+              <button
+                className={!displayingSource ? "active" : ""}
+                aria-pressed={!displayingSource}
+                onClick={() => setShowSource(false)}
+              >
+                화면 시안
+              </button>
             </div>
           )}
           {screen && !displayingSource && (
@@ -330,8 +482,8 @@ export default function Wireframes({
           {!screen ? (
             <>
               <div className="wire-gallery-heading">
-                <span className="eyebrow">CONNECTED SCREENS</span>
-                <h2>제품의 흐름이 화면이 됩니다.</h2>
+                <span className="eyebrow">화면 시안</span>
+                <h2>업무에 필요한 화면을 확인해 보세요.</h2>
                 <p>화면을 선택해 세부 구성을 확인하고 다듬어 보세요.</p>
               </div>
               <div className="wire-gallery">
@@ -352,24 +504,10 @@ export default function Wireframes({
                         <Monitor size={15} />
                       )}
                     </div>
-                    <div className="thumbnail-viewport">
-                      {screenPreviews?.[w.id] && !editing ? (
-                        <iframe
-                          className="thumbnail-source"
-                          src={screenPreviews[w.id]}
-                          title={`소스 화면 미리보기 ${w.title}`}
-                          loading="lazy"
-                          tabIndex={-1}
-                          aria-hidden="true"
-                          sandbox="allow-scripts allow-same-origin"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <div className="thumbnail-scale">
-                          <WirePage screen={w} />
-                        </div>
-                      )}
-                    </div>
+                    <ScreenThumbnail
+                      screen={w}
+                      designProfile={snapshot.design_profile}
+                    />
                     <div className="thumbnail-footer">
                       <span>
                         {
@@ -386,8 +524,13 @@ export default function Wireframes({
           ) : (
             <>
               {displayingSource ? (
-                <section className="wire-source-preview" aria-label="로컬 소스 화면">
-                  <div>{snapshot.source_context?.name} 소스 화면 · 테스트 데이터</div>
+                <section
+                  className="wire-source-preview"
+                  aria-label="로컬 소스 화면"
+                >
+                  <div>
+                    {snapshot.source_context?.name} 소스 화면 · 테스트 데이터
+                  </div>
                   <iframe
                     key={sourcePreview}
                     src={sourcePreview}
@@ -412,6 +555,23 @@ export default function Wireframes({
                   >
                     <WirePage
                       screen={screen}
+                      designProfile={snapshot.design_profile}
+                      changedIds={
+                        changedBlockIds ||
+                        (previousSnapshot?.screens.length
+                          ? screen.blocks
+                              .filter((b) => {
+                                const old = previousSnapshot.screens
+                                  .flatMap((s) => s.blocks)
+                                  .find((item) => item.id === b.id);
+                                return (
+                                  !old ||
+                                  JSON.stringify(old) !== JSON.stringify(b)
+                                );
+                              })
+                              .map((b) => b.id)
+                          : [])
+                      }
                       selectedBlock={blockId || undefined}
                       onSelect={
                         !preview
@@ -474,15 +634,19 @@ export default function Wireframes({
             <div className="inspector-body">
               {block ? (
                 <>
-                  <span className="id-badge">{block.id}</span>
                   <h3>{blockLabels[block.type]}</h3>
                   <label className="property-label">
-                    요소 유형
+                    항목 종류
                     <select
                       disabled={!editing}
                       value={block.type}
                       onChange={(e) =>
-                        editBlock({ type: e.target.value as BlockType })
+                        editBlock({
+                          type: e.target.value as BlockType,
+                          ...(e.target.value === "table"
+                            ? { columns: ["항목", "내용"], rows: [] }
+                            : { columns: [], rows: [] }),
+                        })
                       }
                     >
                       {Object.entries(blockLabels).map(([type, label]) => (
@@ -527,6 +691,51 @@ export default function Wireframes({
                       ))}
                     </select>
                   </label>
+                  {block.type === "table" && (
+                    <>
+                      <label className="property-label">
+                        표 열 제목
+                        <textarea
+                          aria-label="표 열 제목"
+                          disabled={!editing}
+                          value={(block.columns || []).join(", ")}
+                          onChange={(e) => {
+                            const columns = e.target.value
+                              .split(",")
+                              .map((v) => v.trim());
+                            editBlock({
+                              columns,
+                              rows: (block.rows || []).map((row) =>
+                                columns.map((_, i) => row[i] || ""),
+                              ),
+                            });
+                          }}
+                        />
+                      </label>
+                      <label className="property-label">
+                        표 내용 (행별 입력, 쉼표로 구분)
+                        <textarea
+                          aria-label="표 내용"
+                          disabled={!editing}
+                          value={(block.rows || [])
+                            .map((row) => row.join(", "))
+                            .join("\n")}
+                          onChange={(e) =>
+                            editBlock({
+                              rows: e.target.value.split("\n").map((row) => {
+                                const cells = row
+                                  .split(",")
+                                  .map((v) => v.trim());
+                                return (block.columns || []).map(
+                                  (_, i) => cells[i] || "",
+                                );
+                              }),
+                            })
+                          }
+                        />
+                      </label>
+                    </>
+                  )}
                   {editing && (
                     <div className="block-actions">
                       <button
@@ -565,7 +774,7 @@ export default function Wireframes({
                 </>
               ) : (
                 <>
-                  <span className="eyebrow">SCREEN</span>
+                  <span className="eyebrow">화면</span>
                   <h2>{screen.title}</h2>
                   <label className="property-label">
                     화면 제목
@@ -598,14 +807,14 @@ export default function Wireframes({
                     </select>
                   </label>
                   <button className="link-card" onClick={onFlow}>
-                    유저플로우에서 확인
+                    업무 흐름에서 확인
                     <ArrowUpRight size={14} />
                   </button>
                   <div className="property-tip">
                     <MousePointer2 size={18} />
                     <p>
-                      화면 안의 요소를 선택하면 텍스트와 연결을 확인할 수
-                      있어요.
+                      화면 안의 요소를 선택하면 대화에 태그가 붙습니다. 원하는
+                      변경을 설명할 수 있어요.
                     </p>
                   </div>
                 </>

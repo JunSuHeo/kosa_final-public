@@ -1,10 +1,8 @@
 # GitHub Issue 승인 기반 실행 워크플로
 
-공개 소스에는 Issue 워크플로 엔진과 예제 설정이 포함됩니다. GitHub Issue 자동 실행 설정은 별도의 비공개 운영 환경에서 관리합니다.
-
 GitHub Issue에서 요구사항을 접수해 AI가 분석 계획을 댓글로 제시합니다. 저장소 `Write` 이상의 권한이 있는 사람은 `/plan <결정사항 또는 수정사항>`으로 계획을 바꾸고, 준비된 계획은 별도의 `/approve` 댓글로 승인할 수 있습니다. `/reject`는 거부 상태를 기록하고 종료합니다. PR 검토와 병합은 사람이 수행합니다.
 
-GitHub에서 실행하려면 먼저 [GitHub 저장소 설정 안내](specs/github_settings.md)를 따르세요. 상세 상태·복구와 보안 동작은 [Issue 승인 운영 안내](runtime/ISSUE_APPROVAL.md)에 정리되어 있습니다.
+공개본에는 엔진과 로컬 데모를 제공합니다. GitHub Issue 연동은 별도 비공개 저장소에서 구성합니다. GitHub에서 실행하려면 먼저 [GitHub 저장소 설정 안내](specs/github_settings.md)를 따르세요. 상세 상태·복구와 보안 동작은 [Issue 승인 운영 안내](runtime/ISSUE_APPROVAL.md)에 정리되어 있습니다.
 
 ## GitHub Issue 작업
 
@@ -19,7 +17,7 @@ Issue 제목이나 본문이 바뀌면 기존 분석과 승인을 무효화합�
 
 ## GitHub 설정
 
-GitHub Actions workflow는 로컬 파일 `.github/workflows/issue-approval.yml`에 있습니다. 기본 브랜치에 해당 workflow가 반영되기 전에는 Issue 이벤트가 실행되지 않습니다. Actions job을 켜려면 아래 설정이 모두 필요합니다.
+Issue 이벤트를 처리하려면 비공개 저장소의 기본 브랜치에 `.github/workflows/issue-approval.yml` 진입점을 구성합니다. Actions job을 켜려면 아래 설정이 모두 필요합니다.
 
 - Repository Variables: `WORKFLOW_ISSUES_ENABLED=true`, `WORKFLOW_BASE_BRANCH`, `WORKFLOW_CONFIG_PATH`
 - Repository Secrets: `WORKFLOW_STATE_KEY`, `WORKFLOW_PUBLISH_TOKEN`
@@ -29,11 +27,11 @@ GitHub Actions workflow는 로컬 파일 `.github/workflows/issue-approval.yml`�
 
 Repository Variables와 Secrets는 [GitHub 저장소 설정 안내](specs/github_settings.md), self-hosted runner 설치와 Codex 인증은 [GitHub runner 설정 안내](specs/github_runner.md)를 참고하세요.
 
-## 현재 대상 프로젝트
+## 프로젝트 설정 예시
 
-프로젝트별 설정은 두 가지입니다. [prj.json](config/projects/prj.json)은 제품 `PRJ/`만 수정하도록 허용하고, [sandbox.json](config/projects/sandbox.json)은 `sandbox/` 아래 데모만 허용합니다. GitHub Issue 작업 대상은 Repository Variable `WORKFLOW_CONFIG_PATH`가 가리키는 설정으로 결정됩니다. PRJ 설정의 필수 백엔드 테스트는 PostgreSQL 서비스가 필요하므로 현재 격리 runner에서 서비스를 준비할 수 없다면 테스트 실패로 게시가 차단됩니다.
+설정 파일의 `repository.owner`와 `repository.name`은 예시 값입니다. GitHub 연동 시 대상 저장소에 맞게 설정합니다. 프로젝트별 설정은 두 가지입니다. [prj.json](config/projects/prj.json)은 제품 `PRJ/`만 수정하도록 허용하고, [sandbox.json](config/projects/sandbox.json)은 `sandbox/` 아래 데모만 허용합니다. GitHub Issue 작업 대상은 Repository Variable `WORKFLOW_CONFIG_PATH`가 가리키는 설정으로 결정됩니다. PRJ 필수 백엔드 검사는 오프라인 Python 캐시와 임시 PostgreSQL을 사용합니다. [러너 준비 요건](specs/github_runner.md)을 확인하세요.
 
-현재 Issue PR 브랜치 형식은 `ai_feature/{date}/{approver}/{issue_title}`입니다. 날짜는 실행 시작일의 한국 시간(`YY.MM.DD`), 승인자는 GitHub login, 제목은 브랜치에 안전한 문자로 정리한 Issue 제목입니다. 수동 CLI 실행에는 `ai/{project_id}/{run_id}`를 사용합니다. 동일 브랜치가 이미 있으면 기존 작업을 덮어쓰지 않고 게시를 중단합니다.
+현재 Issue PR 브랜치 형식은 `feature/ai/{date}/{approver}/{issue_title}`입니다. 날짜는 실행 시작일의 한국 시간(`YY.MM.DD`), 승인자는 GitHub login, 제목은 브랜치에 안전한 문자로 정리한 Issue 제목입니다. 수동 CLI 실행에는 `ai/{project_id}/{run_id}`를 사용합니다. 동일 브랜치가 이미 있으면 기존 작업을 덮어쓰지 않고 게시를 중단합니다.
 
 ## 수동 실행
 

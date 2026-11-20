@@ -4,8 +4,8 @@
   "project_id": "sandbox",
   "repository": {
     "provider": "github",
-    "owner": "JunSuHeo",
-    "name": "kosa_final"
+    "owner": "example-owner",
+    "name": "example-repository"
   },
   "base_branch": "main",
   "project_root": "sandbox",
@@ -49,7 +49,7 @@
   },
   "publishing": {
     "remote": "origin",
-    "branch_template": "ai_feature/{date}/{approver}/{issue_title}",
+    "branch_template": "feature/ai/{date}/{approver}/{issue_title}",
     "manual_branch_template": "ai/{project_id}/{run_id}",
     "draft": true,
     "commit_author": {

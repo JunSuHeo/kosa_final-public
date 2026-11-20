@@ -53,14 +53,14 @@ CLI 종료 코드는 `prepared`·`published`·`simulated`에서 0, 차단·실�
 | 항목 | 의미 |
 | --- | --- |
 | `remote` | 원본 저장소에 이미 구성된 remote 이름. URL을 임의 선택하지 않음 |
-| `branch_template` | `{project_id}/{run_id}` 또는 승인된 Issue의 `{date}/{approver}/{issue_title}` 치환 규칙. 현재 설정은 `ai_feature/{date}/{approver}/{issue_title}` |
+| `branch_template` | `{project_id}/{run_id}` 또는 승인된 Issue의 `{date}/{approver}/{issue_title}` 치환 규칙. 현재 설정은 `feature/ai/{date}/{approver}/{issue_title}` |
 | `manual_branch_template` | Issue 치환 규칙을 사용하는 설정에서 수동 CLI 요청용 규칙. `{project_id}`와 `{run_id}`를 사용하며 현재 값과 기본값은 `ai/{project_id}/{run_id}` |
 | `draft` | 검증 통과 PR의 Draft 여부. 데모는 `true` |
 | `commit_author` | 선택 사항인 `name`, `email`. 없으면 원본 저장소의 로컬 Git user 설정을 조회하며 없으면 차단. 전역 Git 설정은 가져오지 않음 |
 
 기존 `pr_policy.require_human_approval=true`, `allow_auto_merge=false`를 유지한다. 이번 단계에서는 모든 필수 검사가 통과한 결과만 게시한다. `allow_draft_on_failure=true`여도 실패 결과를 게시하는 경로는 제공하지 않는다.
 
-`{date}`는 실행 결과 `started_at`의 한국 시간(Asia/Seoul) 날짜를 `YY.MM.DD`로 표시한다. 이후 같은 결과를 다시 게시 준비해도 날짜가 달라지지 않는다. `{approver}`와 `{issue_title}`은 실행 결과에 저장된 승인 Issue 데이터에서 읽는다. 제목은 한글을 유지하고 공백·Git 금지 문자를 `-`로 바꾸며, 경로 구분자·`..`·`.lock`을 정리한다. 제목 부분은 UTF-8 120바이트까지 사용하고 정리한 결과가 비면 `issue`를 사용한다. 예: `ai_feature/26.11.17/JunSuHeo/로그인-화면-개선`.
+`{date}`는 실행 결과 `started_at`의 한국 시간(Asia/Seoul) 날짜를 `YY.MM.DD`로 표시한다. 이후 같은 결과를 다시 게시 준비해도 날짜가 달라지지 않는다. `{approver}`와 `{issue_title}`은 실행 결과에 저장된 승인 Issue 데이터에서 읽는다. 제목은 한글을 유지하고 공백·Git 금지 문자를 `-`로 바꾸며, 경로 구분자·`..`·`.lock`을 정리한다. 제목 부분은 UTF-8 120바이트까지 사용하고 정리한 결과가 비면 `issue`를 사용한다. 예: `feature/ai/26.11.17/JunSuHeo/로그인-화면-개선`.
 
 요청한 Issue 규칙에는 실행 UUID를 추가하지 않는다. 같은 날짜·승인자·제목의 원격 Branch나 PR이 이미 있으면 기존 충돌 검사로 게시를 차단한다.
 

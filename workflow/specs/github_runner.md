@@ -1,15 +1,15 @@
 # GitHub Actions self-hosted runner 설정
 
-이 저장소의 Issue workflow는 GitHub 호스팅 runner가 아니라 저장소에 등록한 Linux self-hosted runner에서 실행됩니다. Workflow 파일은 `self-hosted`, `linux`, `workflow-isolated` 라벨을 모두 가진 runner를 찾습니다. GitHub의 runner 등록 화면에서 OS별 기본 라벨이 추가되고, `workflow-isolated`는 사용자가 추가해야 하는 라벨입니다.
+비공개 저장소에 구성하는 Issue workflow는 GitHub 호스팅 runner가 아니라 저장소에 등록한 Linux self-hosted runner에서 실행됩니다. Workflow 파일은 `self-hosted`, `linux`, `workflow-isolated` 라벨을 모두 가진 runner를 찾습니다. GitHub의 runner 등록 화면에서 OS별 기본 라벨이 추가되고, `workflow-isolated`는 사용자가 추가해야 하는 라벨입니다.
 
 ## 1. 전용 Linux 호스트 준비
 
 저장소 관리자 권한이 있는 사람은 GitHub 저장소의 **Settings → Actions → Runners → New self-hosted runner**에서 Linux와 호스트 아키텍처를 선택합니다. GitHub 화면에 표시되는 다운로드·압축 해제·등록 명령을 해당 호스트에서 실행합니다. 등록 토큰은 짧은 기간만 유효하므로 화면에서 발급한 값을 사용하고, 문서·Issue·로그에 복사하지 않습니다.
 
-GitHub 화면에서 제공한 등록 명령에 사용자 라벨 `workflow-isolated`를 지정합니다. 이 저장소의 명령은 다음 형태입니다. `TOKEN_FROM_GITHUB_UI`는 GitHub가 안내한 실제 등록 토큰으로 바꿉니다.
+GitHub 화면에서 제공한 등록 명령에 사용자 라벨 `workflow-isolated`를 지정합니다. 명령은 다음 형태입니다. URL은 대상 비공개 저장소로 바꿉니다. `TOKEN_FROM_GITHUB_UI`는 GitHub가 안내한 실제 등록 토큰으로 바꿉니다.
 
 ```bash
-./config.sh --url https://github.com/JunSuHeo/kosa_final \
+./config.sh --url https://github.com/example-owner/example-repository \
   --token TOKEN_FROM_GITHUB_UI \
   --labels workflow-isolated
 ```
@@ -43,6 +43,7 @@ workflow-isolated
 | Bubblewrap `bwrap` | 후보 코드의 격리 테스트 |
 | Codex CLI `0.169.0` | Issue 분석과 승인된 작업 실행. 프로젝트 JSON에 적힌 버전과 일치해야 합니다. |
 | `uv` | `prj.json`의 필수 Python 백엔드 테스트 |
+| PostgreSQL 서버 및 클라이언트 바이너리 | PRJ 필수 검사에서 샌드박스 내부의 임시 `studio_test` 시작. `initdb`, `pg_ctl`, `createdb` 필요 |
 
 현재 `sandbox.json`의 calculator 테스트는 Python 표준 라이브러리만 사용합니다. 프로젝트 설정에서 테스트나 브라우저 E2E를 추가·활성화하면 그에 필요한 도구와 서비스도 준비해야 합니다. Bubblewrap namespace가 호스트에서 동작하는지, Actions 서비스 계정에서도 `bwrap`이 실행되는지 확인합니다. 격리가 불가능하면 workflow는 호스트에서 테스트를 대신 실행하지 않고 실패 처리합니다.
 
@@ -71,7 +72,9 @@ Issue 등록 시 먼저 분석 계획을 댓글로 올립니다. 저장소 `Writ
 
 ## 5. PRJ 테스트 제한
 
-현재 `prj.json`은 PostgreSQL 백엔드 테스트를 필수로 요구합니다. 기존 Bubblewrap 테스트 runner는 호스트 PostgreSQL 서비스를 연결하거나 서비스 스택을 provision하지 않습니다. 따라서 runner 호스트에 PostgreSQL을 단순 설치하는 것만으로는 이 테스트가 통과한다고 보장할 수 없으며, 필수 테스트 실패 시 PR 게시가 차단됩니다. 격리된 PostgreSQL 서비스 테스트 경로를 별도로 준비하기 전에는 자동 PR 게시를 기대하지 마세요.
+`prj.json`의 PostgreSQL 백엔드 검사는 필수입니다. 승인 확인 후 Actions가 기준 checkout의 `PRJ/backend/uv.lock`에 지정된 wheel을 별도 캐시에 준비합니다. 이 단계에서 기준 프로젝트나 후보 코드를 설치하지 않고 wheel을 빌드하지 않습니다. 러너는 Python 3.12 이상과 `uv`를 시스템 PATH(`/usr/local/bin:/usr/bin:/bin`)에 제공하고, 캐시 준비 단계에서 패키지 저장소에 접근할 수 있어야 합니다. 후보가 새 의존성을 요구해 기준 캐시로 설치할 수 없으면 검증과 게시를 차단합니다.
+
+검사에서는 캐시를 읽기 전용으로 마운트하고, Bubblewrap 내부에 임시 가상환경과 PostgreSQL을 생성합니다. PostgreSQL 바이너리는 시스템 PATH 또는 `/usr/lib/postgresql/*/bin`에 있어야 합니다. DB는 샌드박스 내부 Unix 소켓만 사용하고, `studio_test` 데이터와 소켓은 검사 종료 시 제거됩니다. 실행 중인 호스트 DB나 외부 DB 접속은 필요하지 않습니다.
 
 ## 6. 보안 운영
 
