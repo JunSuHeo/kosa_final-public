@@ -19,7 +19,7 @@ Python 3.12 이상과 표준 라이브러리를 사용한다. 현재 Codex 어�
 | 항목 | 의미 |
 | --- | --- |
 | `execution.instructions` | 저장소 기준 상대 경로의 프로젝트 작업 지침 파일 목록. 프로젝트 경계 안의 기존 파일만 읽으며 수정할 수 없다. `[]`는 추가 지침이 없음을 명시한다. |
-| `execution.environment.platform` | 현재 지원값 `linux` |
+| `execution.environment.platform` | `linux` 또는 `macos` (Apple Silicon) |
 | `execution.environment.required_programs` | PATH에서 반드시 발견되어야 하는 프로그램 이름. `[]`는 이 단계에서 추가 도구 검사를 요구하지 않음을 명시한다. 설치나 버전·서비스 검증을 대신하지 않는다. |
 | `execution.codex.version` | 실제 설치·검증한 Codex CLI 버전. `codex --version` 결과와 일치해야 한다. |
 | `execution.codex.model` | 현재 인증 계정에서 이용 가능하다고 확인한 모델 식별자. 엔진이 임의의 기본 모델을 선택하지 않는다. |
@@ -61,13 +61,13 @@ CLI 종료 코드 `0`은 전체 흐름 성공, `1`은 실행·검증·게시 실
 
 `test_runner.py`는 Codex와 별개 프로세스로 테스트를 실행한다. 실행 전 후보의 허용 경로와 설정 구조·필수 경로를 다시 확인하고 후보 전체의 내용 해시를 기록한다. 후보는 새로운 임시 검증 폴더로 복사하며 테스트는 이 복사본에서만 수행한다. 원본 사용자 변경은 Codex 실행 직전의 스냅샷에 포함되므로 Codex 변경으로 오인하지 않는다. Git 메타데이터가 없는 스냅샷에서는 Git diff 대신 SHA-256·실행 비트의 전후 비교로 추가·수정·삭제를 구분한다.
 
-실제 테스트에는 Linux/WSL의 Bubblewrap(`bwrap`)이 필요하다. namespace 사용 가능 여부를 검사하며 없거나 동작하지 않으면 `unavailable`로 기록하고 호스트에서 대신 실행하지 않는다. 설치·인증·권한 상승은 수행하지 않는다. OS 의존성 준비는 운영자가 별도로 해야 한다.
+Linux/WSL에서는 Bubblewrap(`bwrap`), macOS ARM64에서는 Seatbelt 기반 `sandbox-exec`로 테스트를 격리한다. macOS sandbox preflight는 후보 snapshot과 private temp 쓰기, host home 차단, network bind 차단을 확인한다. `sandbox-exec`는 Apple이 deprecated 처리했으므로 도구가 없거나 capability 점검에 실패하면 `unavailable`로 기록하고 host에서 실행하지 않는다. 설치·인증·권한 상승은 수행하지 않는다.
 
-검증 환경에는 시스템 런타임(`/usr`, `/bin`, `/lib`, `/lib64`, `/etc/alternatives`, `/etc/ld.so.cache`)만 읽기 전용으로 제공한다. 테스트 복사본만 `/workspace`에 쓰기 가능하게 마운트한다. 사용자 홈, 원본 checkout, Codex 인증 파일을 마운트하지 않고 HOME·TMPDIR를 임시 경로로 설정하며 환경 변수는 비운다. PID·네트워크 namespace와 capability 제한을 적용한다. 외부 네트워크·호스트 서비스·사용자 홈의 가상환경은 사용하지 않는다. 이런 의존성이 있는 프로젝트는 미리 준비된 검증 이미지·서비스 구성이 필요하며 이 단계에서는 설치하거나 네트워크를 열지 않는다.
+Linux 검증은 시스템 런타임(`/usr`, `/bin`, `/lib`, `/lib64`, `/etc/alternatives`, `/etc/ld.so.cache`)만 읽기 전용으로 제공한다. 테스트 복사본만 `/workspace`에 쓰기 가능하게 마운트하고 HOME·TMPDIR를 임시 경로로 둔 뒤 환경 변수를 비운다. PID·network namespace와 capability 제한을 적용한다. macOS에서는 시스템 runtime 경로, 검증 snapshot, private HOME/TMPDIR만 허용하는 Seatbelt profile을 적용하고 host home과 network 접근을 차단한다. 두 환경 모두 원본 checkout, Codex 인증 파일, host 서비스에 접근하지 않는다.
 
 `uv` 검사는 가상환경과 캐시를 샌드박스의 `/tmp`에 만든다. 검사마다 새 임시 공간을 사용하며, `/workspace`에 생긴 링크와 입력 파일 변경은 기존대로 차단한다.
 
-`prj-backend-check`는 러너에 포함된 검사 명령이다. Actions가 신뢰된 기준 checkout에서 만든 `uv` 캐시를 `WORKFLOW_PRJ_UV_CACHE`로 전달한다. 로컬 실행에서도 같은 방식으로 별도 캐시를 준비해 절대 경로를 지정한다. 검사는 이 캐시를 읽기 전용으로 받아 샌드박스에서 오프라인으로 설치하고 임시 `studio_test` PostgreSQL에서 pytest를 실행한다. 필요한 바이너리와 준비 조건은 [러너 안내](../specs/github_runner.md)를 참조한다.
+`prj-backend-check`는 Linux runner 전용 검사 명령이다. 현재 PRJ 설정은 PostgreSQL 백엔드 검사를 비활성화해 Actions가 `uv` 캐시를 준비하거나 이 명령을 실행하지 않는다. macOS에서 다시 활성화하면 `unavailable`로 처리되어 fail-closed로 차단한다. Linux에서 재활성화할 경우 신뢰된 기준 checkout의 잠금 파일로 준비한 캐시를 `WORKFLOW_PRJ_UV_CACHE`로 전달하고, 읽기 전용 캐시에서 의존성을 오프라인 설치해 임시 `studio_test` PostgreSQL로 pytest를 실행한다.
 
 테스트 프로세스의 종료 코드, 소요 시간, stdout·stderr를 수집한다. 시간 초과·완료 시 남은 하위 프로세스도 정리한다. 각 출력은 메모리에서 256 KiB로 제한하고 비밀정보를 가린 뒤 결과에 저장한다. 한도를 초과한 스트림은 전체 생략하고 증거 수집 불가로 `unavailable` 처리한다. 원문 로그를 디스크에 따로 저장하지 않는다.
 
@@ -93,7 +93,7 @@ CLI 종료 코드 `0`은 전체 흐름 성공, `1`은 실행·검증·게시 실
 
 `codex_adapter.py`는 실행 직전에 `--version`, `--help`, `exec --help`를 조회해 고정 버전과 필요한 옵션을 확인한다. 지원되지 않는 버전이나 옵션에서 다른 명령으로 추측·재시도하지 않는다.
 
-`codex --strict-config --ask-for-approval never exec`에 `--sandbox workspace-write`, `--skip-git-repo-check`, `--ephemeral`, `--ignore-user-config`, `--ignore-rules`, 명시한 `--model`과 프롬프트 표준입력 `-`를 사용한다. 별도 workspace에는 Git 메타데이터를 복사하지 않으므로 저장소 검사 생략 옵션을 사용한다. sandbox 설정은 외부 네트워크, 추가 writable roots, 일반 `/tmp`와 `$TMPDIR` 쓰기 권한을 비활성화한다. CLI가 지원하지 않는 설정은 strict config 검사를 통해 차단해야 한다.
+`codex --strict-config --ask-for-approval never exec`에 `--sandbox workspace-write`, `--skip-git-repo-check`, `--ephemeral`, `--ignore-rules`, 명시한 `--model`과 프롬프트 표준입력 `-`를 사용한다. Codex 사용자 설정을 불러오며, 프로젝트 모델과 runtime 안전 옵션은 명시적으로 적용한다. 별도 workspace에는 Git 메타데이터를 복사하지 않으므로 저장소 검사 생략 옵션을 사용한다. sandbox 설정은 외부 네트워크, 추가 writable roots, 일반 `/tmp`와 `$TMPDIR` 쓰기 권한을 비활성화한다. CLI가 지원하지 않는 설정은 strict config 검사를 통해 차단해야 한다.
 
 인증은 사용자가 이미 구성한 CLI 로그인 경로를 사용한다. 엔진은 로그인·설치·인증정보 출력·Token 요청을 수행하지 않는다. 상속 환경 변수는 명시한 OS 필수 항목으로 제한하며 GitHub Token, API Key, 제품 비밀정보와 셸 초기화 변수는 전달하지 않는다. 인증 방식·모델 접근·sandbox 강제 가능 여부는 설치 환경에서 별도로 검증해야 한다.
 
@@ -103,7 +103,7 @@ CLI 종료 코드 `0`은 전체 흐름 성공, `1`은 실행·검증·게시 실
 
 실행 전후 SHA-256과 실행 가능 비트를 비교해 추가·수정·삭제 목록을 생성한다. 파일과 빈 디렉터리의 경계 위반, 심볼릭 링크·하드 링크·특수 파일, 민감정보 의심 내용을 차단한다. 시간 초과나 인터럽트 시 프로세스 그룹을 종료한 후 결과를 수집한다. Codex·경로 검사 실패 workspace는 삭제하고 경로가 안전한 테스트 실패 후보는 조사용으로 보존한다. 경계가 바뀌어 안전하게 삭제할 수 없으면 그 사실을 결과에 남긴다.
 
-수집 제한은 최대 10,000개 파일, 파일당 10 MiB, 전체 100 MiB이고 컨텍스트 문서는 파일당 512 KiB다. 준비 단계와 결과 단계에서 제한을 확인한다. 파일시스템의 동시 변경이나 OS sandbox의 결함까지 검증기가 막을 수 있는 것은 아니다. Codex 변경 생성 단계의 읽기 권한 전체를 프로젝트 경로로 제한하는 별도 OS 격리는 아직 구현하지 않았다. 독립 테스트 단계에는 앞서 설명한 Bubblewrap 격리를 적용한다. 생성 단계까지 강한 읽기·프로세스 격리가 필요한 환경은 추가 외부 격리를 준비해야 한다.
+수집 제한은 최대 10,000개 파일, 파일당 10 MiB, 전체 100 MiB이고 컨텍스트 문서는 파일당 512 KiB다. 준비 단계와 결과 단계에서 제한을 확인한다. 파일시스템의 동시 변경이나 OS sandbox의 결함까지 검증기가 막을 수 있는 것은 아니다. Codex 변경 생성 단계의 읽기 권한 전체를 프로젝트 경로로 제한하는 별도 OS 격리는 아직 구현하지 않았다. 독립 테스트 단계에는 앞서 설명한 OS별 Bubblewrap/Seatbelt 격리를 적용한다. 생성 단계까지 강한 읽기·프로세스 격리가 필요한 환경은 추가 외부 격리를 준비해야 한다.
 
 ## 실행 결과
 

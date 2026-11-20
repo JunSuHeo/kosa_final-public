@@ -1,0 +1,192 @@
+name: Issue analysis and human approval
+
+on:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: issue-workflow-${{ github.repository }}-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  issue-workflow:
+    if: >-
+      vars.WORKFLOW_ISSUES_ENABLED == 'true' &&
+      !github.event.issue.pull_request &&
+      contains(github.event.issue.labels.*.name, 'ai-plan') &&
+      (github.event_name == 'issues' ||
+       (github.event.comment.user.type == 'User' &&
+        (contains(github.event.comment.body, '/approve') ||
+         contains(github.event.comment.body, '/plan') || github.event.comment.body == '/reject')))
+    runs-on: [self-hosted, macOS, ARM64, workflow-isolated]
+    timeout-minutes: 180
+    env:
+      WORKFLOW_CONFIG_PATH: ${{ vars.WORKFLOW_CONFIG_PATH }}
+      WORKFLOW_BASE_BRANCH: ${{ vars.WORKFLOW_BASE_BRANCH }}
+      WORKFLOW_BOT_LOGIN: github-actions[bot]
+    steps:
+      - name: Check trusted repository settings
+        id: settings
+        shell: bash
+        run: |
+          test -n "$WORKFLOW_CONFIG_PATH"
+          test -n "$WORKFLOW_BASE_BRANCH"
+      - uses: actions/checkout@v4
+        id: checkout
+        with:
+          ref: ${{ vars.WORKFLOW_BASE_BRANCH }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare Codex CLI
+        id: codex
+        shell: bash
+        run: |
+          codex_dir="$HOME/.local/bin"
+          if [[ ! -x "$codex_dir/codex" ]]; then
+            echo "::error::Codex CLI not found at $codex_dir/codex"
+            exit 1
+          fi
+          echo "$codex_dir" >> "$GITHUB_PATH"
+          export PATH="$codex_dir:$PATH"
+          expected_version="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["execution"]["codex"]["version"])' "$WORKFLOW_CONFIG_PATH")"
+          actual_version="$(codex --version)"
+          actual_version="${actual_version##* }"
+          if [[ "$actual_version" != "$expected_version" ]]; then
+            echo "::error::Expected Codex CLI $expected_version but found $actual_version"
+            exit 1
+          fi
+          echo "Codex CLI $actual_version is ready."
+      - name: Analyze or verify the human command
+        id: intake
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_STATE_KEY: ${{ secrets.WORKFLOW_STATE_KEY }}
+          WORKFLOW_RESULTS_DIR: ${{ runner.temp }}/issue-workflow-results
+        run: |
+          python3 -B -m workflow.runtime.issue_workflow \
+            --config "$WORKFLOW_CONFIG_PATH" \
+            --results-dir "$WORKFLOW_RESULTS_DIR" \
+            --defer-execution
+      - name: Execute the verified plan and publish for human review
+        id: execute
+        if: steps.intake.outputs.plan_id != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_STATE_KEY: ${{ secrets.WORKFLOW_STATE_KEY }}
+          WORKFLOW_PUBLISH_TOKEN: ${{ secrets.WORKFLOW_PUBLISH_TOKEN }}
+          APPROVED_PLAN_ID: ${{ steps.intake.outputs.plan_id }}
+          WORKFLOW_RESULTS_DIR: ${{ runner.temp }}/issue-workflow-results
+        run: |
+          if [[ -z "$WORKFLOW_PUBLISH_TOKEN" ]]; then
+            echo 'failure_diagnostic={"reason":"publish_token_missing"}' >> "$GITHUB_OUTPUT"
+            echo '::error::WORKFLOW_PUBLISH_TOKEN is not configured.'
+            exit 1
+          fi
+          python3 -B -m workflow.runtime.issue_workflow \
+            --config "$WORKFLOW_CONFIG_PATH" \
+            --results-dir "$WORKFLOW_RESULTS_DIR" \
+            --execute-plan "$APPROVED_PLAN_ID" \
+            --publish-mode real
+      - name: Comment on the Issue when the workflow fails
+        if: ${{ failure() && !cancelled() }}
+        timeout-minutes: 2
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          FAILURE_DIAGNOSTIC: ${{ steps.execute.outputs.failure_diagnostic || steps.intake.outputs.failure_diagnostic }}
+          FAILURE_STEP: >-
+            ${{ steps.settings.outcome == 'failure' && 'settings' ||
+                steps.checkout.outcome == 'failure' && 'checkout' ||
+                steps.codex.outcome == 'failure' && 'codex' ||
+                steps.intake.outcome == 'failure' && 'intake' || 'execute' }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const issue = context.payload.issue;
+            if (!Number.isSafeInteger(issue?.number) || issue.number <= 0 || issue.pull_request) return;
+
+            let report = {};
+            try { report = JSON.parse(process.env.FAILURE_DIAGNOSTIC || '{}') ?? {}; } catch {}
+            const publication = report.publication ?? {};
+            const reason = publication.reason || report.reason || report.status;
+            const operation = publication.operation || report.operation;
+            const http = publication.http_status ?? report.http_status;
+            const httpKnown = Number.isInteger(http) && http >= 400 && http <= 599;
+            const code = value => typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(value);
+
+            const steps = {
+              settings: ['저장소 Actions 변수가 비어 있습니다.', '`WORKFLOW_CONFIG_PATH`와 `WORKFLOW_BASE_BRANCH`가 설정되어 있는지 확인하세요.'],
+              checkout: ['대상 브랜치를 체크아웃하지 못했습니다.', '`WORKFLOW_BASE_BRANCH`의 브랜치가 존재하는지, 러너가 GitHub에 연결되는지 확인하세요.'],
+              codex: ['Codex CLI 준비에 실패했습니다.', '러너의 `~/.local/bin/codex` 설치와 프로젝트 설정의 `execution.codex.version`을 확인하세요. 설정 파일도 Actions 로그에서 확인하세요.'],
+              intake: ['이슈 분석 또는 명령 검증 단계가 실패했습니다.', 'Actions 로그에서 GitHub 접근, 프로젝트 설정 및 이슈 상태를 확인하세요.'],
+              execute: ['승인된 작업의 실행, 검증 또는 게시 단계가 실패했습니다.', 'Actions 로그에서 실패한 단계와 오류 코드를 확인하세요. 재승인 전에 원격 브랜치와 PR이 생겼는지도 확인하세요.'],
+            };
+            const reasons = {
+              publish_token_missing: ['게시 토큰이 비어 있습니다.', '저장소 Actions Secrets에 `WORKFLOW_PUBLISH_TOKEN`을 설정하세요.'],
+              github_missing: ['러너에서 필요한 GitHub CLI 기능을 사용할 수 없습니다.', '러너 계정의 `PATH`에서 `gh` 설치와 버전을 확인하세요.'],
+              authentication_failed: ['GitHub 인증 또는 접근 확인에 실패했습니다.', publication.operation ? '`WORKFLOW_PUBLISH_TOKEN`의 만료 여부와 대상 저장소 접근을 확인하세요.' : 'Actions 기본 토큰의 저장소 접근 및 `issues: write` 권한을 확인하세요.'],
+              permission_denied: ['이 작업에 필요한 저장소 권한이 확인되지 않았습니다.', publication.operation ? '게시 토큰 계정에 저장소 쓰기 권한이 있고 토큰에 `Contents: Read and write`가 있는지 확인하세요.' : '명령 작성자에게 저장소 Write 이상의 권한이 있는지 확인하세요.'],
+              config_error: ['프로젝트 또는 게시 설정이 유효하지 않습니다.', '`WORKFLOW_CONFIG_PATH`가 가리키는 JSON과 Actions 로그의 실패 단계를 확인하세요.'],
+              state_key_invalid: ['이슈 상태 서명 키가 없거나 너무 짧습니다.', 'Actions Secret `WORKFLOW_STATE_KEY`에 기존 서명 키(최소 32바이트)가 등록되어 있는지 확인하세요. 키를 교체하면 기존 계획의 서명을 검증할 수 없습니다.'],
+              state_failed: ['이슈 상태를 기록하거나 확인하지 못했습니다.', '기존 봇 댓글과 실행 기록을 확인하고, 원격 상태를 확인하기 전에는 재승인하지 마세요.'],
+              approval_invalidated: ['이슈 또는 서명된 승인 상태를 검증하지 못했습니다.', '상태 댓글과 `WORKFLOW_STATE_KEY` 설정을 확인하고 최신 계획이 준비된 후 승인하세요.'],
+              analysis_failed: ['요구사항 분석 또는 계획 작성에 실패했습니다.', '이슈의 변경 범위와 완료 조건을 명확히 하고 러너의 Codex 로그인과 모델 접근을 확인하세요.'],
+              codex_failed: ['Codex 프로세스가 완료되지 않았습니다.', '러너의 Codex 로그인과 설정된 모델 접근을 확인하세요.'],
+              codex_missing: ['러너에서 Codex CLI를 찾지 못했습니다.', '러너 계정에 프로젝트에서 지정한 버전의 Codex CLI를 설치하세요.'],
+              timeout: ['Codex 실행 시간이 초과됐습니다.', '작업 범위를 줄이거나 프로젝트의 `execution.codex.timeout_seconds` 설정을 확인하세요.'],
+              environment_error: ['러너 환경이 프로젝트 요구사항을 충족하지 않습니다.', '설정된 CLI 버전과 `execution.environment.required_programs`를 확인하세요.'],
+              path_violation: ['허용된 프로젝트 경로를 벗어난 변경이나 입력이 감지됐습니다.', '이슈의 변경 범위와 프로젝트의 `allowed_paths`를 확인하세요.'],
+              sensitive_content: ['작업 파일 또는 참고 문서에서 민감정보로 보이는 내용이 감지됐습니다.', '값을 댓글에 붙여넣지 말고, 프로젝트 파일에 키·토큰·비밀번호가 들어 있는지 확인하세요.'],
+              validation_failed: ['프로젝트 검증을 완료하지 못했습니다.', '프로젝트의 Unit/E2E 설정과 실행 경로를 확인하세요.'],
+              test_failed: ['게시를 막는 Unit 또는 E2E 검사가 실패했습니다.', '프로젝트에 설정된 검사를 같은 환경에서 실행해 실패한 조건을 수정하세요.'],
+              test_timeout: ['게시를 막는 검사가 제한 시간 안에 끝나지 않았습니다.', '검사에서 사용하는 서비스 상태와 해당 검사의 `timeout_seconds`를 확인하세요.'],
+              test_unavailable: ['게시를 막는 검사를 실행할 수 없었습니다.', '러너의 Bubblewrap 또는 macOS sandbox-exec 격리 기능, 검사 실행 경로, 의존성 및 필요한 서비스를 확인하세요.'],
+              test_not_run: ['필수 검사가 실행되지 않았습니다.', '프로젝트 검사 설정의 `run_if` 조건과 앞서 실패한 검사가 있는지 확인하세요.'],
+              commit_identity_missing: ['자동 커밋의 작성자 이름 또는 이메일이 없습니다.', '프로젝트 JSON의 `publishing.commit_author`에 봇 이름과 이메일을 설정하세요.'],
+              protection_missing: ['대상 브랜치에서 필요한 보호 규칙을 확인하지 못했습니다.', 'Settings → Branches에서 클래식 보호 규칙에 PR 승인 1명 이상, 관리자에게도 적용, 리뷰 우회 없음이 설정되어 있는지 확인하세요.'],
+              no_changes: ['게시할 파일 변경이 없습니다.', '요구사항이 이미 반영됐는지 확인하고, 추가 변경이 필요하면 이슈에 명시하세요.'],
+              base_mismatch: ['검증에 사용한 기준 브랜치와 원격 브랜치가 일치하지 않습니다.', '최신 기준 브랜치에서 새 계획으로 다시 실행하세요.'],
+              publication_conflict: ['기존 브랜치, PR 또는 게시 기록과 충돌했습니다.', '원격 브랜치와 PR을 먼저 확인하고 충돌을 해소하세요.'],
+            };
+
+            const step = process.env.FAILURE_STEP;
+            let [cause, fix] = (Object.hasOwn(reasons, reason) ? reasons[reason] : steps[step]) ?? steps.execute;
+            if (operation === 'get_branch_protection' && (http === 403 || http === 404)) {
+              cause = 'GitHub에서 대상 브랜치의 보호 규칙을 읽을 수 없습니다.';
+              fix = http === 403
+                ? '게시 토큰에 `Administration: Read`와 대상 저장소 접근 권한이 있는지 확인하세요.'
+                : '게시 토큰의 대상 저장소 접근과 Settings → Branches의 클래식 보호 규칙을 확인하세요. Rulesets만 설정한 경우에는 이 조회를 통과하지 않습니다.';
+            } else if (operation === 'push_branch') {
+              cause = '자동화 브랜치 푸시가 완료됐는지 확인하지 못했습니다.';
+              fix = '게시 토큰의 `Contents: Read and write`와 자동화 브랜치에 적용되는 GitHub 규칙을 확인하세요.';
+            } else if (['find_existing_pr', 'create_pr', 'confirm_pr'].includes(operation) && reason !== 'publication_conflict') {
+              cause = 'GitHub에서 PR을 조회하거나 생성 결과를 확인하지 못했습니다.';
+              fix = '게시 토큰의 `Pull requests: Read and write` 권한과 원격 브랜치 및 PR 상태를 확인하세요.';
+            }
+
+            const codes = [reason, operation].filter(code).map(value => `\`${value}\``);
+            if (httpKnown) codes.push(`HTTP ${http}`);
+            const url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              '### Actions 실행 실패',
+              '',
+              `**실패 원인:** ${cause}`,
+              `**해결 방법:** ${fix}`,
+              ...(codes.length ? [`**진단:** ${codes.join(' · ')}`] : []),
+              ...(publication.attempted === true || report.execution_unconfirmed === true
+                ? ['**재승인 전 확인:** 원격 브랜치나 PR이 이미 생성됐는지 확인하세요.'] : []),
+              '',
+              `[Actions 실행 로그](${url})`,
+            ].join('\n');
+            try {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body });
+            } catch {
+              core.warning('Could not post the Issue failure comment. Check the repository token and GitHub API connectivity.');
+            }
