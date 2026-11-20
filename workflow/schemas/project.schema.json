@@ -112,7 +112,7 @@
           "additionalProperties": false,
           "required": ["platform", "required_programs"],
           "properties": {
-            "platform": {"type": "string", "const": "linux"},
+            "platform": {"type": "string", "pattern": "^(linux|macos)$"},
             "required_programs": {
               "type": "array",
               "uniqueItems": true,

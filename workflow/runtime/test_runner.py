@@ -1,8 +1,8 @@
 """Independent test execution on a disposable candidate copy (stdlib only).
 
-Linux Bubblewrap is required for real execution. No host fallback is provided:
-missing/unsupported isolation is unavailable, never a successful test. The
-trusted configuration is supplied by the controller, not by generated files.
+Linux Bubblewrap or macOS seatbelt isolation is required for real execution.
+No host fallback is provided: missing/unsupported isolation is unavailable,
+never a successful test. Configuration comes from the trusted controller.
 """
 
 from __future__ import annotations
@@ -26,7 +26,8 @@ from . import validate_config as validator, workspace
 from .codex_adapter import ExecutionError
 
 
-SYSTEM_PATH = "/usr/local/bin:/usr/bin:/bin"
+SYSTEM_PATH = ("/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+               if sys.platform == "darwin" else "/usr/local/bin:/usr/bin:/bin")
 OUTPUT_LIMIT = 256 * 1024
 _NO_TESTS = re.compile(r"\bRan\s+0\s+tests?\b|\bno tests (?:ran|collected|found)\b", re.I)
 
@@ -62,13 +63,17 @@ class _Output:
         return workspace.redact(self.data.decode("utf-8", errors="replace"))
 
 
-def _process(command: list[str], timeout: float) -> dict[str, Any]:
+def _process(command: list[str], timeout: float, *, cwd: Path | None = None,
+             env: dict[str, str] | None = None) -> dict[str, Any]:
     """Collect actual process results, kill descendants and bound both streams."""
     started = time.monotonic()
     try:
+        process_env = {"PATH": SYSTEM_PATH, "LANG": "C.UTF-8"}
+        if env:
+            process_env.update(env)
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, shell=False, start_new_session=True,
-                                   env={"PATH": SYSTEM_PATH, "LANG": "C.UTF-8"})
+                                   cwd=cwd, env=process_env)
     except OSError:
         return {"status": "unavailable", "return_code": None, "duration_seconds": time.monotonic() - started,
                 "stdout": "", "stderr": "", "reason": "The configured process could not be started."}
@@ -109,6 +114,86 @@ class IsolatedTestProcess:
         self.error = None
         self.checked = False
 
+    @staticmethod
+    def _profile_path(path: Path) -> str:
+        value = str(path.resolve())
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+    def _macos_command(self, root: Path, cwd: str, argv: list[str], scratch: Path):
+        scratch = scratch.resolve()
+        home = scratch / "home"
+        temporary = scratch / "tmp"
+        home.mkdir(mode=0o700, exist_ok=True)
+        temporary.mkdir(mode=0o700, exist_ok=True)
+        host_home = Path.home().resolve()
+        profile_path = scratch / "workflow-test.sb"
+        allowed_reads = (
+            "/System", "/usr", "/bin", "/sbin", "/Library/Apple",
+            "/Library/Frameworks", "/Library/Developer/CommandLineTools",
+            "/opt/homebrew/bin", "/opt/homebrew/Cellar", "/opt/homebrew/Frameworks",
+            "/usr/local/bin", "/usr/local/Cellar", "/usr/local/Frameworks",
+            "/private/etc", "/dev/null", "/dev/zero", "/dev/random", "/dev/urandom",
+        )
+        rules = ["(version 1)", "(deny default)", "(allow process-exec)", "(allow process-fork)",
+                 "(allow sysctl-read)"]
+        rules.extend(f"(allow file-read* (subpath {self._profile_path(Path(value))}))"
+                     for value in allowed_reads if Path(value).exists())
+        rules.append('(allow file-read-metadata (literal "/") (literal "/opt") (literal "/Library") '
+                     '(literal "/private") (literal "/private/var") (subpath "/private/var/folders"))')
+        rules.append(f"(allow file-read* (subpath {self._profile_path(root)}))")
+        rules.append(f"(allow file-read* (subpath {self._profile_path(scratch)}))")
+        rules.append(f"(allow file-write* (subpath {self._profile_path(root)}))")
+        rules.append(f"(allow file-write* (subpath {self._profile_path(scratch)}))")
+        rules.append(f"(deny file-read* (subpath {self._profile_path(host_home)}))")
+        rules.append("(deny network*)")
+        profile_path.write_text("\n".join(rules) + "\n", encoding="utf-8")
+        profile_path.chmod(0o600)
+        environment = {"PATH": SYSTEM_PATH, "HOME": str(home), "TMPDIR": str(temporary),
+                       "LANG": "C.UTF-8", "PYTHONDONTWRITEBYTECODE": "1"}
+        if Path(argv[0]).name == "uv":
+            environment.update(UV_PROJECT_ENVIRONMENT=str(temporary / "uv-venv"),
+                               UV_CACHE_DIR=str(temporary / "uv-cache"))
+        workdir = root if cwd == "." else workspace.resolve(cwd, root)
+        return [self.executable, "-f", str(profile_path), *argv], environment, workdir
+
+    def _macos_isolation_ready(self) -> bool:
+        python = shutil.which("python3", path=SYSTEM_PATH)
+        host_home = Path.home().resolve()
+        if python is None or not host_home.is_dir():
+            return False
+        probe = (
+            "import os, socket, sys\n"
+            "workspace, temporary, host_home = sys.argv[1:]\n"
+            "for directory in (workspace, temporary):\n"
+            "    path = os.path.join(directory, '.sandbox-probe')\n"
+            "    with open(path, 'x', encoding='utf-8') as stream: stream.write('ok')\n"
+            "    os.unlink(path)\n"
+            "try:\n"
+            "    with os.scandir(host_home): pass\n"
+            "except PermissionError:\n"
+            "    pass\n"
+            "else:\n"
+            "    raise SystemExit(31)\n"
+            "connection = socket.socket()\n"
+            "try:\n"
+            "    connection.bind(('127.0.0.1', 0))\n"
+            "except PermissionError:\n"
+            "    pass\n"
+            "else:\n"
+            "    raise SystemExit(32)\n"
+            "finally:\n"
+            "    connection.close()\n"
+        )
+        with tempfile.TemporaryDirectory(prefix="workflow-sandbox-probe-") as temporary:
+            scratch = Path(temporary) / "sandbox"
+            scratch.mkdir(mode=0o700)
+            root = Path(temporary) / "workspace"
+            root.mkdir(mode=0o700)
+            command, environment, workdir = self._macos_command(
+                root, ".", [python, "-c", probe, str(root), str(scratch / "tmp"), str(host_home)], scratch)
+            result = _process(command, 10, cwd=workdir, env=environment)
+        return result["status"] == "passed" and not result["stdout"]
+
     def _command(self, root: Path, cwd: str, argv: list[str], *, prj_cache: Path | None = None) -> list[str]:
         command = [self.executable, "--unshare-all", "--die-with-parent", "--new-session", "--cap-drop", "ALL"]
         # Approved system runtime only; no /root, /home, /mnt or full /etc bind.
@@ -137,18 +222,29 @@ class IsolatedTestProcess:
     def run(self, root: Path, cwd: str, command: dict[str, Any], timeout: float) -> dict[str, Any]:
         if not self.checked:
             self.checked = True
-            self.executable = shutil.which("bwrap", path=SYSTEM_PATH) if sys.platform == "linux" else None
+            if sys.platform == "linux":
+                self.executable = shutil.which("bwrap", path=SYSTEM_PATH)
+            elif sys.platform == "darwin":
+                self.executable = shutil.which("sandbox-exec", path=SYSTEM_PATH)
             if self.executable is None:
-                self.error = "Linux Bubblewrap isolation is unavailable; host execution is prohibited."
-            else:
+                self.error = {
+                    "linux": "Linux Bubblewrap isolation is unavailable; host execution is prohibited.",
+                    "darwin": "macOS sandbox-exec isolation is unavailable; host execution is prohibited.",
+                }.get(sys.platform, "No supported OS sandbox is available; host execution is prohibited.")
+            elif sys.platform == "linux":
                 probe = _process(self._command(root, ".", ["/bin/true"]), 10)
                 if probe["status"] != "passed":
                     self.error = "Bubblewrap namespace isolation could not be initialized."
+            elif sys.platform == "darwin" and not self._macos_isolation_ready():
+                self.error = "macOS sandbox isolation could not be initialized or failed its access checks."
         if self.error:
             return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
                     "stdout": "", "stderr": "", "reason": self.error}
         prj_check = command["program"] == "prj-backend-check"
         if prj_check:
+            if sys.platform != "linux":
+                return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
+                        "stdout": "", "stderr": "", "reason": "The PostgreSQL backend check currently requires the Linux Bubblewrap environment."}
             cache = Path(os.environ.get("WORKFLOW_PRJ_UV_CACHE", ""))
             if not cache.is_absolute() or not (cache / "CACHEDIR.TAG").is_file():
                 return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
@@ -160,9 +256,17 @@ class IsolatedTestProcess:
             if executable is None:
                 return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
                         "stdout": "", "stderr": "", "reason": "Configured test executable is not available on the isolated system PATH."}
-            sandbox_command = self._command(root, cwd, [executable, *command["args"]])
-        result = _process(sandbox_command, timeout)
-        if result["stderr"].startswith("bwrap:"):
+            test_argv = [executable, *command["args"]]
+        if sys.platform == "darwin" and not prj_check:
+            with tempfile.TemporaryDirectory(prefix="workflow-test-sandbox-") as temporary:
+                sandbox_command, environment, workdir = self._macos_command(
+                    root, cwd, test_argv, Path(temporary))
+                result = _process(sandbox_command, timeout, cwd=workdir, env=environment)
+        else:
+            if not prj_check:
+                sandbox_command = self._command(root, cwd, test_argv)
+            result = _process(sandbox_command, timeout)
+        if result["stderr"].startswith(("bwrap:", "sandbox-exec:")):
             result.update(status="unavailable", reason="The isolated runtime or executable could not be initialized.")
         elif prj_check and result["status"] == "failed" and result["return_code"] == 78:
             result.update(status="unavailable", reason="Offline dependencies or isolated studio_test PostgreSQL could not be prepared.")
@@ -202,9 +306,10 @@ def judge(results: list[dict[str, Any]]) -> tuple[str, list[str]]:
 def validate_workspace(candidate: Path, config: dict[str, Any], before: dict[str, Any],
                        config_relative: str, *, executor=None, stop_on_failure=False) -> dict[str, Any]:
     """Verify candidate boundaries then run Unit/E2E checks using frozen policy."""
+    environment = {"linux": "linux-bubblewrap", "darwin": "macos-sandbox-exec"}.get(sys.platform, "unsupported")
     validation = {"status": "running", "started_at": _now(), "ended_at": None,
                   "scope_status": "not_run", "tests": {"unit": [], "e2e": []}, "errors": [],
-                  "environment": "linux-bubblewrap", "candidate_sha256": None}
+                  "environment": environment, "candidate_sha256": None}
     try:
         changes = workspace.collect(candidate, config, before, config_relative)
         validation["scope_status"] = "passed"

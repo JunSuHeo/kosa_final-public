@@ -4,7 +4,7 @@
 
 ## 먼저 대상 프로젝트를 확인하세요
 
-프로젝트 설정은 두 가지입니다. [PRJ 설정](../config/projects/prj.json)은 `project_root`와 `allowed_paths`를 `PRJ/`로 제한하고, [sandbox 설정](../config/projects/sandbox.json)은 `sandbox/`로 제한합니다. GitHub Issue 작업은 Repository Variable `WORKFLOW_CONFIG_PATH`에 지정한 설정 하나만 사용합니다. PRJ 설정의 필수 백엔드 검사를 사용하려면 [러너 준비 요건](github_runner.md)에 따라 Python 패키지 다운로드와 PostgreSQL 바이너리를 준비하세요.
+프로젝트 설정은 두 가지입니다. [PRJ 설정](../config/projects/prj.json)은 `project_root`와 `allowed_paths`를 `PRJ/`로 제한하고, [sandbox 설정](../config/projects/sandbox.json)은 `sandbox/`로 제한합니다. GitHub Issue 작업은 Repository Variable `WORKFLOW_CONFIG_PATH`에 지정한 설정 하나만 사용합니다. PRJ PostgreSQL 백엔드 검사는 현재 비활성화되어 있습니다. 다시 활성화하려면 [러너 준비 요건](github_runner.md)에 따라 Python 패키지 다운로드와 PostgreSQL 바이너리를 준비하세요.
 
 ## 1. Workflow 반영과 Actions 정책
 
@@ -48,22 +48,25 @@ Workflow에 선언한 기본 `GITHUB_TOKEN` 권한은 `contents: read`, `issues:
 
 실제 API가 요청한 Collaborator 권한 또는 보호 규칙을 확인할 수 없으면 fail closed로 멈춥니다. `Administration: Write`, auto-merge 권한이나 Branch protection 우회 권한은 부여하지 않습니다. 사용 중인 PAT/App이 이 저장소의 Branch protection 응답 형식을 지원하는지 관리자 계정으로 먼저 확인하세요.
 
-## 4. 전용 Linux self-hosted runner
+## 4. macOS ARM64 self-hosted runner
 
 Runner 생성·라벨·Codex 로그인·호스트 도구 설정의 자세한 절차는 [GitHub runner 설정 안내](github_runner.md)를 참고하세요.
 
 Workflow의 runner labels는 다음과 같습니다.
 
 ```text
-self-hosted, linux, workflow-isolated
+self-hosted, macOS, ARM64, workflow-isolated
 ```
 
 실행 환경에는 다음 도구와 접근이 필요합니다.
 
-- Linux, Python 3.12 이상, Git, GitHub CLI `gh`
+- macOS ARM64, Python 3.12 이상, Git, GitHub CLI `gh`
 - 프로젝트 설정 `execution.codex.version`과 일치하는 Codex CLI, 기존 Codex 로그인과 설정 모델 사용 권한
-- test 설정에서 선언한 명령·패키지·서비스 및 test runner 격리에 필요한 Bubblewrap
+- 검사 격리에 필요한 시스템 `sandbox-exec` (deprecated 도구이며 capability 점검 실패 시 실행 차단)
+- test 설정에서 선언한 명령·패키지·서비스
 - 실행 결과를 임시 보관할 수 있는 runner 디스크 공간
+
+Codex 실행과 게시는 macOS ARM64에서 동작합니다. 활성 검사는 시스템 `sandbox-exec`로 격리되며, macOS 업데이트로 도구가 사라졌거나 격리 capability 확인이 실패하면 host에서 대신 실행하지 않고 차단합니다. 현재 PRJ의 PostgreSQL 검사는 비활성화되어 있습니다.
 
 Issue 본문은 외부 사용자가 제출하는 입력이므로 개인 개발 PC나 중요 자격 증명이 있는 상시 runner를 등록하지 마세요. 일회성 ephemeral VM/container와 최소 권한 계정을 사용하고 작업 후 폐기합니다. Codex 로그인 정보 외 GitHub 개인 인증, 다른 프로젝트 파일, 클라우드 자격 증명을 남기지 마세요. 이 workflow는 `gh`와 Codex CLI의 실제 설치·인증·모델 접근을 대신 설치하거나 준비하지 않습니다.
 
@@ -103,7 +106,7 @@ python3 -B -m workflow.runtime.validate_config \
 - [ ] `WORKFLOW_STATE_KEY`, 제한된 `WORKFLOW_PUBLISH_TOKEN` 등록
 - [ ] 기본 `GITHUB_TOKEN` 권한이 workflow에 선언한 값으로 제한됨
 - [ ] 승인 사용자 Collaborator API, 보호 Branch 조회와 PR 권한을 실제 token으로 확인함
-- [ ] runner labels, CLI 로그인, 모델/version, Git/gh, Bubblewrap과 제품 테스트를 확인함
+- [ ] runner labels, CLI 로그인, 모델/version, Git/gh, macOS sandbox capability와 제품 테스트를 확인함
 - [ ] 실행 결과가 임시 runner에서 사라질 경우 복구 담당자와 보존 정책을 결정함
 - [ ] 설정 적용을 검토한 뒤 `WORKFLOW_ISSUES_ENABLED` 활성화
 

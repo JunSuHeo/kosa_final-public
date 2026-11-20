@@ -5,7 +5,7 @@ https://learn.chatgpt.com/docs/developer-commands?surface=cli
 https://learn.chatgpt.com/docs/non-interactive-mode
 https://learn.chatgpt.com/docs/config-file/config-reference
 
-The initial adapter runs on Linux, including WSL. It requires a pinned CLI
+The adapter supports Linux (including WSL) and macOS. It requires a pinned CLI
 version and rejects unsupported flags. Authentication uses existing CLI login;
 API keys and GitHub credentials are not inherited through environment variables.
 """
@@ -13,6 +13,7 @@ API keys and GitHub credentials are not inherited through environment variables.
 from __future__ import annotations
 
 import os
+import platform as host_platform
 from pathlib import Path
 import re
 import shutil
@@ -29,6 +30,14 @@ class ExecutionError(Exception):
         super().__init__(message)
         self.status = status
         self.return_code = return_code
+
+
+def runtime_platform() -> str | None:
+    if sys.platform == "linux":
+        return "linux"
+    if sys.platform == "darwin" and host_platform.machine().lower() in ("arm64", "aarch64"):
+        return "macos"
+    return None
 
 
 def restricted_environment() -> dict[str, str]:
@@ -82,8 +91,9 @@ class CodexCLI:
         self.executable = shutil.which("codex")
         if not self.executable:
             raise ExecutionError("codex_missing", "Codex CLI was not found on PATH; no task was executed.")
-        if sys.platform != "linux":
-            raise ExecutionError("environment_error", "This adapter requires Linux/WSL; native Windows execution is not enabled.")
+        platform = runtime_platform()
+        if platform is None:
+            raise ExecutionError("environment_error", "This adapter supports Linux/WSL and macOS ARM64 only.")
         version_output = self._inspect("--version")
         match = re.search(r"\b([0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?)\b", version_output)
         if not match or match.group(1) != settings["version"]:
@@ -94,10 +104,10 @@ class CodexCLI:
         for flag in ("--ask-for-approval", "--strict-config"):
             if flag not in global_help:
                 raise ExecutionError("environment_error", "Installed Codex CLI lacks required global safety options.")
-        for flag in ("--sandbox", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--config", "--model"):
+        for flag in ("--sandbox", "--skip-git-repo-check", "--ephemeral", "--ignore-rules", "--config", "--model"):
             if flag not in exec_help:
                 raise ExecutionError("environment_error", "Installed Codex CLI lacks required execution/safety options.")
-        return {"adapter": "codex_cli", "version": self.version, "platform": "linux"}
+        return {"adapter": "codex_cli", "version": self.version, "platform": platform}
 
     def execute(self, prompt: str, workspace: Path, settings: dict[str, Any]) -> int:
         return self._execute(prompt, workspace, settings)
@@ -126,7 +136,7 @@ class CodexCLI:
         command = [
             self.executable, "--strict-config", "--ask-for-approval", "never", "exec",
             "--sandbox", sandbox, "--skip-git-repo-check",
-            "--ephemeral", "--ignore-user-config", "--ignore-rules",
+            "--ephemeral", "--ignore-rules",
             "--model", settings["model"],
         ]
         for override in ((

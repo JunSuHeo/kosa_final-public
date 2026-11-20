@@ -10,7 +10,7 @@ Issue 등록은 읽기 전용 요구사항 분석과 계획 댓글 작성까지�
 | `codex_adapter.CodexCLI` | 버전 및 안전 옵션 확인, stdin 입력, 제한된 환경, 프로세스 그룹 종료. 기존 `execute()`를 유지하고 `analyze()`의 `read-only` 및 JSON 출력 경로를 추가했다. |
 | `workspace.py` | 허용 경로의 별도 inode 복사, 보호 파일 제외, 내용/경로/링크 검사. 분석도 이 파일 복사와 inventory를 사용하며 Branch나 Git metadata를 만들지 않는다. |
 | `run.execute_request()` | 설정 고정 → Codex → 변경 수집 → 독립 검증 → `result.json`. 선택적 `issue_context`, `stage_callback`만 추가했다. |
-| `test_runner.validate_workspace()` | 별도 후보 복사본과 Bubblewrap에서 설정된 Unit/E2E를 실행한다. 구현을 변경하지 않았다. |
+| `test_runner.validate_workspace()` | 별도 후보 복사본과 OS별 Bubblewrap/Seatbelt sandbox에서 설정된 Unit/E2E를 실행한다. |
 | `publish.publish()` | sealed evidence, 기준 Git tree, 기존 사용자 변경, 원격 권한, 사람 리뷰 Branch protection을 검사한다. 승인 이후 별도 Git 저장소에서 Commit/Branch를 준비한다. 선택적 `publication_guard`를 추가했다. |
 | `orchestrator.execute_workflow()` | 기존 생성·검증 및 게시 함수를 연결한다. Issue context와 단계 callback을 전달하고 승인 무효화 오류를 보존한다. |
 | `evidence.py` | 원자적인 외부 JSON 저장과 체크섬을 재사용한다. 체크섬은 로컬 사용자 위조에 대한 서명이 아니다. 원격 Issue journal에는 별도로 HMAC을 적용했다. |
@@ -57,7 +57,7 @@ Issue 등록은 읽기 전용 요구사항 분석과 계획 댓글 작성까지�
 
 원격 복구는 `github-actions[bot]`의 Bot 댓글과 HMAC-SHA256 서명을 모두 확인한다. 최신 신뢰 bot journal이 손상되면 과거 상태로 돌아가 실행하지 않는다. 사람이 같은 marker나 과거 signed text를 댓글로 붙여도 bot 작성자가 아니므로 상태로 인정하지 않는다. 계획 댓글의 실제 본문과 저장된 해시, 계획 ID/snapshot을 포함한 예상 Markdown을 비교하여 수정·교체를 감지한다.
 
-같은 내용의 Issue 이벤트는 다시 분석하지 않는다. 현재 계획보다 먼저 생성된 결정 또는 승인 댓글과 이미 처리한 댓글 ID는 새 명령으로 인정하지 않는다. 실행은 검증된 승인 티켓으로 시작하며, 실행 중·완료·거부 상태의 새 명령은 무시한다. Actions의 저장소/Issue concurrency와 Linux `flock`을 함께 사용한다. GitHub concurrency는 여러 pending run을 전부 보존하는 메시지 queue가 아니므로 대량 이벤트 중 일부가 교체될 수 있다. 처리된 이벤트는 API에서 최신 Issue와 상태를 다시 읽고, 계획 없는 승인으로 실행하지 않는다.
+같은 내용의 Issue 이벤트는 다시 분석하지 않는다. 현재 계획보다 먼저 생성된 결정 또는 승인 댓글과 이미 처리한 댓글 ID는 새 명령으로 인정하지 않는다. 실행은 검증된 승인 티켓으로 시작하며, 실행 중·완료·거부 상태의 새 명령은 무시한다. Actions의 저장소/Issue concurrency와 POSIX `flock`을 함께 사용한다. GitHub concurrency는 여러 pending run을 전부 보존하는 메시지 queue가 아니므로 대량 이벤트 중 일부가 교체될 수 있다. 처리된 이벤트는 API에서 최신 Issue와 상태를 다시 읽고, 계획 없는 승인으로 실행하지 않는다.
 
 ## 승인 권한과 snapshot
 
@@ -77,7 +77,7 @@ Snapshot은 `{title, body}`의 정렬된 JSON에 SHA-256을 적용한다. 없는
 | Secret `WORKFLOW_STATE_KEY` | 최소 32바이트의 무작위 private key. 분석/승인과 실행 단계에서 같은 값을 사용한다. 값은 댓글에 저장하지 않는다. 교체 시 기존 서명 상태를 자동으로 승인하지 않는다. |
 | Secret `WORKFLOW_PUBLISH_TOKEN` | 해당 저장소로 제한한 GitHub App 또는 fine-grained 토큰. Contents read/write, Pull requests read/write, 기존 게시 엔진의 Branch protection 조회를 위한 Administration read와 repository metadata 접근 권한이 필요하다. 자동 병합 권한/우회를 설정하지 않는다. |
 | Actions `GITHUB_TOKEN` | workflow의 `contents: read`, `issues: write`. Issue API와 상태 댓글에만 사용한다. 게시 토큰은 실행 단계에서만 제공한다. |
-| Runner labels | `[self-hosted, linux, workflow-isolated]`. Python 3.12+, Git, gh, 설정 버전과 일치하는 Codex CLI, 해당 CLI의 기존 로그인 및 설정된 모델 접근, Bubblewrap와 구성한 테스트 환경이 필요하다. |
+| Runner labels | `[self-hosted, macOS, ARM64, workflow-isolated]`. Codex 실행과 POSIX 게시 잠금을 지원한다. 활성 검사는 macOS `sandbox-exec`로 격리하며, 격리 도구가 없거나 점검에 실패하면 host 실행 없이 차단한다. |
 | Runner 격리 | Issue 작업 전용의 일회성 격리 runner를 사용하고, Codex 로그인 외 민감한 파일이 HOME 등에 남지 않도록 운영한다. 기존 어댑터의 읽기 경계 한계를 아래 참고한다. |
 | Branch protection | 기존 게시 엔진은 최소 한 명의 사람 리뷰, 관리자 적용, 리뷰 bypass 없음 등을 API로 확인한다. Repository 설정을 코드가 변경하지 않는다. |
 | 커밋 작성자 | `publishing.commit_author`에 자동화 커밋의 이름과 이메일을 설정한다. 생략하면 checkout의 로컬 Git `user.name`과 `user.email`을 사용하며 머신의 전역 설정은 읽지 않는다. |

@@ -597,8 +597,8 @@ def main(argv=None):
             raise ExecutionError("state_key_invalid", "The Issue signing key must contain at least 32 bytes.")
         controller = IssueController(args.config, args.repo_root, args.results_dir, github,
                                      signing_key, os.environ["WORKFLOW_BOT_LOGIN"])
-        # The shared Actions concurrency group serializes remote runners; flock
-        # also serializes processes sharing this evidence directory on Linux.
+        # The shared Actions concurrency group serializes remote runners; POSIX
+        # flock also serializes processes sharing this evidence directory.
         import fcntl
         lock = args.results_dir / ("issue-" + hashlib.sha256(
             (github.repository + str(event["issue"]["number"])).encode()).hexdigest() + ".lock")

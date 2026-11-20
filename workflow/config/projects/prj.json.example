@@ -39,7 +39,7 @@
     "Frontend package.json declares Playwright and test:e2e=playwright test. Candidate program=npm, args=[run, test:e2e] still needs dependency, browser, service and test-data environment verification; command remains null.",
     "PRJ/docs exists but authoritative design documents were not selected. Replace design_documents with owner-approved existing repository-relative files.",
     "Required test flags are a proposed policy for this example, not a verified PRJ policy. Confirm each flag and Draft policy, fill all null fields, and then set configuration_status to ready.",
-    "Manual execution additionally requires confirmed instruction paths, Linux environment tools, an installed and pinned Codex CLI version, an available model, and a 1..3600 second timeout. Codex was not found on the Windows or WSL PATH during implementation. Authentication must already be configured through the CLI's approved login method; no secrets belong here.",
+    "Manual execution additionally requires confirmed instruction paths, the platform's required isolation tools, an installed and pinned Codex CLI version, an available model, and a 1..3600 second timeout. Codex was not found on the Windows or WSL PATH during implementation. Authentication must already be configured through the CLI's approved login method; no secrets belong here.",
     "This configuration does not define Issue eligibility, credentials, runner setup, retries or log retention. Those contracts and permissions must be provided before future remote automation activation. No secrets belong in this file."
   ]
 }
