@@ -67,7 +67,18 @@ Linux 검증은 시스템 런타임(`/usr`, `/bin`, `/lib`, `/lib64`, `/etc/alte
 
 `uv` 검사는 가상환경과 캐시를 샌드박스의 `/tmp`에 만든다. 검사마다 새 임시 공간을 사용하며, `/workspace`에 생긴 링크와 입력 파일 변경은 기존대로 차단한다.
 
-`prj-backend-check`는 Linux runner 전용 검사 명령이다. 현재 PRJ 설정은 PostgreSQL 백엔드 검사를 비활성화해 Actions가 `uv` 캐시를 준비하거나 이 명령을 실행하지 않는다. macOS에서 다시 활성화하면 `unavailable`로 처리되어 fail-closed로 차단한다. Linux에서 재활성화할 경우 신뢰된 기준 checkout의 잠금 파일로 준비한 캐시를 `WORKFLOW_PRJ_UV_CACHE`로 전달하고, 읽기 전용 캐시에서 의존성을 오프라인 설치해 임시 `studio_test` PostgreSQL로 pytest를 실행한다.
+`prj-backend-check`는 Linux와 macOS에서 임시 `studio_test` PostgreSQL로 백엔드 pytest를 실행한다. PRJ 설정은 `required: true`, `run_if: always`, `on_failure: block`이다. 러너의 시스템 PATH에 `uv`와 Python 3.12 이상, PostgreSQL 서버·클라이언트 도구가 필요하다. PostgreSQL 도구는 PATH 외에도 Linux의 `/usr/lib/postgresql/*/bin`, macOS Homebrew의 `/opt/homebrew/opt/postgresql@*/bin` 및 `/usr/local/opt/postgresql@*/bin`에서 찾는다. 실행 중 도구를 설치하거나 서비스 DB에 연결하지 않는다.
+
+Actions는 승인 확인 후 신뢰된 기준 checkout의 잠금 파일로 별도 `/tmp/workflow-prj-deps.*` 위치에 의존성 캐시를 준비한다. 이 단계의 `uv sync`는 비밀값 없는 환경에서 `--frozen --no-build --no-python-downloads`로 실행하며, 후보의 코드나 설치 스크립트를 실행하지 않는다. 완료된 캐시만 `WORKFLOW_PRJ_UV_CACHE`로 검증기에 전달하고 실행 종료 시 삭제한다. 실제 검사는 해당 캐시에서 `--offline --frozen --no-build --no-python-downloads`로 설치하므로 후보가 새 의존성을 요구하면 검사 준비 실패로 차단한다.
+
+Linux는 기존 Bubblewrap의 읽기 전용 캐시 마운트를 유지한다. macOS는 신뢰된 실행 스크립트만 private scratch로 복사하고 캐시에 읽기 권한만 준다. 짧은 `/private/tmp/wpg-*` 경로에 DB·소켓·가상환경을 만들어 Unix 소켓의 104바이트 제한을 피한다. PostgreSQL의 System V semaphore와 기본 시스템 사용자 조회를 허용하고 공유 메모리는 mmap 파일로 제한한다. 네트워크는 해당 scratch의 PostgreSQL Unix 소켓에만 허용하며 TCP, 다른 Unix 소켓, host HOME은 차단한다. 별도 capability 점검에서 사용자 조회, 소켓 왕복, 캐시 읽기·쓰기 차단, 외부 Unix 소켓·TCP·HOME 차단을 확인한 뒤 실행한다. 점검 실패나 의존성·DB 준비 실패는 `unavailable`이며 host 실행으로 대체하지 않는다.
+
+실제 백엔드 통합 검증은 일반 discover와 분리한다. 신뢰된 기준 잠금 파일로 준비한 캐시와 위 도구가 있는 환경에서 저장소 루트의 아래 명령을 실행한다. 임시 DB만 생성하며 모델을 호출하지 않는다.
+
+```sh
+WORKFLOW_PRJ_TESTS=1 WORKFLOW_PRJ_UV_CACHE=/absolute/prepared/uv-cache \
+  python3 -B -m unittest discover -s workflow/runtime/tests/integration -p test_prj_validation.py -v
+```
 
 테스트 프로세스의 종료 코드, 소요 시간, stdout·stderr를 수집한다. 시간 초과·완료 시 남은 하위 프로세스도 정리한다. 각 출력은 메모리에서 256 KiB로 제한하고 비밀정보를 가린 뒤 결과에 저장한다. 한도를 초과한 스트림은 전체 생략하고 증거 수집 불가로 `unavailable` 처리한다. 원문 로그를 디스크에 따로 저장하지 않는다.
 

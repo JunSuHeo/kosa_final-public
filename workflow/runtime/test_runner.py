@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -119,7 +120,7 @@ class IsolatedTestProcess:
         value = str(path.resolve())
         return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
-    def _macos_command(self, root: Path, cwd: str, argv: list[str], scratch: Path):
+    def _macos_command(self, root: Path, cwd: str, argv: list[str], scratch: Path, *, prj_cache: Path | None = None):
         scratch = scratch.resolve()
         home = scratch / "home"
         temporary = scratch / "tmp"
@@ -139,31 +140,50 @@ class IsolatedTestProcess:
         rules.extend(f"(allow file-read* (subpath {self._profile_path(Path(value))}))"
                      for value in allowed_reads if Path(value).exists())
         rules.append('(allow file-read-metadata (literal "/") (literal "/opt") (literal "/Library") '
+                     '(literal "/tmp") (literal "/private/tmp") (subpath "/opt/homebrew") '
                      '(literal "/private") (literal "/private/var") (subpath "/private/var/folders"))')
         rules.append(f"(allow file-read* (subpath {self._profile_path(root)}))")
         rules.append(f"(allow file-read* (subpath {self._profile_path(scratch)}))")
         rules.append(f"(allow file-write* (subpath {self._profile_path(root)}))")
         rules.append(f"(allow file-write* (subpath {self._profile_path(scratch)}))")
         rules.append(f"(deny file-read* (subpath {self._profile_path(host_home)}))")
-        rules.append("(deny network*)")
+        if prj_cache is None:
+            rules.append("(deny network*)")
+        else:
+            # Default-deny still blocks IP networking and every other Unix socket.
+            socket_path = self._profile_path(temporary / "pg-socket")
+            rules.extend([
+                f"(allow file-read* (subpath {self._profile_path(prj_cache)}))",
+                "(allow system-socket (socket-domain AF_UNIX))",
+                f"(allow network-bind (local unix-socket (subpath {socket_path})))",
+                f"(allow network-outbound (remote unix-socket (subpath {socket_path})))",
+                f"(allow network-inbound (local unix-socket (subpath {socket_path})))",
+                # PostgreSQL on Darwin uses System V semaphores, not shared memory.
+                "(allow ipc-sysv-sem)",
+                '(allow mach-lookup (global-name "com.apple.system.opendirectoryd.libinfo"))',
+            ])
+            launcher = Path(__file__).resolve().with_name("prj_backend_check.sh")
+            shutil.copyfile(launcher, scratch / launcher.name)
         profile_path.write_text("\n".join(rules) + "\n", encoding="utf-8")
         profile_path.chmod(0o600)
         environment = {"PATH": SYSTEM_PATH, "HOME": str(home), "TMPDIR": str(temporary),
                        "LANG": "C.UTF-8", "PYTHONDONTWRITEBYTECODE": "1"}
+        if prj_cache is not None:
+            environment.update(WORKFLOW_PRJ_UV_CACHE=str(prj_cache), WORKFLOW_PRJ_SCRATCH=str(temporary))
         if Path(argv[0]).name == "uv":
             environment.update(UV_PROJECT_ENVIRONMENT=str(temporary / "uv-venv"),
                                UV_CACHE_DIR=str(temporary / "uv-cache"))
         workdir = root if cwd == "." else workspace.resolve(cwd, root)
         return [self.executable, "-f", str(profile_path), *argv], environment, workdir
 
-    def _macos_isolation_ready(self) -> bool:
+    def _macos_isolation_ready(self, *, prj_cache: Path | None = None) -> bool:
         python = shutil.which("python3", path=SYSTEM_PATH)
         host_home = Path.home().resolve()
         if python is None or not host_home.is_dir():
             return False
         probe = (
             "import os, socket, sys\n"
-            "workspace, temporary, host_home = sys.argv[1:]\n"
+            "workspace, temporary, host_home = sys.argv[1:4]\n"
             "for directory in (workspace, temporary):\n"
             "    path = os.path.join(directory, '.sandbox-probe')\n"
             "    with open(path, 'x', encoding='utf-8') as stream: stream.write('ok')\n"
@@ -174,24 +194,61 @@ class IsolatedTestProcess:
             "    pass\n"
             "else:\n"
             "    raise SystemExit(31)\n"
-            "connection = socket.socket()\n"
             "try:\n"
-            "    connection.bind(('127.0.0.1', 0))\n"
+            "    with socket.socket() as connection: connection.bind(('127.0.0.1', 0))\n"
             "except PermissionError:\n"
             "    pass\n"
             "else:\n"
             "    raise SystemExit(32)\n"
-            "finally:\n"
-            "    connection.close()\n"
         )
-        with tempfile.TemporaryDirectory(prefix="workflow-sandbox-probe-") as temporary:
+        if prj_cache is not None:
+            probe += (
+                "import pwd\n"
+                "pwd.getpwuid(os.getuid())\n"
+                "tag = os.path.join(sys.argv[4], 'CACHEDIR.TAG')\n"
+                "with open(tag, 'rb') as stream: stream.read(1)\n"
+                "try:\n"
+                "    with open(tag, 'wb'): pass\n"
+                "except PermissionError:\n"
+                "    pass\n"
+                "else:\n"
+                "    raise SystemExit(33)\n"
+                "directory = os.path.join(temporary, 'pg-socket')\n"
+                "os.mkdir(directory)\n"
+                "path = os.path.join(directory, 'probe')\n"
+                "with socket.socket(socket.AF_UNIX) as server:\n"
+                "    server.bind(path)\n"
+                "    server.listen(1)\n"
+                "    with socket.socket(socket.AF_UNIX) as client: client.connect(path)\n"
+                "    connection, _ = server.accept()\n"
+                "    connection.close()\n"
+                "try:\n"
+                "    with socket.socket(socket.AF_UNIX) as client: client.connect(sys.argv[5])\n"
+                "except PermissionError:\n"
+                "    pass\n"
+                "else:\n"
+                "    raise SystemExit(34)\n"
+            )
+        with tempfile.TemporaryDirectory(prefix="workflow-sandbox-probe-" if prj_cache is None else "wpg-",
+                                         dir=None if prj_cache is None else "/tmp") as temporary:
             scratch = Path(temporary) / "sandbox"
             scratch.mkdir(mode=0o700)
             root = Path(temporary) / "workspace"
             root.mkdir(mode=0o700)
-            command, environment, workdir = self._macos_command(
-                root, ".", [python, "-c", probe, str(root), str(scratch / "tmp"), str(host_home)], scratch)
-            result = _process(command, 10, cwd=workdir, env=environment)
+            argv = [python, "-c", probe, str(root), str(scratch / "tmp"), str(host_home)]
+            outside_socket = None
+            if prj_cache is not None:
+                outside_path = Path(temporary) / "outside-socket"
+                outside_socket = socket.socket(socket.AF_UNIX)
+                outside_socket.bind(str(outside_path))
+                outside_socket.listen(1)
+                argv.extend([str(prj_cache), str(outside_path)])
+            try:
+                command, environment, workdir = self._macos_command(root, ".", argv, scratch, prj_cache=prj_cache)
+                result = _process(command, 10, cwd=workdir, env=environment)
+            finally:
+                if outside_socket is not None:
+                    outside_socket.close()
         return result["status"] == "passed" and not result["stdout"]
 
     def _command(self, root: Path, cwd: str, argv: list[str], *, prj_cache: Path | None = None) -> list[str]:
@@ -242,25 +299,32 @@ class IsolatedTestProcess:
                     "stdout": "", "stderr": "", "reason": self.error}
         prj_check = command["program"] == "prj-backend-check"
         if prj_check:
-            if sys.platform != "linux":
-                return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
-                        "stdout": "", "stderr": "", "reason": "The PostgreSQL backend check currently requires the Linux Bubblewrap environment."}
             cache = Path(os.environ.get("WORKFLOW_PRJ_UV_CACHE", ""))
             if not cache.is_absolute() or not (cache / "CACHEDIR.TAG").is_file():
                 return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
                         "stdout": "", "stderr": "", "reason": "WORKFLOW_PRJ_UV_CACHE must point to a prepared offline uv cache."}
-            sandbox_command = self._command(root, cwd, ["/bin/bash", "/workflow/prj_backend_check.sh"],
-                                            prj_cache=cache.resolve())
+            cache = cache.resolve()
+            if sys.platform == "darwin":
+                if not self._macos_isolation_ready(prj_cache=cache):
+                    return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
+                            "stdout": "", "stderr": "", "reason": "macOS PostgreSQL socket or cache isolation failed its access checks."}
+            else:
+                sandbox_command = self._command(root, cwd, ["/bin/bash", "/workflow/prj_backend_check.sh"], prj_cache=cache)
         else:
             executable = shutil.which(command["program"], path=SYSTEM_PATH)
             if executable is None:
                 return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
                         "stdout": "", "stderr": "", "reason": "Configured test executable is not available on the isolated system PATH."}
             test_argv = [executable, *command["args"]]
-        if sys.platform == "darwin" and not prj_check:
-            with tempfile.TemporaryDirectory(prefix="workflow-test-sandbox-") as temporary:
+        if sys.platform == "darwin":
+            # Keep PostgreSQL Unix socket paths below Darwin's 104-byte limit.
+            with tempfile.TemporaryDirectory(prefix="wpg-" if prj_check else "workflow-test-sandbox-",
+                                             dir="/tmp" if prj_check else None) as temporary:
+                scratch = Path(temporary)
+                if prj_check:
+                    test_argv = ["/bin/bash", str(scratch.resolve() / "prj_backend_check.sh")]
                 sandbox_command, environment, workdir = self._macos_command(
-                    root, cwd, test_argv, Path(temporary))
+                    root, cwd, test_argv, scratch, prj_cache=cache if prj_check else None)
                 result = _process(sandbox_command, timeout, cwd=workdir, env=environment)
         else:
             if not prj_check:
