@@ -184,6 +184,32 @@ class ControllerTests(unittest.TestCase):
         self.edited()
         self.analyzer.analyze.assert_called_once()
 
+    def test_failed_analysis_can_be_retried_after_runner_recovery(self):
+        self.analyzer.analyze.side_effect = ExecutionError("environment_error", "Mock environment failure")
+        state = self.opened()
+        self.assertEqual(state["status"], "analysis_failed")
+        failed_id = state["plan_id"]
+        self.analyzer.analyze.side_effect = None
+        self.controller = self.new_controller()
+        state = self.opened()
+        self.assertEqual(state["status"], "awaiting_approval")
+        self.assertNotEqual(state["plan_id"], failed_id)
+        self.assertEqual(self.analyzer.analyze.call_count, 2)
+        self.engine.assert_not_called()
+
+    def test_failed_reanalysis_retry_preserves_human_decisions(self):
+        self.opened()
+        self.analyzer.analyze.side_effect = ExecutionError("environment_error", "Mock environment failure")
+        event = self.github.event("/plan Preserve the CLI output format")
+        self.assertEqual(self.controller.handle("issue_comment", event)["status"], "analysis_failed")
+        self.analyzer.analyze.side_effect = None
+        self.controller = self.new_controller()
+        state = self.opened()
+        self.assertEqual(state["status"], "awaiting_approval")
+        self.assertEqual(state["issue"]["additional_decisions"], ["Preserve the CLI output format"])
+        self.assertEqual(state["decision_comments"][0]["id"], event["comment"]["id"])
+        self.engine.assert_not_called()
+
     def test_approved_rejected_and_running_states_ignore_new_commands(self):
         self.opened()
         for status in ("approved", "rejected", "executing", "validating", "publishing", "completed"):
@@ -431,6 +457,14 @@ class ControllerTests(unittest.TestCase):
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_environment_diagnostic_identifies_missing_options_without_arbitrary_text(self):
+        error = ExecutionError("environment_error", "synthetic-private-value",
+                               operation="check_codex_options", option="--strict-config")
+        self.assertEqual(subject.error_diagnostic(error), {"reason": "environment_error",
+                         "operation": "check_codex_options", "option": "--strict-config"})
+        error.option = "synthetic-private-value"
+        self.assertNotIn("synthetic-private-value", json.dumps(subject.error_diagnostic(error)))
+
     def test_active_project_configs_accept_the_actions_repository(self):
         root = Path(__file__).resolve().parents[3]
         github = Mock(repository="JunSuHeo/kosa_final-public")

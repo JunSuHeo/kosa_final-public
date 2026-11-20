@@ -64,6 +64,10 @@ def error_diagnostic(exc):
     operation = getattr(exc, "operation", None)
     if isinstance(operation, str) and re.fullmatch(r"[a-z_]{1,64}", operation):
         diagnostic["operation"] = operation
+    option = getattr(exc, "option", None)
+    if option in ("--ask-for-approval", "--strict-config", "--sandbox", "--skip-git-repo-check",
+                  "--ephemeral", "--ignore-rules", "--config", "--model"):
+        diagnostic["option"] = option
     http_status = getattr(exc, "http_status", None)
     if type(http_status) is int and 400 <= http_status <= 599:
         diagnostic["http_status"] = http_status
@@ -516,6 +520,9 @@ class IssueController:
                 return self.state
             if (self.state and self.state["snapshot_hash"] == snapshot(current)
                     and self.state["config_sha256"] == self.config_hash):
+                if self.state["status"] == "analysis_failed":
+                    return self.analyze(current, decision_comments=self.state.get("decision_comments", ()),
+                                        decisions=self.state["issue"].get("additional_decisions", ()))
                 return self.state
             if self.state:
                 self.persist("approval_invalidated", "Issue 요구사항이 변경되어 기존 계획과 승인을 무효화했습니다.")

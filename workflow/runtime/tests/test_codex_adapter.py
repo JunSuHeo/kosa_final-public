@@ -28,25 +28,53 @@ class AdapterTests(unittest.TestCase):
         with patch("workflow.runtime.codex_adapter.shutil.which", return_value="/fake/codex"), patch("workflow.runtime.codex_adapter.sys.platform", "linux"), patch("workflow.runtime.codex_adapter.subprocess.run", side_effect=outputs):
             self.assertEqual(CodexCLI().preflight(SETTINGS)["version"], "1.2.3")
 
+    def test_macos_preflight_accepts_arm64_and_x86_64_python(self):
+        for machine in ("arm64", "aarch64", "x86_64"):
+            outputs = [subprocess.CompletedProcess([], 0, "codex-cli 1.2.3", ""),
+                       subprocess.CompletedProcess([], 0, GLOBAL_HELP, ""),
+                       subprocess.CompletedProcess([], 0, EXEC_HELP, "")]
+            with self.subTest(machine=machine), patch("workflow.runtime.codex_adapter.shutil.which", return_value="/fake/codex"), \
+                    patch("workflow.runtime.codex_adapter.sys.platform", "darwin"), \
+                    patch("workflow.runtime.codex_adapter.host_platform.machine", return_value=machine), \
+                    patch("workflow.runtime.codex_adapter.subprocess.run", side_effect=outputs):
+                self.assertEqual(CodexCLI().preflight(SETTINGS)["platform"], "macos")
+
     def test_wrong_version_is_rejected(self):
         with patch("workflow.runtime.codex_adapter.shutil.which", return_value="/fake/codex"), patch("workflow.runtime.codex_adapter.sys.platform", "linux"), patch("workflow.runtime.codex_adapter.subprocess.run", return_value=subprocess.CompletedProcess([], 0, "codex-cli 9.9.9", "")):
             with self.assertRaises(ExecutionError) as error:
                 CodexCLI().preflight(SETTINGS)
         self.assertEqual(error.exception.status, "environment_error")
+        self.assertEqual(error.exception.operation, "check_codex_version")
 
     def test_missing_safety_flags_are_rejected(self):
         outputs = [subprocess.CompletedProcess([], 0, "codex-cli 1.2.3", ""),
                    subprocess.CompletedProcess([], 0, "--help", ""),
                    subprocess.CompletedProcess([], 0, EXEC_HELP, "")]
         with patch("workflow.runtime.codex_adapter.shutil.which", return_value="/fake/codex"), patch("workflow.runtime.codex_adapter.sys.platform", "linux"), patch("workflow.runtime.codex_adapter.subprocess.run", side_effect=outputs):
-            with self.assertRaises(ExecutionError):
+            with self.assertRaises(ExecutionError) as error:
                 CodexCLI().preflight(SETTINGS)
+        self.assertEqual(error.exception.operation, "check_codex_options")
+        self.assertEqual(error.exception.option, "--ask-for-approval")
+
+    def test_failed_cli_inspection_identifies_the_probe_without_raw_output(self):
+        adapter = CodexCLI()
+        adapter.executable = "/fake/codex"
+        for args, operation in ((("--version",), "inspect_codex_version"),
+                                (("--help",), "inspect_codex_help"),
+                                (("exec", "--help"), "inspect_codex_exec_help")):
+            with self.subTest(args=args), patch("workflow.runtime.codex_adapter.subprocess.run",
+                    return_value=subprocess.CompletedProcess([], 1, "", "synthetic-private-value")):
+                with self.assertRaises(ExecutionError) as error:
+                    adapter._inspect(*args)
+                self.assertEqual(error.exception.operation, operation)
+                self.assertNotIn("synthetic-private-value", str(error.exception))
 
     def test_native_windows_execution_is_blocked(self):
         with patch("workflow.runtime.codex_adapter.shutil.which", return_value="codex.exe"), patch("workflow.runtime.codex_adapter.sys.platform", "win32"):
             with self.assertRaises(ExecutionError) as error:
                 CodexCLI().preflight(SETTINGS)
         self.assertEqual(error.exception.status, "environment_error")
+        self.assertEqual(error.exception.operation, "check_codex_platform")
 
     def test_secret_environment_is_not_inherited(self):
         with patch.dict("os.environ", {"GITHUB_TOKEN": "synthetic", "OPENAI_API_KEY": "synthetic", "BASH_ENV": "/unsafe", "PATH": "/tools"}):

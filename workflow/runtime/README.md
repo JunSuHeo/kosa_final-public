@@ -19,7 +19,7 @@ Python 3.12 이상과 표준 라이브러리를 사용한다. 현재 Codex 어�
 | 항목 | 의미 |
 | --- | --- |
 | `execution.instructions` | 저장소 기준 상대 경로의 프로젝트 작업 지침 파일 목록. 프로젝트 경계 안의 기존 파일만 읽으며 수정할 수 없다. `[]`는 추가 지침이 없음을 명시한다. |
-| `execution.environment.platform` | `linux` 또는 `macos` (Apple Silicon) |
+| `execution.environment.platform` | `linux` 또는 `macos` (x86_64 및 ARM64). Apple Silicon에서 x86_64 Python을 사용하는 경우도 `macos`로 인식한다. |
 | `execution.environment.required_programs` | PATH에서 반드시 발견되어야 하는 프로그램 이름. `[]`는 이 단계에서 추가 도구 검사를 요구하지 않음을 명시한다. 설치나 버전·서비스 검증을 대신하지 않는다. |
 | `execution.codex.version` | 실제 설치·검증한 Codex CLI 버전. `codex --version` 결과와 일치해야 한다. |
 | `execution.codex.model` | 현재 인증 계정에서 이용 가능하다고 확인한 모델 식별자. 엔진이 임의의 기본 모델을 선택하지 않는다. |
@@ -61,7 +61,7 @@ CLI 종료 코드 `0`은 전체 흐름 성공, `1`은 실행·검증·게시 실
 
 `test_runner.py`는 Codex와 별개 프로세스로 테스트를 실행한다. 실행 전 후보의 허용 경로와 설정 구조·필수 경로를 다시 확인하고 후보 전체의 내용 해시를 기록한다. 후보는 새로운 임시 검증 폴더로 복사하며 테스트는 이 복사본에서만 수행한다. 원본 사용자 변경은 Codex 실행 직전의 스냅샷에 포함되므로 Codex 변경으로 오인하지 않는다. Git 메타데이터가 없는 스냅샷에서는 Git diff 대신 SHA-256·실행 비트의 전후 비교로 추가·수정·삭제를 구분한다.
 
-Linux/WSL에서는 Bubblewrap(`bwrap`), macOS ARM64에서는 Seatbelt 기반 `sandbox-exec`로 테스트를 격리한다. macOS sandbox preflight는 후보 snapshot과 private temp 쓰기, host home 차단, network bind 차단을 확인한다. `sandbox-exec`는 Apple이 deprecated 처리했으므로 도구가 없거나 capability 점검에 실패하면 `unavailable`로 기록하고 host에서 실행하지 않는다. 설치·인증·권한 상승은 수행하지 않는다.
+Linux/WSL에서는 Bubblewrap(`bwrap`), macOS x86_64/ARM64에서는 Seatbelt 기반 `sandbox-exec`로 테스트를 격리한다. macOS sandbox preflight는 후보 snapshot과 private temp 쓰기, host home 차단, network bind 차단을 확인한다. `sandbox-exec`는 Apple이 deprecated 처리했으므로 도구가 없거나 capability 점검에 실패하면 `unavailable`로 기록하고 host에서 실행하지 않는다. 설치·인증·권한 상승은 수행하지 않는다.
 
 Linux 검증은 시스템 런타임(`/usr`, `/bin`, `/lib`, `/lib64`, `/etc/alternatives`, `/etc/ld.so.cache`)만 읽기 전용으로 제공한다. 테스트 복사본만 `/workspace`에 쓰기 가능하게 마운트하고 HOME·TMPDIR를 임시 경로로 둔 뒤 환경 변수를 비운다. PID·network namespace와 capability 제한을 적용한다. macOS에서는 시스템 runtime 경로, 검증 snapshot, private HOME/TMPDIR만 허용하는 Seatbelt profile을 적용하고 host home과 network 접근을 차단한다. 두 환경 모두 원본 checkout, Codex 인증 파일, host 서비스에 접근하지 않는다.
 
