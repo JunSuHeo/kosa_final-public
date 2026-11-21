@@ -255,6 +255,76 @@ class ValidationTests(unittest.TestCase):
         self.assertIn("--clearenv", command)
         self.assertNotIn("--share-net", command)
 
+    def test_macos_backend_check_uses_native_launcher_and_private_scratch(self):
+        executor = test_runner.IsolatedTestProcess()
+        executor.checked, executor.executable = True, "/fake/sandbox-exec"
+        cache = Path(self.temp.name) / "uv-cache"
+        cache.mkdir()
+        (cache / "CACHEDIR.TAG").touch()
+        def execute(command, timeout, *, cwd, env):
+            self.assertEqual(command[:2], ["/fake/sandbox-exec", "-f"])
+            launcher = Path(command[-1])
+            self.assertEqual(launcher.read_bytes(), Path(test_runner.__file__).with_name("prj_backend_check.sh").read_bytes())
+            self.assertEqual(env["WORKFLOW_PRJ_UV_CACHE"], str(cache.resolve()))
+            scratch = Path(env["WORKFLOW_PRJ_SCRATCH"])
+            self.assertTrue(scratch.is_dir())
+            self.assertTrue(scratch.is_relative_to(Path("/tmp").resolve()))
+            profile = Path(command[2]).read_text()
+            self.assertIn('(local unix-socket (subpath ', profile)
+            self.assertIn('(remote unix-socket (subpath ', profile)
+            self.assertIn(str(scratch / "pg-socket"), profile)
+            self.assertNotIn('(allow network*)', profile)
+            self.assertIn('"com.apple.system.opendirectoryd.libinfo"', profile)
+            self.assertIn(f'(allow file-read* (subpath "{cache.resolve()}"))', profile)
+            self.assertNotIn(f'(allow file-write* (subpath "{cache.resolve()}"))', profile)
+            self.assertNotIn("GH_TOKEN", env)
+            self.assertNotIn("AI_WORKSPACE_API_KEY", env)
+            self.assertEqual(cwd, self.candidate / "sample/tests")
+            return {"status": "passed", "return_code": 0, "stdout": "", "stderr": ""}
+        with patch("workflow.runtime.test_runner.sys.platform", "darwin"), \
+                patch.dict(os.environ, {"WORKFLOW_PRJ_UV_CACHE": str(cache), "GH_TOKEN": "synthetic", "AI_WORKSPACE_API_KEY": "synthetic"}), \
+                patch.object(executor, "_macos_isolation_ready", return_value=True) as probe, \
+                patch.object(test_runner, "_process", side_effect=execute):
+            result = executor.run(self.candidate, "sample/tests", {"program": "prj-backend-check", "args": []}, 2)
+        self.assertEqual(result["status"], "passed")
+        probe.assert_called_once_with(prj_cache=cache.resolve())
+
+    def test_macos_backend_policy_probe_failure_prevents_test_execution(self):
+        executor = test_runner.IsolatedTestProcess()
+        executor.checked, executor.executable = True, "/fake/sandbox-exec"
+        cache = Path(self.temp.name) / "uv-cache"
+        cache.mkdir()
+        (cache / "CACHEDIR.TAG").touch()
+        with patch("workflow.runtime.test_runner.sys.platform", "darwin"), \
+                patch.dict(os.environ, {"WORKFLOW_PRJ_UV_CACHE": str(cache)}), \
+                patch.object(executor, "_macos_isolation_ready", return_value=False), \
+                patch.object(test_runner, "_process") as process:
+            result = executor.run(self.candidate, "sample/tests", {"program": "prj-backend-check", "args": []}, 2)
+        self.assertEqual(result["status"], "unavailable")
+
+        process.assert_not_called()
+
+    def test_active_prj_config_requires_the_backend_check_on_every_execution(self):
+        repo = Path(__file__).resolve().parents[3]
+        config = json.loads((repo / "workflow/config/projects/prj.json").read_text())
+        check = next(test for test in config["tests"]["unit"] if test["command"]["program"] == "prj-backend-check")
+        self.assertTrue(check["required"])
+        self.assertEqual(check["run_if"], "always")
+        self.assertEqual(check["on_failure"], "block")
+
+    def test_macos_backend_setup_failure_is_unavailable(self):
+        executor = test_runner.IsolatedTestProcess()
+        executor.checked, executor.executable = True, "/fake/sandbox-exec"
+        cache = Path(self.temp.name) / "uv-cache"
+        cache.mkdir()
+        (cache / "CACHEDIR.TAG").touch()
+        with patch("workflow.runtime.test_runner.sys.platform", "darwin"), \
+                patch.dict(os.environ, {"WORKFLOW_PRJ_UV_CACHE": str(cache)}), \
+                patch.object(executor, "_macos_isolation_ready", return_value=True), \
+                patch.object(test_runner, "_process", return_value={"status": "failed", "return_code": 78, "stdout": "", "stderr": "setup failed"}):
+            result = executor.run(self.candidate, "sample/tests", {"program": "prj-backend-check", "args": []}, 2)
+        self.assertEqual(result["status"], "unavailable")
+
     def test_oversized_output_is_omitted_entirely(self):
         output = test_runner._Output(io.BytesIO(b"x" * (test_runner.OUTPUT_LIMIT + 1)))
         output.drain()

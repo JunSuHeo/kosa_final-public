@@ -19,10 +19,9 @@
     "unit": [
       {
         "id": "backend-postgresql",
-        "required": false,
+        "required": true,
         "timeout_seconds": 600,
-        "run_if": "never",
-        "skip_reason": "PRJ 백엔드 검사는 PostgreSQL 기반이므로 GitHub Actions 검증에서 제외합니다.",
+        "run_if": "always",
         "on_failure": "block",
         "cwd": "PRJ/backend",
         "command": {
@@ -70,7 +69,7 @@
   },
   "notes": [
     "Product configuration. Writes are scoped to PRJ; project instructions, credentials and repository controls remain protected by the runtime.",
-    "The PostgreSQL-backed PRJ backend test is disabled in GitHub Actions. Browser E2E is also disabled; with no passing project check, the runtime keeps its fail-closed behavior and blocks publication until a DB-independent check is configured.",
+    "The PostgreSQL-backed PRJ backend test is required on every approved execution. Linux uses Bubblewrap and macOS uses sandbox-exec with an isolated studio_test cluster and an offline dependency cache prepared from the base checkout.",
     "Browser E2E requires an API/web/PostgreSQL stack and Playwright browser. It is recorded as explicitly skipped until a dedicated isolated service runner is implemented.",
     "Codex CLI version 0.171.0 is pinned in this configuration and checked against the runner's installed CLI before a task executes.",
     "gpt-6.2-sol is configured as the project model. Codex CLI user configuration is loaded; the project model and runtime safety options remain explicit. Account/model availability is checked by the CLI at execution time; do not record credentials in configuration or logs.",

@@ -75,6 +75,24 @@ jobs:
             --config "$WORKFLOW_CONFIG_PATH" \
             --results-dir "$WORKFLOW_RESULTS_DIR" \
             --defer-execution
+      - name: Prepare offline PRJ backend test dependencies
+        id: dependencies
+        if: steps.intake.outputs.plan_id != ''
+        shell: bash
+        run: |
+          export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+          backend_cwd="$(python3 -c 'import json, sys; c=json.load(open(sys.argv[1], encoding="utf-8")); print(next((t["cwd"] for group in c["tests"].values() for t in group if t["command"]["program"] == "prj-backend-check" and t.get("run_if", "always") != "never"), ""))' "$WORKFLOW_CONFIG_PATH")"
+          [[ -n "$backend_cwd" ]] || exit 0
+          command -v uv >/dev/null || { echo '::error::Install uv on the isolated system PATH.'; exit 1; }
+          python3 -c 'import sys; assert sys.version_info >= (3, 12), "Backend checks require Python 3.12 or later."'
+          dependency_root="$(mktemp -d /tmp/workflow-prj-deps.XXXXXX)"
+          echo "directory=$dependency_root" >> "$GITHUB_OUTPUT"
+          mkdir "$dependency_root/home"
+          env -i PATH="$PATH" HOME="$dependency_root/home" LANG=C.UTF-8 \
+            UV_CACHE_DIR="$dependency_root/uv-cache" UV_PROJECT_ENVIRONMENT="$dependency_root/venv" \
+            uv sync --project "$backend_cwd" --frozen --no-build --no-python-downloads \
+              --python "$(command -v python3)"
+          echo "cache_dir=$dependency_root/uv-cache" >> "$GITHUB_OUTPUT"
       - name: Execute the verified plan and publish for human review
         id: execute
         if: steps.intake.outputs.plan_id != ''
@@ -84,6 +102,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_STATE_KEY: ${{ secrets.WORKFLOW_STATE_KEY }}
           WORKFLOW_PUBLISH_TOKEN: ${{ secrets.WORKFLOW_PUBLISH_TOKEN }}
+          WORKFLOW_PRJ_UV_CACHE: ${{ steps.dependencies.outputs.cache_dir }}
           APPROVED_PLAN_ID: ${{ steps.intake.outputs.plan_id }}
           WORKFLOW_RESULTS_DIR: ${{ runner.temp }}/issue-workflow-results
         run: |
@@ -97,6 +116,15 @@ jobs:
             --results-dir "$WORKFLOW_RESULTS_DIR" \
             --execute-plan "$APPROVED_PLAN_ID" \
             --publish-mode real
+      - name: Clean prepared backend test dependencies
+        if: always() && steps.dependencies.outputs.directory != ''
+        shell: bash
+        env:
+          DEPENDENCY_DIRECTORY: ${{ steps.dependencies.outputs.directory }}
+        run: |
+          if [[ "$DEPENDENCY_DIRECTORY" == /tmp/workflow-prj-deps.* && -d "$DEPENDENCY_DIRECTORY" && ! -L "$DEPENDENCY_DIRECTORY" ]]; then
+            rm -rf -- "$DEPENDENCY_DIRECTORY"
+          fi
       - name: Comment on the Issue when the workflow fails
         if: ${{ failure() && !cancelled() }}
         timeout-minutes: 2
@@ -107,7 +135,8 @@ jobs:
             ${{ steps.settings.outcome == 'failure' && 'settings' ||
                 steps.checkout.outcome == 'failure' && 'checkout' ||
                 steps.codex.outcome == 'failure' && 'codex' ||
-                steps.intake.outcome == 'failure' && 'intake' || 'execute' }}
+                steps.intake.outcome == 'failure' && 'intake' ||
+                steps.dependencies.outcome == 'failure' && 'dependencies' || 'execute' }}
         with:
           github-token: ${{ github.token }}
           script: |
@@ -130,6 +159,7 @@ jobs:
               checkout: ['대상 브랜치를 체크아웃하지 못했습니다.', '`WORKFLOW_BASE_BRANCH`의 브랜치가 존재하는지, 러너가 GitHub에 연결되는지 확인하세요.'],
               codex: ['Codex CLI 준비에 실패했습니다.', '러너의 `~/.local/bin/codex` 설치와 프로젝트 설정의 `execution.codex.version`을 확인하세요. 설정 파일도 Actions 로그에서 확인하세요.'],
               intake: ['이슈 분석 또는 명령 검증 단계가 실패했습니다.', 'Actions 로그에서 GitHub 접근, 프로젝트 설정 및 이슈 상태를 확인하세요.'],
+              dependencies: ['백엔드 검사용 의존성 캐시를 준비하지 못했습니다.', '러너의 시스템 PATH에서 uv와 Python 3.12 이상을 확인하고, 기준 브랜치의 uv.lock 및 패키지 다운로드 접근을 확인하세요.'],
               execute: ['승인된 작업의 실행, 검증 또는 게시 단계가 실패했습니다.', 'Actions 로그에서 실패한 단계와 오류 코드를 확인하세요. 재승인 전에 원격 브랜치와 PR이 생겼는지도 확인하세요.'],
             };
             const reasons = {
