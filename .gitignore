@@ -66,5 +66,3 @@ playwright-report/
 /PRJ/docs/*-rollout-smoke.json
 /PRJ/docs/business-live-*.json
 /PRJ/docs/business-questions-live.json
-/.agents/workflow/
-/.github/workflows/issue-approval.yml
