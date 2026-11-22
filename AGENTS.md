@@ -62,7 +62,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## 5. 작업 영역과 지침 적용
 
-- 이 저장소 루트는 `kosa_final/`이다. 실제 서비스의 개발·수정 대상은 `PRJ/`이며, 개발 과정의 기록은 `.agents/workflow/`에 둔다.
+- 이 저장소 루트는 `kosa_final-public/`이다. 실제 서비스의 개발·수정 대상은 `PRJ/`이며, 개발 과정의 기록은 `.agents/workflow/`에 둔다.
 - 작업 시작 시 루트 `.agent-local.md`를 읽어 담당 팀원(JS/SY/SW)과 그에 맞는 `.agents/workflow/코드/` 기록 경로를 확인한다. 이 파일은 개인 식별·기록 경로 설정용이며 제품 계약이나 공통 지침을 대체하지 않는다.
 - 파일이 없거나 미설정·잘못된 값이면 현재 대화에 명시된 담당 팀원을 사용한다. 대화에도 없으면 담당자를 사용자에게 확인하고 임의로 추정하지 않는다. 사용자가 이번 작업의 담당자를 명시하면 그 값을 우선하며 개인 파일은 수정 요청이 있을 때 갱신한다.
 - `.agent-local.md`는 Git에서 제외한다. 다른 팀원은 `.agent-local.example.md`를 복사해 자신의 코드·경로를 설정한다.
