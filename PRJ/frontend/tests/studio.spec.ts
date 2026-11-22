@@ -1,5 +1,5 @@
 import { login } from "./business-helpers";
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./server-fixture";
 test.beforeEach(async ({ page }) => {
   await login(page);
 });
@@ -13,7 +13,7 @@ import {
 
 test.beforeEach(async ({ request }) => {
   const health = await (await request.get("/health")).json();
-  expect(health.auth_mode).toBe("mock");
+  expect(health.auth_mode).toBe("supabase");
   expect(health.ai_mode).toBe("mock");
 });
 
@@ -117,7 +117,15 @@ test("미확정 시안의 요소를 대화에 붙여 수정하고 최초 초안�
   await page
     .getByLabel("업무 대화 입력")
     .fill("예외 처리 기준부터 다시 정리할게요.");
+  const discussed = page.waitForResponse(response =>
+    response.request().method() === "POST" && response.url().endsWith("/jobs") &&
+    response.request().postDataJSON()?.kind === "discuss");
   await page.getByRole("button", { name: "업무 대화 보내기" }).click();
+  const discussion = await (await discussed).json();
+  await expect.poll(async () => {
+    const job = (await readBundle(page, id)).job;
+    return job.id === discussion.id && job.status === "completed";
+  }).toBeTruthy();
   await expect(page.locator(".draft-action")).toBeEnabled();
   await draft(page);
   expect((await readBundle(page, id)).proposal).not.toBeNull();

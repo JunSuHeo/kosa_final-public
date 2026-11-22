@@ -1889,15 +1889,6 @@ textarea::placeholder {
   justify-content: space-between;
   gap: 12px;
 }
-.test-badge {
-  padding: 5px 8px;
-  border: 1px solid #d6e2f4;
-  border-radius: 6px;
-  background: #f5f8fd;
-  color: #526278;
-  font-size: 11px;
-  white-space: nowrap;
-}
 .login-emblem {
   display: inline-grid;
   place-items: center;

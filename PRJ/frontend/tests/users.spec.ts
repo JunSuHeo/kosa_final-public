@@ -1,7 +1,8 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, headers, loginHeaders } from "./server-fixture";
+import type { Page } from "@playwright/test";
 import { businessSource, login } from "./business-helpers";
 const password = "a123456789!";
-const headers = { Authorization: "Bearer local:demo-user" };
+
 async function menu(page: Page, name: string) {
   await page
     .getByRole("button", { name: "관리자 메뉴 열기", exact: true })
@@ -89,6 +90,27 @@ test("세 계정의 역할·세션과 관리자 주소 접근 제한", async ({ 
   );
 });
 
+test("브라우저 계정 변조는 서버 권한을 바꾸지 않고 새 브라우저도 DB 계정을 사용한다", async ({ page, browser, request }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("hplan-accounts.v1", JSON.stringify({ accounts: [{ loginId: "user1", role: "ADMINISTRATOR" }] }));
+    sessionStorage.setItem("hplan-session.v2", JSON.stringify({ accountId: "demo-user", version: 1 }));
+    sessionStorage.setItem("studio-token", "local:demo-user");
+  });
+  await login(page, "/?view=accounts", "user1");
+  await expect(page.getByRole("button", { name: "관리자 메뉴 열기" })).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem("hplan-accounts.v1"))).toBeNull();
+  const userHeaders = await loginHeaders(request, "user1");
+  expect((await request.get("/api/accounts", { headers: userHeaders })).status()).toBe(403);
+  expect((await request.get("/api/accounts", { headers: { Authorization: "Bearer local:demo-user" } })).status()).toBe(401);
+  const fresh = await browser.newContext({ baseURL: process.env.E2E_BASE_URL });
+  try {
+    const other = await fresh.newPage();
+    await login(other, "/", "user2");
+    await other.getByLabel("계정 메뉴", { exact: true }).click();
+    await expect(other.locator(".account-popover")).toContainText("USER2");
+  } finally { await fresh.close(); }
+});
+
 test("계정 등록·수정·필터·마지막 관리자 보호·변경 이력", async ({ page }) => {
   await login(page);
   await menu(page, "계정 관리");
@@ -142,23 +164,13 @@ test("계정 등록·수정·필터·마지막 관리자 보호·변경 이력",
   await login(createdUser, "/", "planner3");
   await expect(createdUser.locator(".project-card")).toHaveCount(0);
   await createdUser.close();
-  const salts = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("hplan-accounts.v1")!).accounts.map(
-      (a: { verifier: { salt: string } }) => a.verifier.salt,
-    ),
-  );
-  expect(new Set(salts).size).toBe(salts.length);
+  expect(await page.evaluate(() => localStorage.getItem("hplan-accounts.v1"))).toBeNull();
   const storage = await page.evaluate(() =>
     JSON.stringify({ ...localStorage, ...sessionStorage }),
   );
   expect(storage).not.toContain(password);
-  expect(
-    JSON.parse(
-      await page.evaluate(
-        () => sessionStorage.getItem("hplan-session.v2") || "{}",
-      ),
-    ),
-  ).toEqual({ accountId: "demo-user", version: 1 });
+  expect(await page.evaluate(() => sessionStorage.getItem("hplan-session.v2"))).toBeNull();
+  expect(await page.evaluate(() => !!JSON.parse(sessionStorage.getItem("hplan-supabase-session.v1")!).access_token)).toBeTruthy();
 });
 
 test("다른 탭의 역할·비밀번호·사용 상태 변경은 세션을 종료하고 권한 정책은 즉시 반영", async ({
@@ -199,11 +211,7 @@ test("다른 탭의 역할·비밀번호·사용 상태 변경은 세션을 종�
   await detail.getByLabel("사용 상태", { exact: true }).selectOption("true");
   await detail.getByRole("button", { name: "계정 정보 저장" }).click();
   await login(user, "/", "user1", "changed12345!");
-  expect(
-    await user.evaluate(
-      () => JSON.parse(sessionStorage.getItem("hplan-session.v2")!).accountId,
-    ),
-  ).toBe("test-user-1");
+  expect(await user.evaluate(() => sessionStorage.getItem("hplan-session.v2"))).toBeNull();
   await menu(page, "역할·권한 설정");
   await page.getByLabel("USER2 기획 작성", { exact: true }).uncheck();
   await expect(
@@ -238,10 +246,7 @@ test("업무 배정으로 같은 업무의 기획을 분리하고 배정 해제 
   }
   const plans: Record<string, string> = {};
   const user = await context.newPage();
-  for (const [id, subject] of [
-    ["user1", "test-user-1"],
-    ["user2", "test-user-2"],
-  ]) {
+  for (const id of ["user1", "user2"]) {
     await login(user, "/", id);
     await user.locator(`[data-source-id="${source.id}"]`).click();
     await user
@@ -273,7 +278,7 @@ test("업무 배정으로 같은 업무의 기획을 분리하고 배정 해제 
     }
     const own = await (
       await request.get("/api/projects", {
-        headers: { Authorization: `Bearer local:${subject}` },
+        headers: await loginHeaders(request, id),
       })
     ).json();
     expect(own.some((p: { id: string }) => p.id === plans[id])).toBeTruthy();
@@ -282,7 +287,7 @@ test("업무 배정으로 같은 업무의 기획을 분리하고 배정 해제 
   expect(
     (
       await request.get(`/api/projects/${plans.user1}`, {
-        headers: { Authorization: "Bearer local:test-user-2" },
+        headers: await loginHeaders(request, "user2"),
       })
     ).status(),
   ).toBe(404);
@@ -300,7 +305,7 @@ test("업무 배정으로 같은 업무의 기획을 분리하고 배정 해제 
     (
       await request.get(
         `/api/projects/${plans.user1}/revisions/1/export?format=json`,
-        { headers: { Authorization: "Bearer local:test-user-1" } },
+        { headers: await loginHeaders(request, "user1") },
       )
     ).ok(),
   ).toBeTruthy();
@@ -314,7 +319,7 @@ test("업무 권한을 위임받은 역할은 본인 게시 업무만 배정하�
   await page.getByLabel("USER1 업무 연결 준비", { exact: true }).check();
   await page.getByLabel("USER1 업무 배정", { exact: true }).check();
   await expect(page.getByRole("status")).toContainText("권한을 변경했습니다");
-  const ownerHeaders = { Authorization: "Bearer local:test-user-1" };
+  const ownerHeaders = await loginHeaders(request, "user1");
   const result = await request.post("/api/sources", { headers: ownerHeaders, data: {
     name: "담당자 소유 업무", description: "권한 위임과 업무 소유권을 확인합니다.", kind: "local", repository: process.env.E2E_FIXTURE_REPO, ref: "HEAD",
   } });

@@ -1,0 +1,7 @@
+# Keep defaults isolated per checkout; local .env.supabase may select an existing stack.
+name: ${STUDIO_COMPOSE_PROJECT:-${STUDIO_DEFAULT_PROJECT:?Set STUDIO_DEFAULT_PROJECT}}
+services:
+  api:
+    ports: !override ["127.0.0.1:${STUDIO_API_PORT:-}:8000"]
+  web:
+    ports: !override ["127.0.0.1:${STUDIO_WEB_PORT:-}:80"]

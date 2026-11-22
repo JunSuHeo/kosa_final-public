@@ -11,6 +11,7 @@ export STUDIO_REPOSITORY_HOST_ROOT E2E_FIXTURE_REPO
 compose() {
   docker compose --project-directory "$studio_dir" --env-file "$studio_dir/.env.example" -p "$project" \
     -f "$studio_dir/compose.yaml" -f "$studio_dir/infra/test.compose.yaml" \
+    -f "$studio_dir/infra/e2e.compose.yaml" \
     -f "$studio_dir/infra/repositories.compose.yaml" "$@"
 }
 started=false
@@ -18,14 +19,17 @@ cleanup() {
   result=$?
   trap - EXIT
   if [ "$started" = true ]; then
-    if [ "$result" -ne 0 ]; then compose ps || true; fi
+    if [ "$result" -ne 0 ]; then
+      compose ps || true
+      compose logs --no-color --tail=100 auth api worker > "$run_dir/services.log" 2>&1 || true
+    fi
     if ! compose down -v --rmi local; then
       echo "Cleanup failed. Fixture retained at $run_dir" >&2
       exit 1
     fi
   fi
-  if [ "$result" -ne 0 ] && [ -d "$run_dir/frontend/test-results" ]; then
-    echo "Playwright evidence retained at $run_dir/frontend/test-results" >&2
+  if [ "$result" -ne 0 ]; then
+    echo "E2E evidence retained at $run_dir" >&2
   else
     rm -rf "$run_dir"
   fi
@@ -53,12 +57,14 @@ else
   npx playwright install chromium
 fi
 started=true
-compose up --build --detach --wait --wait-timeout 120 db api worker web
+compose up --build --detach --wait --wait-timeout 120 db auth api worker web
 endpoint=$(compose port web 80)
 export E2E_BASE_URL="http://$endpoint"
+auth_endpoint=$(compose port auth 8000)
+export E2E_AUTH_URL="http://$auth_endpoint"
 printf 'E2E project %s at %s\n' "$project" "$E2E_BASE_URL"
 if [ "$#" -gt 0 ]; then
   npm run test:e2e -- "$@"
 else
-  npm run test:e2e -- tests/studio.spec.ts tests/source-planning.spec.ts tests/users.spec.ts tests/login.spec.ts tests/supabase-accounts.spec.ts
+  npm run test:e2e -- tests/studio.spec.ts tests/source-planning.spec.ts tests/users.spec.ts tests/login.spec.ts tests/supabase-accounts.spec.ts tests/workflow-review.spec.ts
 fi

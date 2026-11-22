@@ -112,13 +112,21 @@ Screen에 form/list/detail/dashboard layout, Block에 header/navigation/filters/
 프로젝트 묶음 조회는 읽기 전용 반복 읽기 트랜잭션으로 프로젝트·확인본·초안·작업·메시지를 같은 시점에 반환한다. 작업 완료와 초안 저장이 조회 사이에 일어나도 완료 상태만 먼저 노출하지 않는다.
 
 
-### 테스트 로그인 UI (2026-11-18)
-mock 인증에서는 첫 진입 시 중앙 로그인 폼을 표시하고, 프런트엔드의 테스트 계정 검사 성공 후 기존 local:demo-user 토큰으로 연결한다. 같은 탭의 명시적인 테스트 로그인 상태와 일치하는 토큰이 있어야 자동 복원한다. 이전 자동 진입 토큰만으로는 통과하지 않는다. 진입 전에는 보호된 프로젝트/업무 목록을 요청하지 않으며 프로젝트·설정 주소는 로그인 후 이어서 연다. 비밀번호는 storage에 저장하지 않는다. 계정 메뉴의 로그아웃은 토큰과 테스트 상태를 지우고 페이지를 새로 열어 화면 데이터를 비운다. 서버 mock 인증·소유권 검사·Supabase API 경로는 변경하지 않는다. 실제 계정 DB와 관리자 권한은 이번 UI 범위에 없다.
+### DB 계정·로그인·권한 (2026-11-20)
 
+브라우저 앱은 서버 AccountService만 사용한다. 계정·역할·활성 상태는 `studio_accounts`, 역할별 권한은 `studio_role_permissions`, 등록/변경 작업은 `studio_account_operations`, 세션은 `studio_auth_sessions`, 이력은 `studio_audit`, 로그인 제한은 `studio_login_attempts`에 저장한다. 비밀번호 검증은 Supabase Auth가 수행하며 앱 테이블·브라우저에는 비밀번호와 검증값을 저장하지 않는다. sessionStorage에는 서버가 발급한 세션 토큰·만료 시각과 요청 재시도용 작업 ID만 보관한다. 이전 목업 계정/세션은 초기화 시 제거하며 `local:` 토큰이나 브라우저 권한 변조로 로그인할 수 없다.
 
-## 2026-11-18 계정 목업과 업무 배정
+- `POST /api/auth/login`: ID·비밀번호로 로그인한다. 응답은 access/refresh token, expires_in, identity(account/policy)다.
+- `POST /api/auth/refresh`, `POST /api/auth/logout`, `GET /api/auth/me`: 갱신·세션 해제·현재 DB 계정/정책 조회다. 서버는 JWT와 등록된 세션 버전·계정 활성 상태를 확인한다.
+- `GET/POST /api/accounts`, `PATCH /api/accounts/{account_id}`, `POST /api/accounts/{account_id}/reset-password`: 관리자 계정 조회·등록·이름/역할/상태 변경·비밀번호 재설정이다. 생성·재설정은 operation_id로 재시도하며 다른 입력에 같은 ID를 사용하면 409다.
+- `GET /api/accounts/assignment-options`: 업무 배정 권한으로 활성 계정의 배정용 최소 필드를 조회한다.
+- `GET /api/roles`, `PUT /api/roles/{role}/{permission}`, `GET /api/audit`: 관리자 정책·감사 이력 관리다. 계정/권한/감사 기능은 관리자에게 고정한다. 마지막 활성 관리자의 사용 중지·역할 해제는 409다.
 
-계정·역할 정책·변경 이력은 `frontend/src/accounts`의 비동기 AccountService 계약으로 분리한다. 버전 1 브라우저 저장소는 임의 salt/PBKDF2 검증값을 보관하고 세션 버전으로 사용 중지·역할 변경·비밀번호 재설정을 모든 탭에 반영한다. 관리자 전용 기능과 일반 기능은 공통 `can` 함수로 판단하며 요청 직전에 현재 정책을 다시 검사한다. USER1/USER2의 기본 기획 권한은 같다. 실제 계정 DB·운영 권한 검증은 후속이며 Supabase JWT 경로는 유지한다.
+서버가 요청마다 권한을 검사하며 권한 부족은 403이다. 역할·활성 상태·비밀번호 변경은 세션을 해제한다. 화면은 서버 정책을 표시하고 탭 간 알림·포커스·주기적 조회로 변경을 반영한다. 로그인 전 보호된 데이터를 요청하지 않으며 새로고침은 등록된 서버 세션으로 복원한다.
+
+`seed-test-accounts`는 local Supabase 환경에서 admin(ADMINISTRATOR)/user1(USER1)/user2(USER2)를 명시적으로 구성하는 관리 명령이다. 비밀번호는 대화형 또는 파일로 받고 앱 시작 시 자동 실행하지 않는다. 없는 계정만 생성하며 기존 계정 ID·권한·표시 이름·비밀번호는 유지한다. 예상 역할·활성 상태가 다르면 충돌을 보고하고, `--reset-passwords`를 지정한 경우에만 기존 비밀번호와 세션을 변경한다. 초기 USER1/USER2의 기획 권한은 동일하다. 브라우저 목업의 계정 ID·검증값과 기존 로컬 DB 데이터는 자동 이전하지 않는다.
+
+## 업무 배정
 
 `studio_source_assignments(source_id,account_id)`는 서버 관계다. GET 업무 목록은 소유 업무와 배정받은 게시 업무를 합친다. 배정자는 이름·설명·게시 ID/스냅샷·게시 시각·모델 정보만 받으며, 저장소 경로와 분석 상세는 업무 소유자에게만 제공한다. `can_manage`는 소유 여부이고 역할 권한과 별도로 판단한다.
 
@@ -126,4 +134,4 @@ mock 인증에서는 첫 진입 시 중앙 로그인 폼을 표시하고, 프런
 
 새 AI 요청·질문 답변 재개·역할 검토 시작/재시도는 source row를 잠그고 배정을 재검사한다. 배정 해제와 새 작업 시작은 같은 잠금으로 직렬화하며 이미 시작한 작업은 고정된 기준으로 완료할 수 있다. 동일 실행 ID의 재요청은 새 작업을 만들지 않는다. 배정 해제 뒤에도 본인 프로젝트·revision·확인본 내보내기는 유지한다. 프로젝트 묶음의 `source_access`로 화면에도 상태를 안내한다.
 
-005 마이그레이션은 project source/owner 복합 FK를 source FK로 대체한다. snapshot/source 복합 FK와 프로젝트 기준·publication·revision 불변성은 유지한다. 기획 기능 허용 정책은 프런트엔드 목업이며 서버의 소유권/배정 검사를 대체하지 않는다.
+005 마이그레이션은 project source/owner 복합 FK를 source FK로 대체한다. snapshot/source 복합 FK와 프로젝트 기준·publication·revision 불변성은 유지한다. 기획 기능 허용 정책과 소유권·배정 조건은 서버에서 함께 검사한다.

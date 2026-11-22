@@ -29,6 +29,8 @@ Python 3.12 이상, FastAPI, Pydantic, psycopg, PostgreSQL을 사용한다. API�
 | `backend/migrations/006_accounts.sql` | 서버 계정·권한·세션·감사 테이블 |
 | `backend/migrations/007_runtime_security.sql` | 전용 런타임 역할, RLS 및 데이터 이전 제약 |
 
+`manage.py seed-test-accounts`는 local Supabase 환경에서만 admin/user1/user2를 명시적으로 구성한다. 비밀번호는 대화형 입력 또는 `--password-file`로 받고 일반 재실행은 기존 계정·정책을 유지한다. `--reset-passwords`만 기존 비밀번호를 바꾸고 세션을 해제한다. 역할·활성 상태가 다르면 자동 변경하지 않는다. `test_seed_accounts.py`가 생성·재실행·정책/소유 데이터 보존·세션 해제·모드/역할 충돌을 검증한다.
+
 ## 생성·승인 흐름
 
 1. `POST /api/projects`는 프로젝트·초기 revision 0·generate job을 한 트랜잭션으로 만든다.

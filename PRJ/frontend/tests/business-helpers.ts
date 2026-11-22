@@ -1,5 +1,5 @@
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
-const headers = { Authorization: "Bearer local:demo-user" };
+import { headers } from "./server-fixture";
 export async function login(
   page: Page,
   path = "/",

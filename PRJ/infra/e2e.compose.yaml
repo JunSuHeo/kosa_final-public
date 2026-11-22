@@ -1,0 +1,45 @@
+x-auth-settings: &auth-settings
+  APP_ENV: local
+  AUTH_MODE: supabase
+  AI_MODE: mock
+  AUTO_MIGRATE: "false"
+  DATABASE_URL: postgresql://studio:studio@db:5432/studio_e2e
+  SUPABASE_URL: http://auth:8000
+  SUPABASE_ANON_KEY: e2e-anon
+  SUPABASE_SERVICE_ROLE_KEY: e2e-service-role
+
+services:
+  db:
+    environment:
+      POSTGRES_DB: studio_e2e
+    ports: !reset []
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studio -d studio_e2e"]
+  auth:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env.example
+    environment:
+      <<: *auth-settings
+      PYTHONPATH: /app
+    command: ["uvicorn", "e2e_auth:app", "--app-dir", "/fixtures", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+    volumes: ["./scripts/e2e_auth.py:/fixtures/e2e_auth.py:ro"]
+    ports: ["127.0.0.1::8000"]
+    depends_on:
+      db: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  api:
+    environment: *auth-settings
+    depends_on:
+      auth: {condition: service_healthy}
+  worker:
+    environment:
+      <<: *auth-settings
+      SUPABASE_SERVICE_ROLE_KEY: ""
+    depends_on:
+      auth: {condition: service_healthy}

@@ -36,6 +36,8 @@ kosa_final-public/
     └── compose.yaml         # 서비스·테스트 구성
 ```
 
+계정·역할 정책·세션·감사 이력은 서버 DB에서 관리하고 비밀번호 검증은 Supabase Auth를 사용한다. 브라우저 계정 저장소는 사용하지 않는다. local 전용 `seed-test-accounts` 관리 명령으로 admin/user1/user2를 명시적으로 구성한다.
+
 제품의 역할별 검토 데이터는 PostgreSQL의 `studio_reviews` / `studio_review_agents`에 저장한다.
 
 ## 실제 사용 흐름과 코드 연결

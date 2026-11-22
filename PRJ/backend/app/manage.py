@@ -4,7 +4,7 @@ from getpass import getpass
 import json
 import os
 from pathlib import Path
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 import psycopg
 from psycopg import sql
 from .config import settings
@@ -18,6 +18,45 @@ def password(path=None):
     return value
 
 
+def seed_test_accounts(secret, *, reset_passwords=False):
+    """Explicit local-only seed. Existing accounts and policies are preserved."""
+    from .accounts import AccountInput, Reset, provision, public_account
+    from .db import connect
+    config = settings()
+    if config.app_env != 'local' or config.auth_mode != 'supabase':
+        raise ValueError('테스트 계정 구성에는 APP_ENV=local, AUTH_MODE=supabase가 필요합니다.')
+    if not 10 <= len(secret) <= 128:
+        raise ValueError('비밀번호는 10~128자로 지정해 주세요.')
+    expected = [('admin', 'ADMINISTRATOR'), ('user1', 'USER1'), ('user2', 'USER2')]
+    with connect() as c:
+        existing = {row['login_id']: row for row in c.execute(
+            "SELECT * FROM studio_accounts WHERE login_id IN ('admin','user1','user2')").fetchall()}
+        for login_id, role in expected:
+            row = existing.get(login_id)
+            if row and (row['role'] != role or (row['provisioning_status'] == 'ready' and not row['active'])):
+                raise ValueError('기존 테스트 계정의 역할 또는 활성 상태가 다릅니다. 자동 변경하지 않습니다.')
+        if 'admin' not in existing and c.execute('SELECT 1 FROM studio_accounts LIMIT 1').fetchone():
+            raise ValueError('기존 계정이 있는 DB에는 초기 관리자를 자동 추가하지 않습니다.')
+    result = []
+    actor = existing.get('admin', {}).get('id', 'bootstrap')
+    for login_id, role in expected:
+        row = existing.get(login_id)
+        if row and row['provisioning_status'] == 'ready':
+            account = public_account(row)
+            if reset_passwords:
+                account = provision(Reset(operation_id=uuid4(), password=secret), actor, account_id=row['id'])
+        else:
+            operation = 'hplanit:bootstrap-admin' if login_id == 'admin' else 'hplanit:seed-test-account:' + login_id
+            account = provision(AccountInput(
+                operation_id=uuid5(NAMESPACE_URL, operation), loginId=login_id,
+                name='IT 관리자' if login_id == 'admin' else login_id, role=role, password=secret,
+            ), actor, bootstrap=login_id == 'admin')
+        if login_id == 'admin':
+            actor = account['id']
+        result.append(account)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -29,6 +68,9 @@ def main():
     runtime.add_argument('--password-file')
     reset = commands.add_parser('recover-admin')
     reset.add_argument('--password-file')
+    seed = commands.add_parser('seed-test-accounts')
+    seed.add_argument('--password-file')
+    seed.add_argument('--reset-passwords', action='store_true')
     transfer = commands.add_parser('transfer')
     transfer.add_argument('--transfer-id', required=True, type=UUID)
     transfer.add_argument('--apply', action='store_true')
@@ -48,6 +90,9 @@ def main():
             c.execute(sql.SQL('CREATE ROLE {} LOGIN INHERIT PASSWORD {}').format(sql.Identifier(args.name), sql.Literal(secret)))
             c.execute(sql.SQL('GRANT studio_runtime TO {}').format(sql.Identifier(args.name)))
         print('Runtime role created. Configure DATABASE_URL with this login; retain MIGRATION_DATABASE_URL separately.')
+    elif args.command == 'seed-test-accounts':
+        result = seed_test_accounts(password(args.password_file), reset_passwords=args.reset_passwords)
+        print(json.dumps([{'loginId': a['loginId'], 'role': a['role'], 'active': a['active']} for a in result]))
     elif args.command in {'bootstrap-admin', 'recover-admin'}:
         from .accounts import AccountInput, Reset, provision
         if config.auth_mode != 'supabase':

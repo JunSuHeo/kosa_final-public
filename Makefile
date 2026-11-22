@@ -1,11 +1,11 @@
 DEV_PROJECT := kosa-dev-$(shell pwd | cksum | cut -d ' ' -f 1)
 COMPOSE := docker compose --env-file .env.example -f compose.yaml -f infra/test.compose.yaml
-DEV := $(COMPOSE) -p $(DEV_PROJECT)
+DEV := STUDIO_DEFAULT_PROJECT=$(DEV_PROJECT) docker compose --env-file .env --env-file .env.supabase -f compose.yaml -f infra/supabase.compose.yaml -f infra/dev.compose.yaml
 
 .PHONY: help up ps logs down test e2e
 
 help:
-	@printf '%s\n' 'make up    Start mock Studio and print its addresses' \
+	@printf '%s\n' 'make up    Start Supabase Studio and print its addresses' \
 		'make ps    Show local services and ports' \
 		'make logs  Follow local service logs' \
 		'make down  Stop local services and keep their data' \
@@ -13,7 +13,7 @@ help:
 		'make e2e   Run browser tests with an isolated Studio'
 
 up:
-	cd PRJ && $(DEV) up --build --detach --wait --wait-timeout 120 db api worker web
+	cd PRJ && $(DEV) up --build --detach --wait --wait-timeout 120 api worker web
 	@cd PRJ && web=$$($(DEV) port web 80) && api=$$($(DEV) port api 8000) && \
 		printf 'Web: http://%s/\nAPI: http://%s/docs\n' "$$web" "$$api"
 
