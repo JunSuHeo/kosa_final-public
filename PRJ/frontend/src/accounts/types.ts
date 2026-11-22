@@ -38,6 +38,10 @@ export interface AuditEntry {
   target: string;
   detail: string;
 }
+export interface AuditPage {
+  items: AuditEntry[];
+  next: string | null;
+}
 export interface Identity {
   account: Account;
   policy: Policy;
@@ -51,7 +55,7 @@ export interface AccountInput {
 export interface AccountService {
   initialize(): Promise<void>;
   login(loginId: string, password: string): Promise<Identity>;
-  logout(): Promise<void>;
+  logout(options?: { explicit?: boolean }): Promise<void>;
   current(): Promise<Identity | null>;
   accounts(): Promise<Account[]>;
   assignmentAccounts(): Promise<
@@ -69,7 +73,7 @@ export interface AccountService {
     permission: Permission,
     enabled: boolean,
   ): Promise<void>;
-  audit(): Promise<AuditEntry[]>;
+  audit(cursor?: string): Promise<AuditPage>;
   recordAssignment(
     target: string,
     business: string,

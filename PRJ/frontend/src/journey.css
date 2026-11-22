@@ -1,0 +1,18 @@
+/* Conversation leads until there is a document to review. */
+.studio[data-stage="conversation"] .workspace-tabs,
+.studio[data-stage="conversation"] .version-bar,
+.studio[data-stage="conversation"] .output-path { display: none; }
+.journey-stage, .export-guide, .draft-conflict, .connection-notice {
+  padding: 12px 20px;
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: 13px;
+  border-bottom: 1px solid #dbeafe;
+}
+.export-guide, .connection-notice { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.draft-conflict { background: #fffbeb; color: #92400e; }
+.draft-conflict p { margin: 0 0 8px; }
+.connection-notice { position: sticky; top: 0; z-index: 100; }
+@media (max-width: 760px) {
+  .journey-stage, .export-guide, .draft-conflict { padding: 10px 14px; }
+}

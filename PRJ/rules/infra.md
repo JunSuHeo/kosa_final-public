@@ -112,3 +112,7 @@ sh scripts/e2e.sh
 - 의존성 변경은 uv.lock / package-lock.json과 frozen 설치를 확인한다.
 - 실행법·환경변수·포트 변경은 README.md, .env.example, 이 문서에 반영한다.
 - 실제 명령·결과·mock/live·미확인 사항을 PR에 기록한다.
+
+## 신뢰 프록시 경계 (2026-11-23)
+
+Compose의 web은 전용 `studio-proxy` 네트워크에만 참여하고 API는 해당 네트워크와 기존 backend 네트워크에 참여한다. nginx는 X-Forwarded-For/X-Real-IP/X-Forwarded-Proto를 클라이언트 값에 덧붙이지 않고 덮어쓴다. API의 `python -m app.proxy` 런처는 Docker DNS의 자신의 `studio-proxy-api` 별칭과 Linux `/proc/net/route`로 해당 네트워크의 실제 CIDR을 구해 Uvicorn에 지정한다. 이를 찾지 못하면 시작을 거부한다. `*` 신뢰나 고정 서브넷을 사용하지 않아 격리 Compose를 병렬 실행할 수 있다. 직접 호스트 API나 다른 backend 네트워크에서 주입한 전달 헤더는 신뢰하지 않는다. Compose 밖 실행은 기존 uvicorn 명령을 사용하고 배포 환경이 별도라면 실제 신뢰 프록시 경계를 명시한다.

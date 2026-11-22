@@ -18,13 +18,7 @@ test("초안 문서로 이동·강조하고 수정 대화와 확인본 저장을
   page,
 }) => {
   const id = await begin(page);
-  await page.getByRole("button", { name: "내용 확인", exact: true }).click();
-  await expect(page.locator(".side-empty")).toContainText(
-    "아직 확인할 문서가 없어요",
-  );
-  await page
-    .getByRole("button", { name: "업무 대화로 이동", exact: true })
-    .click();
+  await expect(page.getByRole("tab")).toHaveCount(0);
   await draft(page);
   const before = await readBundle(page, id);
   await page

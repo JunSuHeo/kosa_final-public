@@ -215,9 +215,22 @@ def projects(owner: User, source_id: UUID | None = None):
         if source_id:
             owned_source(c, source_id, owner)
         return c.execute(
-            "SELECT * FROM studio_projects WHERE owner_id=%s "
-            + ("AND source_id=%s " if source_id else "")
-            + "ORDER BY updated_at DESC",
+            "SELECT p.*, CASE "
+            "WHEN j.status='awaiting_answers' THEN 'awaiting_answers' "
+            "WHEN j.status IN ('queued','running') THEN 'generating' "
+            "WHEN j.status='failed' THEN 'failed' "
+            "WHEN EXISTS(SELECT 1 FROM studio_proposals q WHERE q.project_id=p.id AND q.status='pending') THEN 'review_ready' "
+            "WHEN p.current_version>0 THEN 'confirmed' ELSE 'conversation' END AS progress_status "
+            "FROM studio_projects p LEFT JOIN LATERAL ("
+            "SELECT status FROM studio_jobs candidate WHERE project_id=p.id AND status<>'cancelled' "
+            "AND (kind<>'discuss' OR (status='failed' AND NOT EXISTS ("
+            "SELECT 1 FROM studio_jobs recovered WHERE recovered.project_id=p.id "
+            "AND recovered.kind='discuss' AND recovered.status='completed' "
+            "AND (recovered.created_at,recovered.id)>(candidate.created_at,candidate.id)"
+            "))) ORDER BY created_at DESC,id DESC LIMIT 1"
+            ") j ON true WHERE p.owner_id=%s "
+            + ("AND p.source_id=%s " if source_id else "")
+            + "ORDER BY p.updated_at DESC",
             (owner, source_id) if source_id else (owner,),
         ).fetchall()
 

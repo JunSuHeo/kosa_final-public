@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, Plus, Search } from "lucide-react";
 import {
   accountService,
@@ -13,7 +13,7 @@ import {
   type Policy,
   type Role,
 } from "./accounts";
-import { api } from "./api";
+import { api, ApiError } from "./api";
 import { Brand } from "./BusinessHome";
 import type { Source } from "./types";
 
@@ -57,6 +57,13 @@ export default function UserManagement({
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [policy, setPolicy] = useState<Policy | null>(null);
   const [history, setHistory] = useState<AuditEntry[]>([]);
+  const historyRef = useRef<AuditEntry[]>([]);
+  const [auditNext, setAuditNext] = useState<string | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState("");
+  const [auditNotice, setAuditNotice] = useState("");
+  const auditLoaded = useRef(false);
+  const auditLoadingRef = useRef(false);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -67,16 +74,36 @@ export default function UserManagement({
   const [sources, setSources] = useState<Source[]>([]);
   const [assignments, setAssignments] = useState<Record<string, boolean>>({});
   const [assignmentsLoaded, setAssignmentsLoaded] = useState(false);
+  const loadAudit = useCallback(async (cursor?: string) => {
+    if (auditLoadingRef.current) return;
+    auditLoadingRef.current = true;
+    setAuditLoading(true);
+    setAuditError("");
+    try {
+      const result = await accountService.audit(cursor);
+      const current = historyRef.current;
+      const ids = new Set(current.map((entry) => entry.id));
+      const reset = !cursor && current.length > 0 && !result.items.some((entry) => ids.has(entry.id));
+      const combined = reset ? result.items : cursor ? [...current, ...result.items] : [...result.items, ...current];
+      historyRef.current = Array.from(new Map(combined.map((entry) => [entry.id, entry])).values());
+      setHistory(historyRef.current);
+      if (cursor || !auditLoaded.current || reset) setAuditNext(result.next);
+      if (reset) setAuditNotice("새 이력이 많이 추가되어 최신 이력부터 다시 표시합니다. 이전 이력을 이어서 확인해 주세요.");
+      auditLoaded.current = true;
+    } catch (error) {
+      setAuditError(error instanceof Error ? error.message : "이력을 불러오지 못했습니다.");
+      if (error instanceof ApiError && error.status === 401) onError(error);
+    } finally {
+      auditLoadingRef.current = false;
+      setAuditLoading(false);
+    }
+  }, [onError]);
   const refresh = useCallback(async () => {
-    const [a, p, h] = await Promise.all([
-      accountService.accounts(),
-      accountService.policy(),
-      accountService.audit(),
-    ]);
-    setAccounts(a);
+    if (page === "audit") return loadAudit();
+    const p = await accountService.policy();
     setPolicy(p);
-    setHistory(h);
-  }, []);
+    if (page === "accounts") setAccounts(await accountService.accounts());
+  }, [page, loadAudit]);
   useEffect(() => {
     void refresh().catch(onError);
     return accountService.subscribe(() => void refresh().catch(() => {}));
@@ -608,7 +635,19 @@ export default function UserManagement({
                 </tbody>
               </table>
             </div>
-            {!history.length && <p>아직 변경 이력이 없습니다.</p>}
+            {auditLoading && <p role="status">변경 이력을 불러오는 중…</p>}
+            {auditNotice && <p role="status">{auditNotice}</p>}
+            {auditError && <p role="alert">{auditError}</p>}
+            {!history.length && !auditLoading && !auditError && <p>아직 변경 이력이 없습니다.</p>}
+            {(auditNext || auditError) && (
+              <button
+                className="secondary"
+                disabled={auditLoading}
+                onClick={() => void loadAudit(auditNext || undefined)}
+              >
+                {auditError ? "다시 시도" : "이전 이력 더 보기"}
+              </button>
+            )}
           </section>
         )}
       </main>

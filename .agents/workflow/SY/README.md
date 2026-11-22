@@ -9,3 +9,5 @@ SY가 AI와 진행한 작업의 계획·판단 요약·변경·검증·인계를
 ## 작업 목록
 
 - [2026-11-22 Supabase 계정 관리 작업 브랜치 정리](2026-11-22-supabase-account-branch/README.md)
+
+- [2026-11-23 인증 안정화와 현업 기획 흐름](2026-11-23-auth-business-flow/README.md)
