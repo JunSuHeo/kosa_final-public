@@ -10,7 +10,7 @@ Issue 등록은 읽기 전용 요구사항 분석과 계획 댓글 작성까지�
 | `codex_adapter.CodexCLI` | 버전 및 안전 옵션 확인, stdin 입력, 제한된 환경, 프로세스 그룹 종료. 기존 `execute()`를 유지하고 `analyze()`의 `read-only` 및 JSON 출력 경로를 추가했다. |
 | `workspace.py` | 허용 경로의 별도 inode 복사, 보호 파일 제외, 내용/경로/링크 검사. 분석도 이 파일 복사와 inventory를 사용하며 Branch나 Git metadata를 만들지 않는다. |
 | `run.execute_request()` | 설정 고정 → Codex → 변경 수집 → 독립 검증 → `result.json`. 선택적 `issue_context`, `stage_callback`만 추가했다. |
-| `test_runner.validate_workspace()` | 별도 후보 복사본과 Bubblewrap에서 설정된 Unit/E2E를 실행한다. 구현을 변경하지 않았다. |
+| `test_runner.validate_workspace()` | 별도 후보 복사본과 OS별 Bubblewrap/Seatbelt sandbox에서 설정된 Unit/E2E를 실행한다. |
 | `publish.publish()` | sealed evidence, 기준 Git tree, 기존 사용자 변경, 원격 권한, 사람 리뷰 Branch protection을 검사한다. 승인 이후 별도 Git 저장소에서 Commit/Branch를 준비한다. 선택적 `publication_guard`를 추가했다. |
 | `orchestrator.execute_workflow()` | 기존 생성·검증 및 게시 함수를 연결한다. Issue context와 단계 callback을 전달하고 승인 무효화 오류를 보존한다. |
 | `evidence.py` | 원자적인 외부 JSON 저장과 체크섬을 재사용한다. 체크섬은 로컬 사용자 위조에 대한 서명이 아니다. 원격 Issue journal에는 별도로 HMAC을 적용했다. |
@@ -57,7 +57,9 @@ Issue 등록은 읽기 전용 요구사항 분석과 계획 댓글 작성까지�
 
 원격 복구는 `github-actions[bot]`의 Bot 댓글과 HMAC-SHA256 서명을 모두 확인한다. 최신 신뢰 bot journal이 손상되면 과거 상태로 돌아가 실행하지 않는다. 사람이 같은 marker나 과거 signed text를 댓글로 붙여도 bot 작성자가 아니므로 상태로 인정하지 않는다. 계획 댓글의 실제 본문과 저장된 해시, 계획 ID/snapshot을 포함한 예상 Markdown을 비교하여 수정·교체를 감지한다.
 
-같은 내용의 Issue 이벤트는 다시 분석하지 않는다. 현재 계획보다 먼저 생성된 결정 또는 승인 댓글과 이미 처리한 댓글 ID는 새 명령으로 인정하지 않는다. 실행은 검증된 승인 티켓으로 시작하며, 실행 중·완료·거부 상태의 새 명령은 무시한다. Actions의 저장소/Issue concurrency와 Linux `flock`을 함께 사용한다. GitHub concurrency는 여러 pending run을 전부 보존하는 메시지 queue가 아니므로 대량 이벤트 중 일부가 교체될 수 있다. 처리된 이벤트는 API에서 최신 Issue와 상태를 다시 읽고, 계획 없는 승인으로 실행하지 않는다.
+같은 내용의 Issue 이벤트는 다시 분석하지 않는다. 현재 계획보다 먼저 생성된 결정 또는 승인 댓글과 이미 처리한 댓글 ID는 새 명령으로 인정하지 않는다. 실행은 검증된 승인 티켓으로 시작하며, 실행 중·완료·거부 상태의 새 명령은 무시한다. Actions의 저장소/Issue concurrency와 POSIX `flock`을 함께 사용한다. GitHub concurrency는 여러 pending run을 전부 보존하는 메시지 queue가 아니므로 대량 이벤트 중 일부가 교체될 수 있다. 처리된 이벤트는 API에서 최신 Issue와 상태를 다시 읽고, 계획 없는 승인으로 실행하지 않는다.
+
+예외는 `analysis_failed` 상태다. 환경 복구 후 같은 opened/edited 이벤트를 재실행하면 새 계획 ID로 분석을 다시 시작하며, 기존 `/plan` 결정사항과 실제 댓글 근거를 유지한다. 재분석 후에는 별도 `/approve`를 기다린다. 실행 중이거나 완료된 작업은 이 예외에 포함하지 않는다.
 
 ## 승인 권한과 snapshot
 
@@ -72,18 +74,24 @@ Snapshot은 `{title, body}`의 정렬된 JSON에 SHA-256을 적용한다. 없는
 | 설정 | 값 또는 필요한 조건 |
 | --- | --- |
 | Repository variable `WORKFLOW_ISSUES_ENABLED` | `true`로 설정하면 이벤트 job 활성화. 미설정은 실행하지 않는다. |
-| `WORKFLOW_CONFIG_PATH` | 저장소 안의 검증된 설정 JSON 상대 경로. 기존 설정을 임의로 바꾸지 않고 대상 repository identity, 실행 모델/버전, 경로·테스트·publishing 항목을 운영자가 확인한다. |
+| `WORKFLOW_CONFIG_PATH` | 저장소 안의 검증된 설정 JSON 상대 경로. 활성 `prj.json`과 `sandbox.json`의 `repository.owner/name`은 `JunSuHeo/kosa_final-public`이다. 다른 저장소에서 실행하면 두 값을 해당 저장소에 맞춰야 한다. 실행 모델/버전, 경로·테스트·publishing 항목도 운영자가 확인한다. |
 | `WORKFLOW_BASE_BRANCH` | 설정의 `base_branch`와 같은 기존 신뢰 Branch. workflow 파일은 Issue 이벤트를 받는 기본 Branch에도 존재해야 한다. |
 | Secret `WORKFLOW_STATE_KEY` | 최소 32바이트의 무작위 private key. 분석/승인과 실행 단계에서 같은 값을 사용한다. 값은 댓글에 저장하지 않는다. 교체 시 기존 서명 상태를 자동으로 승인하지 않는다. |
+| Secret `AI_WORKSPACE_API_KEY` | 기존 Codex 설정의 `ai_workspace` 제공자가 사용하는 인증 키. 분석·실행 단계에만 제공하며, Codex가 실행하는 셸 명령에서는 제외한다. `~/.codex/config.toml`의 제공자 설정은 유지하고 키 값은 설정 JSON·로그·댓글에 기록하지 않는다. |
 | Secret `WORKFLOW_PUBLISH_TOKEN` | 해당 저장소로 제한한 GitHub App 또는 fine-grained 토큰. Contents read/write, Pull requests read/write, 기존 게시 엔진의 Branch protection 조회를 위한 Administration read와 repository metadata 접근 권한이 필요하다. 자동 병합 권한/우회를 설정하지 않는다. |
 | Actions `GITHUB_TOKEN` | workflow의 `contents: read`, `issues: write`. Issue API와 상태 댓글에만 사용한다. 게시 토큰은 실행 단계에서만 제공한다. |
-| Runner labels | `[self-hosted, linux, workflow-isolated]`. Python 3.12+, Git, gh, 설정 버전과 일치하는 Codex CLI, 해당 CLI의 기존 로그인 및 설정된 모델 접근, Bubblewrap와 구성한 테스트 환경이 필요하다. |
+| Runner labels | `[self-hosted, macOS, ARM64, workflow-isolated]`. Codex 실행과 POSIX 게시 잠금을 지원한다. 활성 검사는 macOS `sandbox-exec`로 격리하며, 격리 도구가 없거나 점검에 실패하면 host 실행 없이 차단한다. |
+| Backend 검사 도구 | 시스템 PATH의 `uv`, Python 3.12 이상과 PostgreSQL 서버·클라이언트 도구가 필요하다. macOS Homebrew의 versioned PostgreSQL 경로도 지원한다. `prj.json`의 백엔드는 `required: true`, `run_if: always`이며 Actions가 승인 후 기준 checkout에서 오프라인 캐시를 준비한다. E2E는 기존 명시적 미실행 정책을 유지한다. |
 | Runner 격리 | Issue 작업 전용의 일회성 격리 runner를 사용하고, Codex 로그인 외 민감한 파일이 HOME 등에 남지 않도록 운영한다. 기존 어댑터의 읽기 경계 한계를 아래 참고한다. |
 | Branch protection | 기존 게시 엔진은 최소 한 명의 사람 리뷰, 관리자 적용, 리뷰 bypass 없음 등을 API로 확인한다. Repository 설정을 코드가 변경하지 않는다. |
 | 커밋 작성자 | `publishing.commit_author`에 자동화 커밋의 이름과 이메일을 설정한다. 생략하면 checkout의 로컬 Git `user.name`과 `user.email`을 사용하며 머신의 전역 설정은 읽지 않는다. |
 | 결과 보존 | runner 임시 결과는 없어질 수 있다. 원격 journal로 상태를 복구하지만 후보/검증 근거를 장기 보존하려면 접근이 제한된 외부 저장 위치와 보존 정책이 필요하다. |
 
-Codex 인증은 runner에 이미 설정된 CLI 로그인을 사용한다. 제품 API key나 새 모델 기본값을 자동으로 만들지 않는다. Issue/GitHub 토큰은 gh subprocess 환경에만 전달하고 Codex에는 전달하지 않는다. 게시 토큰이 없다면 승인 후 실행 단계가 시작되기 전에 실패한다.
+Codex 인증 제공자는 runner의 기존 사용자 설정을 유지한다. `ai_workspace` 제공자의 `env_key="AI_WORKSPACE_API_KEY"` 인증에는 같은 이름의 Actions Secret이 필요하며, ChatGPT 로그인만으로는 이 제공자를 인증할 수 없다. Secret은 Codex 프로세스에만 추가하고 셸 환경 정책으로 모델의 셸 명령에서 제외한다. 제품 API key나 새 모델 기본값을 자동으로 만들지 않는다. Issue/GitHub 토큰은 gh subprocess 환경에만 전달하고 Codex에는 전달하지 않는다. 게시 토큰이 없다면 승인 후 실행 단계가 시작되기 전에 실패한다.
+
+러너 라벨의 ARM64와 Python 프로세스의 아키텍처는 다를 수 있다. `python3 -c 'import sys, platform; print(sys.platform, platform.machine())'`이 `darwin x86_64`를 출력해도 지원하는 macOS 환경이며, 동일한 Codex sandbox와 macOS `sandbox-exec` 검사 경로를 사용한다. 러너 라벨이나 검사 격리 설정을 바꿀 필요는 없다.
+
+macOS 백엔드는 일회성 scratch의 Unix 소켓으로만 `studio_test`에 연결한다. 공유 메모리는 mmap으로 설정하고 PostgreSQL의 System V semaphore 작업을 허용한다. 전용 러너에는 업무용 PostgreSQL 등 다른 서비스를 함께 운영하지 않는다. TCP와 다른 Unix 소켓, host HOME 접근은 계속 차단하며 캐시는 읽기 전용이다. 준비한 캐시와 가상환경은 원본 checkout 밖에 있고 Actions 종료 시 정리한다. 설치되지 않은 도구·캐시 준비·격리 점검은 실패를 유지하며 검사를 생략한 성공으로 처리하지 않는다.
 
 ## 검증 결과
 
@@ -97,9 +105,21 @@ python3 -B -m unittest discover -s workflow/runtime/tests -p 'test_*.py'
 
 검증 환경은 Linux/WSL의 Python 3.14.4이며, 전체 런타임 테스트 216개가 통과했다. 이 중 신규 Issue 승인 테스트는 40개다. Actions YAML을 파싱하고 opened/edited/created 이벤트 및 concurrency 설정을 확인했다. 실제 GitHub Push, PR 생성, 실제 Codex 실행 및 PRJ 테스트·수정은 수행하지 않았다.
 
+2026-11-20 macOS x86_64 지원 수정에서는 일반 런타임 테스트 239개가 통과했다. macOS ARM64/x86_64 preflight, 환경 진단, 실패한 분석 재시도와 결정사항 보존을 모의 환경에서 검증했다. WSL의 실제 Codex CLI 0.171.0으로 버전/도움말 검사도 실행했으며 모델 호출은 하지 않았다. 실제 실패 댓글 스크립트의 환경 진단 9개는 모의 GitHub API로 확인했다. 수정 후 macOS 러너 재실행과 실제 모델 분석은 아직 확인하지 않았다.
+
+2026-11-20 AI Workspace 인증 수정에서는 일반 런타임 테스트 246개가 통과했다. 분석·실행의 제공자 키 전달, 다른 비밀값 제외, 셸 환경 정책, 키 누락 진단 및 실패 후 재분석을 모의 환경에서 확인했다. WSL의 실제 Codex CLI 0.171.0과 임시 HOME·로컬 테스트 URL로 키 누락 종료와 모의 키의 인증 설정 검사도 확인했다. Actions YAML을 파싱하고 실제 실패 댓글 스크립트는 모의 GitHub API로 검증했다. 실제 모델 호출, macOS 러너의 Secret 적용·제공자 모델 접근 및 제품 테스트는 수행하지 않았다.
+
 ## 한계 및 복구
 
 이슈 워크플로의 단계가 실패하면 같은 이슈에 실패 원인, 해결 방법, Actions 실행 링크를 담은 안내 댓글을 별도로 남긴다. 댓글은 기본 Actions 토큰(`issues: write`)으로 GitHub API에 작성하며 `gh`나 게시용 토큰에 의존하지 않는다. 원본 로그, 이슈 본문, 비밀값은 포함하지 않는다. 실패 단계의 구조화된 진단이 없으면 해당 단계에 맞는 기본 안내를 남기며, 이전 실행의 실패 상태를 조회하는 것만으로 댓글을 다시 달지 않는다. 러너가 중단되어 알림 단계가 실행되지 않거나 GitHub API가 댓글을 거부하면 알림을 남길 수 없다.
+
+분석 단계의 `stage: load workflow configuration`, `reason: repository_mismatch`는 설정 JSON의 `repository.owner/name`과 `GITHUB_REPOSITORY`가 다르다는 뜻이다. 모델 분석과 상태 댓글 생성 전에 차단한다. 기존 버전은 같은 상황을 `ValueError`로만 보고했다. Actions에서 선택한 설정의 두 값을 수정해 기준 브랜치에 반영한 뒤 실패한 분석 job을 재실행한다.
+
+`reason: environment_error`는 `operation`으로 구분한다. `check_codex_platform`은 Python의 플랫폼/아키텍처, `check_codex_version`은 설치 버전 불일치, `check_codex_options`는 필수 CLI 옵션 누락이다. 누락된 옵션은 허용 목록에 있는 `option` 값으로만 보고한다. `inspect_codex_version`, `inspect_codex_help`, `inspect_codex_exec_help`는 해당 조회 명령 실패를, `read_utf8_context`, `check_context_size`, `check_snapshot_size`는 문서 읽기 또는 크기 제한 실패를 뜻한다. 원본 CLI 출력과 예외 원문은 공개하지 않는다.
+
+`reason: codex_provider_auth_missing`는 CLI가 `AI_WORKSPACE_API_KEY` 환경변수 누락으로 종료한 경우다. 저장소 Settings → Secrets and variables → Actions에서 같은 이름의 Secret을 등록하고 수정된 워크플로가 기준 브랜치에 병합된 뒤 실패한 분석을 재실행한다. 인증 값·원본 stderr는 공개하지 않는다. Secret이 있어도 만료·접근 권한·모델 지원 여부는 실제 제공자에서 별도 확인되므로, 설정 검사 성공을 모델 호출 성공으로 해석하지 않는다.
+
+소스의 민감정보 검사는 `workspace.py`의 파일별 허용 목록에서 검토된 표현만 예외로 처리한다. 계정 소스의 토큰 변수 참조와 비밀번호 파일 입력, 계정 테스트의 고정된 모의 데이터도 해당 파일과 정확한 표현이 일치할 때만 허용한다. 다른 값·다른 파일에는 이 예외를 적용하지 않으며, 환경변수에 등록된 비밀값은 허용 목록보다 먼저 검사한다. 문서·이슈·로그의 값 가리기 규칙은 동일하게 유지한다.
 
 Actions 로그에서 `publishing_failed`가 나오면 `publication`의 `operation`, `reason`, 가능한 경우 `http_status`를 확인한다. `prepare_git_commit`의 `commit_identity_missing`은 GitHub API를 호출하기 전에 커밋 작성자가 누락된 경우다. `get_branch_protection`의 `403`은 게시 토큰의 `Administration: Read` 권한을, `404`는 토큰의 저장소 접근과 `Settings → Branches`의 classic branch protection 설정을 확인한다. Rulesets만 설정한 경우 기존 게시 엔진의 classic protection 조회를 충족하지 않는다. `attempted: false`는 Push나 PR 생성을 시도하기 전에 차단되었음을 뜻한다.
 

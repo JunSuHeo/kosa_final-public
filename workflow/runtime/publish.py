@@ -16,11 +16,10 @@ from pathlib import Path
 import re
 import shlex
 import string
-import sys
 import uuid
 
 from . import branch_rules, evidence, git_tools, run, workspace, test_runner, validate_config as validator
-from .codex_adapter import ExecutionError
+from .codex_adapter import ExecutionError, runtime_platform
 from .github_adapter import GitHubCLI, environment as github_environment
 
 
@@ -67,8 +66,8 @@ def private_file(path, limit=16 * 1024 * 1024):
 
 
 def load_verified(result_path, config_path, root):
-    if sys.platform != "linux":
-        raise ExecutionError("environment_error", "Publication currently requires Linux/WSL.")
+    if runtime_platform() is None:
+        raise ExecutionError("environment_error", "Publication requires Linux/WSL or macOS x86_64/ARM64.")
     result_path = result_path.absolute()
     directory = result_path.parent
     if result_path.name != "result.json" or directory.resolve().is_relative_to(root) or directory.is_symlink():
@@ -83,6 +82,12 @@ def load_verified(result_path, config_path, root):
     config, config_sha = run._load(config_path.absolute(), root)
     if "publishing" not in config:
         raise ExecutionError("config_error", "An explicit publishing configuration is required.")
+    configured_platform = config["execution"]["environment"]["platform"]
+    if runtime_platform() != configured_platform:
+        raise ExecutionError("environment_error", "Publisher platform does not match the verified execution platform.")
+    codex_environment = report.get("codex_environment")
+    if not isinstance(codex_environment, dict) or codex_environment.get("platform") != configured_platform:
+        raise ExecutionError("untrusted_result", "Execution platform evidence does not match the trusted configuration.")
     if report["config_sha256"] != config_sha or report["project_id"] != config["project_id"]:
         raise ExecutionError("untrusted_result", "Configuration differs from the tested run; execute and validate again.")
     if report["run_id"] != directory.name or report["result_path"] != str(result_path):

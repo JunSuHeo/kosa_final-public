@@ -64,6 +64,10 @@ def error_diagnostic(exc):
     operation = getattr(exc, "operation", None)
     if isinstance(operation, str) and re.fullmatch(r"[a-z_]{1,64}", operation):
         diagnostic["operation"] = operation
+    option = getattr(exc, "option", None)
+    if option in ("--ask-for-approval", "--strict-config", "--sandbox", "--skip-git-repo-check",
+                  "--ephemeral", "--ignore-rules", "--config", "--model"):
+        diagnostic["option"] = option
     http_status = getattr(exc, "http_status", None)
     if type(http_status) is int and 400 <= http_status <= 599:
         diagnostic["http_status"] = http_status
@@ -272,7 +276,8 @@ class IssueController:
         self.config, self.config_hash = run._load(self.config_path, self.root)
         self.repository = self.config["repository"]["owner"] + "/" + self.config["repository"]["name"]
         if github.repository.casefold() != self.repository.casefold():
-            raise ValueError("Configured repository and GitHub adapter must match")
+            raise ExecutionError("repository_mismatch",
+                                 "Configured repository.owner/name must match the GitHub Actions repository.")
         self.github, self.key, self.bot = github, signing_key, bot_login
         self.analyzer = analyzer or PlanAnalyzer()
         self.engine = engine or orchestrator.execute_workflow
@@ -515,6 +520,9 @@ class IssueController:
                 return self.state
             if (self.state and self.state["snapshot_hash"] == snapshot(current)
                     and self.state["config_sha256"] == self.config_hash):
+                if self.state["status"] == "analysis_failed":
+                    return self.analyze(current, decision_comments=self.state.get("decision_comments", ()),
+                                        decisions=self.state["issue"].get("additional_decisions", ()))
                 return self.state
             if self.state:
                 self.persist("approval_invalidated", "Issue 요구사항이 변경되어 기존 계획과 승인을 무효화했습니다.")
@@ -597,8 +605,8 @@ def main(argv=None):
             raise ExecutionError("state_key_invalid", "The Issue signing key must contain at least 32 bytes.")
         controller = IssueController(args.config, args.repo_root, args.results_dir, github,
                                      signing_key, os.environ["WORKFLOW_BOT_LOGIN"])
-        # The shared Actions concurrency group serializes remote runners; flock
-        # also serializes processes sharing this evidence directory on Linux.
+        # The shared Actions concurrency group serializes remote runners; POSIX
+        # flock also serializes processes sharing this evidence directory.
         import fcntl
         lock = args.results_dir / ("issue-" + hashlib.sha256(
             (github.repository + str(event["issue"]["number"])).encode()).hexdigest() + ".lock")

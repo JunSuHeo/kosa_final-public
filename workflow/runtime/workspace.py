@@ -37,12 +37,16 @@ def redact(text: str) -> str:
     return _SECRET.sub("[REDACTED]", _redact_known_values(text))
 
 
-# Documentation placeholders and credentials for checked-in local fixtures.
+# Reviewed source expressions, documentation placeholders and local fixtures.
 _SOURCE_EXAMPLES = {
     "PRJ/README.md": {"API_KEY=\uc11c\ubc84\uc5d0\uc11c\ub9cc_\uc0ac\uc6a9\ud560_\ud0a4\n"},
     "PRJ/compose.yaml": {"PASSWORD: studio}\n"},
     "PRJ/backend/tests/test_auth_and_recovery.py": {'api_key="secret-do-not-print"'},
     "PRJ/backend/tests/test_source_planning.py": {"password = 'fixture-hidden'", 'Bearer alice-fixture"'},
+    "PRJ/frontend/src/accounts/server.ts": {"access_token: result.access_token,"},
+    "PRJ/backend/app/manage.py": {"secret = password(args.password_file)\n", "password=secret),", "password=secret,"},
+    "PRJ/frontend/tests/supabase-accounts.spec.ts": {'access_token: "signed-test-boundary"'},
+    "PRJ/backend/tests/test_accounts.py": {'password="initial-password!"'},
     **dict.fromkeys(
         ("PRJ/frontend/tests/business-helpers.ts", "PRJ/frontend/tests/login.spec.ts",
          "PRJ/frontend/tests/users.spec.ts"),
@@ -108,13 +112,15 @@ def read_context(path: Path) -> str:
             raise ExecutionError("path_violation", "Context must be an existing regular file, not a symlink.")
         data = path.read_bytes()
         if len(data) > 512 * 1024:
-            raise ExecutionError("environment_error", "A context document exceeds the 512 KiB limit.")
+            raise ExecutionError("environment_error", "A context document exceeds the 512 KiB limit.",
+                                 operation="check_context_size")
         text = data.decode("utf-8-sig")
         if redact(text) != text:
             raise ExecutionError("sensitive_content", "Sensitive content was detected in a context document; execution was blocked.")
         return text
     except (OSError, UnicodeError) as exc:
-        raise ExecutionError("environment_error", "Cannot read a UTF-8 context document.") from exc
+        raise ExecutionError("environment_error", "Cannot read a UTF-8 context document.",
+                             operation="read_utf8_context") from exc
 
 
 def _walk_error(exc: OSError) -> None:
@@ -189,7 +195,8 @@ def prepare(root: Path, destination: Path, config: dict[str, Any], config_path: 
             size = path.stat().st_size
             total += size
             if len(copied) >= 10000 or size > 10 * 1024 * 1024 or total > 100 * 1024 * 1024:
-                raise ExecutionError("environment_error", "Approved source snapshot exceeds file/size limits.")
+                raise ExecutionError("environment_error", "Approved source snapshot exceeds file/size limits.",
+                                     operation="check_snapshot_size")
             copied.add(relative)
             target = destination / relative
             target.parent.mkdir(parents=True, exist_ok=True)

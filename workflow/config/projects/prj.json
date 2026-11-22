@@ -4,8 +4,8 @@
   "project_id": "prj",
   "repository": {
     "provider": "github",
-    "owner": "example-owner",
-    "name": "example-repository"
+    "owner": "JunSuHeo",
+    "name": "kosa_final-public"
   },
   "base_branch": "main",
   "project_root": "PRJ",
@@ -64,15 +64,15 @@
   },
   "execution": {
     "instructions": ["PRJ/AGENTS.md"],
-    "environment": {"platform": "linux", "required_programs": ["python3", "uv"]},
-    "codex": {"version": "0.169.0", "model": "gpt-6-luna", "timeout_seconds": 300}
+    "environment": {"platform": "macos", "required_programs": ["python3"]},
+    "codex": {"version": "0.171.0", "model": "gpt-6.2-sol", "timeout_seconds": 300}
   },
   "notes": [
     "Product configuration. Writes are scoped to PRJ; project instructions, credentials and repository controls remain protected by the runtime.",
-    "Backend pytest uses an offline uv cache prepared from the trusted base lock and a temporary studio_test PostgreSQL cluster inside Bubblewrap. The runner needs PostgreSQL binaries, not a running host database.",
+    "The PostgreSQL-backed PRJ backend test is required on every approved execution. Linux uses Bubblewrap and macOS uses sandbox-exec with an isolated studio_test cluster and an offline dependency cache prepared from the base checkout.",
     "Browser E2E requires an API/web/PostgreSQL stack and Playwright browser. It is recorded as explicitly skipped until a dedicated isolated service runner is implemented.",
-    "Codex CLI 0.169.0 was installed in WSL using the official standalone installer on 2026-11-17 and is available at /usr/local/bin/codex. The actual --version and required help flags were checked.",
-    "gpt-6-luna was selected by the installed CLI with user configuration ignored and successfully executed a no-file-change request on 2026-11-17. gpt-6.1-sol was rejected for this ChatGPT account. Offline validation cannot guarantee future account/model availability; do not record credentials in configuration or logs.",
+    "Codex CLI version 0.171.0 is pinned in this configuration and checked against the runner's installed CLI before a task executes.",
+    "gpt-6.2-sol is configured as the project model. Codex CLI user configuration is loaded; the project model and runtime safety options remain explicit. Account/model availability is checked by the CLI at execution time; do not record credentials in configuration or logs.",
     "Candidate modifications are retained in the engine's external workspace, not automatically applied to the original demo or PRJ."
   ]
 }

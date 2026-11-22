@@ -4,8 +4,8 @@
   "project_id": "sandbox",
   "repository": {
     "provider": "github",
-    "owner": "example-owner",
-    "name": "example-repository"
+    "owner": "JunSuHeo",
+    "name": "kosa_final-public"
   },
   "base_branch": "main",
   "project_root": "sandbox",
@@ -59,7 +59,7 @@
   },
   "execution": {
     "instructions": ["sandbox/manual-engine-demo/AGENTS.md"],
-    "environment": {"platform": "linux", "required_programs": ["python3"]},
+    "environment": {"platform": "macos", "required_programs": ["python3"]},
     "codex": {"version": "0.169.0", "model": "gpt-6-luna", "timeout_seconds": 120}
   },
   "notes": [

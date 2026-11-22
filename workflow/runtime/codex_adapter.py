@@ -5,14 +5,16 @@ https://learn.chatgpt.com/docs/developer-commands?surface=cli
 https://learn.chatgpt.com/docs/non-interactive-mode
 https://learn.chatgpt.com/docs/config-file/config-reference
 
-The initial adapter runs on Linux, including WSL. It requires a pinned CLI
-version and rejects unsupported flags. Authentication uses existing CLI login;
-API keys and GitHub credentials are not inherited through environment variables.
+The adapter supports Linux (including WSL) and macOS. It requires a pinned CLI
+version and rejects unsupported flags. Authentication uses existing CLI settings;
+only AI_WORKSPACE_API_KEY may reach Codex for provider authentication. Shell
+commands exclude that key; GitHub and other API credentials are not inherited.
 """
 
 from __future__ import annotations
 
 import os
+import platform as host_platform
 from pathlib import Path
 import re
 import shutil
@@ -25,10 +27,21 @@ from typing import Any
 
 
 class ExecutionError(Exception):
-    def __init__(self, status: str, message: str, return_code: int | None = None):
+    def __init__(self, status: str, message: str, return_code: int | None = None,
+                 *, operation: str | None = None, option: str | None = None):
         super().__init__(message)
         self.status = status
         self.return_code = return_code
+        self.operation = operation
+        self.option = option
+
+
+def runtime_platform() -> str | None:
+    if sys.platform == "linux":
+        return "linux"
+    if sys.platform == "darwin" and host_platform.machine().lower() in ("arm64", "aarch64", "x86_64"):
+        return "macos"
+    return None
 
 
 def restricted_environment() -> dict[str, str]:
@@ -64,6 +77,8 @@ class CodexCLI:
         self.version: str | None = None
 
     def _inspect(self, *args: str) -> str:
+        operation = ("inspect_codex_version" if args == ("--version",) else
+                     "inspect_codex_exec_help" if args == ("exec", "--help") else "inspect_codex_help")
         try:
             result = subprocess.run(
                 [self.executable, *args], capture_output=True, text=True,
@@ -71,33 +86,39 @@ class CodexCLI:
                 env=restricted_environment(), check=False,
             )
         except FileNotFoundError as exc:
-            raise ExecutionError("codex_missing", "Codex CLI was not found on PATH.") from exc
+            raise ExecutionError("codex_missing", "Codex CLI was not found on PATH.", operation=operation) from exc
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise ExecutionError("environment_error", "Cannot inspect Codex CLI help/version.") from exc
+            raise ExecutionError("environment_error", "Cannot inspect Codex CLI help/version.", operation=operation) from exc
         if result.returncode:
-            raise ExecutionError("environment_error", "Codex CLI help/version inspection failed.", result.returncode)
+            raise ExecutionError("environment_error", "Codex CLI help/version inspection failed.", result.returncode,
+                                 operation=operation)
         return result.stdout + result.stderr
 
     def preflight(self, settings: dict[str, Any]) -> dict[str, str]:
         self.executable = shutil.which("codex")
         if not self.executable:
             raise ExecutionError("codex_missing", "Codex CLI was not found on PATH; no task was executed.")
-        if sys.platform != "linux":
-            raise ExecutionError("environment_error", "This adapter requires Linux/WSL; native Windows execution is not enabled.")
+        platform = runtime_platform()
+        if platform is None:
+            raise ExecutionError("environment_error", "This adapter supports Linux/WSL and macOS x86_64/ARM64 only.",
+                                 operation="check_codex_platform")
         version_output = self._inspect("--version")
         match = re.search(r"\b([0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?)\b", version_output)
         if not match or match.group(1) != settings["version"]:
-            raise ExecutionError("environment_error", "Installed Codex CLI version does not match the configured version.")
+            raise ExecutionError("environment_error", "Installed Codex CLI version does not match the configured version.",
+                                 operation="check_codex_version")
         self.version = match.group(1)
         global_help = self._inspect("--help")
         exec_help = self._inspect("exec", "--help")
         for flag in ("--ask-for-approval", "--strict-config"):
             if flag not in global_help:
-                raise ExecutionError("environment_error", "Installed Codex CLI lacks required global safety options.")
-        for flag in ("--sandbox", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--config", "--model"):
+                raise ExecutionError("environment_error", "Installed Codex CLI lacks required global safety options.",
+                                     operation="check_codex_options", option=flag)
+        for flag in ("--sandbox", "--skip-git-repo-check", "--ephemeral", "--ignore-rules", "--config", "--model"):
             if flag not in exec_help:
-                raise ExecutionError("environment_error", "Installed Codex CLI lacks required execution/safety options.")
-        return {"adapter": "codex_cli", "version": self.version, "platform": "linux"}
+                raise ExecutionError("environment_error", "Installed Codex CLI lacks required execution/safety options.",
+                                     operation="check_codex_options", option=flag)
+        return {"adapter": "codex_cli", "version": self.version, "platform": platform}
 
     def execute(self, prompt: str, workspace: Path, settings: dict[str, Any]) -> int:
         return self._execute(prompt, workspace, settings)
@@ -126,9 +147,15 @@ class CodexCLI:
         command = [
             self.executable, "--strict-config", "--ask-for-approval", "never", "exec",
             "--sandbox", sandbox, "--skip-git-repo-check",
-            "--ephemeral", "--ignore-user-config", "--ignore-rules",
+            "--ephemeral", "--ignore-rules",
             "--model", settings["model"],
         ]
+        environment = restricted_environment()
+        if provider_key := os.environ.get("AI_WORKSPACE_API_KEY"):
+            environment["AI_WORKSPACE_API_KEY"] = provider_key
+            # Authenticate Codex without exposing the key to its shell commands.
+            command.extend(["--config", 'shell_environment_policy={inherit="core",set={},'
+                            'filters={AI_WORKSPACE_API_KEY="exclude"},experimental_use_profile=false}'])
         for override in ((
             "sandbox_workspace_write.network_access=false",
             "sandbox_workspace_write.writable_roots=[]",
@@ -140,7 +167,7 @@ class CodexCLI:
         command.append("-")  # Official prompt-from-stdin interface; no shell interpolation.
         try:
             process = subprocess.Popen(
-                command, cwd=workspace, env=restricted_environment(),
+                command, cwd=workspace, env=environment,
                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                 text=True, encoding="utf-8", errors="replace", start_new_session=True,
             )
@@ -160,5 +187,9 @@ class CodexCLI:
             status = "timeout" if isinstance(exc, subprocess.TimeoutExpired) else "unexpected_error"
             raise ExecutionError(status, "Codex execution timed out." if status == "timeout" else "Codex execution was interrupted.") from exc
         if process.returncode:
+            if re.search(r"(?im)^error:\s*missing environment variable:\s*[`'\"]?AI_WORKSPACE_API_KEY[`'\"]?\.?\s*$", stderr or ""):
+                raise ExecutionError("codex_provider_auth_missing",
+                                     "AI Workspace provider authentication is missing. Configure the AI_WORKSPACE_API_KEY Actions secret.",
+                                     process.returncode)
             raise ExecutionError("codex_failed", failure_message(stderr), process.returncode)
         return process.returncode

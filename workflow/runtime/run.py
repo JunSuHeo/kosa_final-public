@@ -185,7 +185,10 @@ def execute_request(config_path: Path, task: str, repo_root: Path, results_dir: 
                 raise ExecutionError("environment_error", "A configured project program is unavailable on PATH.")
         context = _context(config, root)
         adapter = adapter if adapter is not None else CodexCLI()
-        report["codex_environment"] = adapter.preflight(config["execution"]["codex"])
+        codex_environment = adapter.preflight(config["execution"]["codex"])
+        if codex_environment.get("platform") != config["execution"]["environment"]["platform"]:
+            raise ExecutionError("environment_error", "Configured and actual execution platforms do not match.")
+        report["codex_environment"] = codex_environment
         stage = "prepare"
         begin(stage)
         destination = directory / "workspace"

@@ -91,6 +91,8 @@ Backend 테스트는 별도 tmpfs `studio_test`를 사용한다.
 docker compose --profile test run --build --rm test
 ```
 
+Issue 승인 워크플로의 백엔드 검사는 `../workflow/config/projects/prj.json`에서 `required: true`, `run_if: always`다. Linux는 Bubblewrap, macOS는 `sandbox-exec`로 별도 scratch의 `studio_test`를 실행한다. 시스템 PATH의 `uv`, Python 3.12 이상 및 PostgreSQL 서버 도구가 필요하며, Actions가 기준 checkout의 잠금 파일로 준비한 캐시를 오프라인 검사에 제공한다. macOS는 해당 scratch의 Unix 소켓과 PostgreSQL semaphore만 추가 허용하고 외부 TCP·다른 Unix 소켓·host HOME은 차단한다. 캐시는 읽기 전용이고 준비·격리 실패는 검사 실패로 남긴다. 실행과 opt-in 검증은 [워크플로 안내](../../workflow/runtime/README.md#독립-테스트-설정과-실행)를 따른다.
+
 UI·API·worker 통합 검증은 다음을 사용한다.
 
 ```sh

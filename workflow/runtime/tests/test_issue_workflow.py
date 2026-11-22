@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
@@ -182,6 +183,43 @@ class ControllerTests(unittest.TestCase):
         self.opened()
         self.edited()
         self.analyzer.analyze.assert_called_once()
+
+    def test_failed_analysis_can_be_retried_after_runner_recovery(self):
+        self.analyzer.analyze.side_effect = ExecutionError("environment_error", "Mock environment failure")
+        state = self.opened()
+        self.assertEqual(state["status"], "analysis_failed")
+        failed_id = state["plan_id"]
+        self.analyzer.analyze.side_effect = None
+        self.controller = self.new_controller()
+        state = self.opened()
+        self.assertEqual(state["status"], "awaiting_approval")
+        self.assertNotEqual(state["plan_id"], failed_id)
+        self.assertEqual(self.analyzer.analyze.call_count, 2)
+        self.engine.assert_not_called()
+
+    def test_provider_auth_failure_is_persisted_without_credentials_and_can_be_retried(self):
+        self.analyzer.analyze.side_effect = ExecutionError("codex_provider_auth_missing", "synthetic-private-diagnostic", 1)
+        state = self.opened()
+        self.assertEqual(state["status"], "analysis_failed")
+        self.assertEqual(state["failure_diagnostic"], {"reason": "codex_provider_auth_missing"})
+        self.assertNotIn("synthetic-private-diagnostic", json.dumps(state))
+        self.analyzer.analyze.side_effect = None
+        self.controller = self.new_controller()
+        self.assertEqual(self.opened()["status"], "awaiting_approval")
+        self.engine.assert_not_called()
+
+    def test_failed_reanalysis_retry_preserves_human_decisions(self):
+        self.opened()
+        self.analyzer.analyze.side_effect = ExecutionError("environment_error", "Mock environment failure")
+        event = self.github.event("/plan Preserve the CLI output format")
+        self.assertEqual(self.controller.handle("issue_comment", event)["status"], "analysis_failed")
+        self.analyzer.analyze.side_effect = None
+        self.controller = self.new_controller()
+        state = self.opened()
+        self.assertEqual(state["status"], "awaiting_approval")
+        self.assertEqual(state["issue"]["additional_decisions"], ["Preserve the CLI output format"])
+        self.assertEqual(state["decision_comments"][0]["id"], event["comment"]["id"])
+        self.engine.assert_not_called()
 
     def test_approved_rejected_and_running_states_ignore_new_commands(self):
         self.opened()
@@ -384,6 +422,30 @@ class ControllerTests(unittest.TestCase):
             self.assertEqual(subject.main(["--config", str(self.fixture.path), "--results-dir", str(self.fixture.results)]), 1)
         api.assert_not_called()
 
+    def test_main_reports_repository_mismatch_before_analysis(self):
+        self.fixture.config["repository"] = {"provider": "github", "owner": "example-owner",
+                                              "name": "example-repository"}
+        self.fixture.write()
+        event_path = self.fixture.base / "event.json"
+        output_path = self.fixture.base / "output.txt"
+        event_path.write_text(json.dumps({"action": "opened", "repository": {"full_name": "example/sample"},
+                                         "issue": self.github.issue(1)}), encoding="utf-8")
+        env = {"GITHUB_ACTIONS": "true", "GITHUB_EVENT_PATH": str(event_path),
+               "GITHUB_EVENT_NAME": "issues", "GITHUB_REPOSITORY": "example/sample",
+               "GITHUB_OUTPUT": str(output_path), "WORKFLOW_STATE_KEY": KEY.decode(), "WORKFLOW_BOT_LOGIN": BOT}
+        stdout = io.StringIO()
+        with patch.dict(os.environ, env), patch.object(subject, "IssueGitHub", return_value=self.github), \
+                patch.object(subject, "PlanAnalyzer", return_value=self.analyzer), contextlib.redirect_stdout(stdout):
+            self.assertEqual(subject.main(["--config", str(self.fixture.path), "--repo-root", str(self.fixture.root),
+                                           "--results-dir", str(self.fixture.results), "--defer-execution"]), 1)
+        diagnostic = json.loads(stdout.getvalue())
+        self.assertEqual(diagnostic, {"status": "blocked", "stage": "load workflow configuration",
+                                      "reason": "repository_mismatch"})
+        self.assertEqual(json.loads(output_path.read_text().strip().split("=", 1)[1]), diagnostic)
+        self.analyzer.analyze.assert_not_called()
+        self.engine.assert_not_called()
+        self.assertEqual(self.github.records, [])
+
     def test_missing_or_reassigned_plan_comment_cannot_execute(self):
         self.opened()
         other = self.github.create_comment(1, "Another plan")
@@ -406,6 +468,40 @@ class ControllerTests(unittest.TestCase):
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_prj_analysis_prepares_account_sources_without_a_model_call(self):
+        root = Path(__file__).resolve().parents[3]
+        config_path = root / "workflow/config/projects/prj.json"
+        config, _ = subject.run._load(config_path, root)
+        adapter = Mock()
+        adapter.analyze.return_value = {}
+        subject.PlanAnalyzer(adapter).analyze({"title": "Remove the header settings button", "body": "Keep the menu entry"},
+                                             config, config_path, root)
+        adapter.analyze.assert_called_once()
+        prompt = adapter.analyze.call_args.args[0]
+        for relative in ("PRJ/frontend/src/accounts/server.ts", "PRJ/backend/app/manage.py",
+                         "PRJ/frontend/tests/supabase-accounts.spec.ts", "PRJ/backend/tests/test_accounts.py"):
+            self.assertIn(relative, prompt)
+        adapter.execute.assert_not_called()
+
+    def test_environment_diagnostic_identifies_missing_options_without_arbitrary_text(self):
+        error = ExecutionError("environment_error", "synthetic-private-value",
+                               operation="check_codex_options", option="--strict-config")
+        self.assertEqual(subject.error_diagnostic(error), {"reason": "environment_error",
+                         "operation": "check_codex_options", "option": "--strict-config"})
+        error.option = "synthetic-private-value"
+        self.assertNotIn("synthetic-private-value", json.dumps(subject.error_diagnostic(error)))
+
+    def test_active_project_configs_accept_the_actions_repository(self):
+        root = Path(__file__).resolve().parents[3]
+        github = Mock(repository="JunSuHeo/kosa_final-public")
+        with tempfile.TemporaryDirectory() as directory:
+            for name in ("prj.json", "sandbox.json"):
+                with self.subTest(config=name):
+                    controller = subject.IssueController(root / "workflow/config/projects" / name, root,
+                        Path(directory) / "results", github, KEY, BOT, analyzer=Mock(), engine=Mock())
+                    self.assertEqual(controller.repository, github.repository)
+        self.assertEqual(github.mock_calls, [])
+
     def test_analysis_reports_sensitive_source_before_the_model_reads_it(self):
         fixture = test_run.EngineTests(methodName="test_task_parsing")
         fixture.setUp()
