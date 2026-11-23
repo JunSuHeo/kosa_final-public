@@ -7,6 +7,7 @@ Remote journal authentication requires a separate HMAC key and a trusted bot.
 import argparse
 import copy
 import hashlib
+import html
 import hmac
 import json
 import os
@@ -97,6 +98,19 @@ def exit_failure(diagnostic):
         except OSError:
             print("::warning::Could not write structured Issue failure details to GITHUB_OUTPUT.")
     return 1
+
+
+def test_failure_comment(report):
+    failures = [{key: check.get(key) for key in ("kind", "id", "status", "return_code", "command", "reason", "stdout", "stderr")}
+                for group in ("unit", "e2e") for check in report["validation"]["tests"][group]
+                if check["status"] in ("failed", "timeout", "unavailable")]
+    details = workspace.redact(json.dumps(failures, ensure_ascii=False, indent=2))
+    truncated = len(details) > 6000
+    details = html.escape(details[:6000]).replace("@", "&#64;")
+    return ("### 테스트 실패 · Draft PR 검토 필요\n\n"
+            "다음 테스트가 실패하거나 실행되지 못했습니다. 결과를 실패로 기록하고 Draft PR 게시를 진행합니다.\n\n"
+            f"<pre>{details}</pre>\n"
+            + ("\n출력 일부를 생략했습니다. 전체 결과는 러너의 result.json에 저장됩니다.\n" if truncated else ""))
 
 
 def parse_command(body):
@@ -465,7 +479,8 @@ class IssueController:
             except Exception as exc:
                 raise ExecutionError("approval_invalidated", "Issue, plan or approval can no longer be verified.") from exc
             if name in ("validation", "publication"):
-                self.persist("validating" if name == "validation" else "publishing")
+                message = test_failure_comment(report) if name == "publication" and report.get("draft_on_test_failure") else None
+                self.persist("validating" if name == "validation" else "publishing", message)
 
         try:
             result = self.engine(self.config_path, f"Implement approved GitHub Issue #{self.state['issue_number']}",
@@ -477,7 +492,7 @@ class IssueController:
             self.persist("execution_failed", "실행 결과를 확인하지 못했습니다. 중복 실행을 막기 위해 자동 재시도하지 않습니다.")
             return self.state
         self.state["execution"] = {key: result.get(key) for key in
-                                   ("run_id", "result_path", "workflow_result_path", "final_status", "workflow_status")}
+                                   ("run_id", "result_path", "workflow_result_path", "final_status", "workflow_status", "validation_status")}
         final = result.get("final_status")
         if final == "approval_invalidated":
             return self.invalidate("승인 이후 Issue 또는 실행 계획이 변경되었습니다. 기존 실행과 게시를 차단했습니다.")
@@ -489,7 +504,13 @@ class IssueController:
             self.state["failure_diagnostic"] = {"reason": validation_failure_reason(result.get("validation") or {})}
         elif status == "execution_failed" and isinstance(final, str) and re.fullmatch(r"[a-z_]{1,64}", final):
             self.state["failure_diagnostic"] = {"reason": final}
-        self.persist(status)
+        message = None
+        if status == "completed" and result.get("draft_on_test_failure"):
+            message = "테스트 검증은 실패로 기록했습니다. 검토용 Draft PR 게시 단계를 완료했습니다."
+            pr_url = (result.get("publication") or {}).get("pr_url")
+            if pr_url:
+                message += f"\n\n[Draft PR 확인]({pr_url})"
+        self.persist(status, message)
         return self.state
 
     def handle(self, event_name, event, *, publish_mode="simulate", defer_execution=False,

@@ -10,3 +10,4 @@ SW가 AI와 진행한 작업의 계획·판단 요약·변경·검증·인계를
 
 - [2026-11-23 Issue 분석 sensitive_content 오탐 수정](2026-11-23-sensitive-content-analysis/README.md)
 - [2026-11-23 macOS 임시 검증 경로의 path_violation 수정](2026-11-23-macos-validation-path/README.md)
+- [2026-11-24 테스트 실패 보고 후 Draft PR 게시](2026-11-24-test-failure-draft-pr/README.md)

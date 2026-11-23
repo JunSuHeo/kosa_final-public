@@ -29,7 +29,7 @@ Repository Variables와 Secrets는 [GitHub 저장소 설정 안내](specs/github
 
 ## 프로젝트 설정 예시
 
-설정 파일의 `repository.owner`와 `repository.name`은 예시 값입니다. GitHub 연동 시 대상 저장소에 맞게 설정합니다. 프로젝트별 설정은 두 가지입니다. [prj.json](config/projects/prj.json)은 제품 `PRJ/`만 수정하도록 허용하고, [sandbox.json](config/projects/sandbox.json)은 `sandbox/` 아래 데모만 허용합니다. GitHub Issue 작업 대상은 Repository Variable `WORKFLOW_CONFIG_PATH`가 가리키는 설정으로 결정됩니다. PRJ PostgreSQL 백엔드 검사는 현재 GitHub Actions 검증에서 제외되어 있습니다. [러너 준비 요건](specs/github_runner.md)을 확인하세요.
+설정 파일의 `repository.owner`와 `repository.name`은 GitHub 연동 시 대상 저장소에 맞게 설정합니다. 프로젝트별 설정은 두 가지입니다. [prj.json](config/projects/prj.json)은 제품 `PRJ/`만 수정하도록 허용하고, [sandbox.json](config/projects/sandbox.json)은 `sandbox/` 아래 데모만 허용합니다. GitHub Issue 작업 대상은 Repository Variable `WORKFLOW_CONFIG_PATH`가 가리키는 설정으로 결정됩니다. PRJ PostgreSQL 백엔드는 필수 검사이며, 실패·시간 초과·실행 불가 결과를 이슈 댓글에 기록한 뒤 Draft PR을 생성하도록 `allow_draft_on_failure=true`를 적용했습니다. [러너 준비 요건](specs/github_runner.md)을 확인하세요.
 
 현재 Issue PR 브랜치 형식은 `feature/ai/{date}/{approver}/{issue_title}`입니다. 날짜는 실행 시작일의 한국 시간(`YY.MM.DD`), 승인자는 GitHub login, 제목은 브랜치에 안전한 문자로 정리한 Issue 제목입니다. 수동 CLI 실행에는 `ai/{project_id}/{run_id}`를 사용합니다. 동일 브랜치가 이미 있으면 기존 작업을 덮어쓰지 않고 게시를 중단합니다.
 

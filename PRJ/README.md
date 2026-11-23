@@ -149,6 +149,8 @@ docker compose --profile test run --build --rm test
 
 GitHub Issue 승인 워크플로에서는 같은 백엔드 pytest를 Linux Bubblewrap 또는 macOS `sandbox-exec` 안의 일회성 `studio_test` DB로 실행한다. `workflow/config/projects/prj.json`의 백엔드는 모든 승인 실행에서 필수 검사다. Actions는 기준 브랜치의 `backend/uv.lock`으로 캐시를 준비하고 실제 검사는 오프라인으로 실행한다. 러너에 시스템 PATH의 `uv`, Python 3.12 이상, PostgreSQL 서버·클라이언트 도구가 필요하다. macOS Homebrew의 versioned PostgreSQL 경로도 지원한다. 설치와 macOS 실제 capability 검증은 러너에서 별도 확인하며, 상세 준비 조건과 opt-in 통합 검증은 [워크플로 실행 안내](../workflow/runtime/README.md#독립-테스트-설정과-실행)를 따른다. 서비스 DB와 모델 키를 테스트에 사용하지 않는다.
 
+이 승인 워크플로는 테스트 실패·시간 초과·실행 불가를 이슈 댓글에 기록하고 검토용 Draft PR 게시를 진행한다. `pr_policy.allow_draft_on_failure=true`를 사용하며 검증 결과는 실패로 유지한다. 코드 생성 실패, 허용 경로 위반, 테스트 입력 변경 또는 검증 근거 손상은 게시를 차단한다.
+
 Frontend 재현 설치와 빌드:
 
 ```sh

@@ -138,6 +138,18 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(state["rejection"]["login"], "maintainer")
         self.engine.assert_not_called()
 
+    def test_failure_comment_redacts_credentials_and_escapes_output_markup(self):
+        token = "ghp_" + "a" * 36
+        check = {"id": "unit", "kind": "unit", "status": "failed", "return_code": 1,
+                 "command": {"program": "offline-tests", "args": []}, "reason": "Controlled failure",
+                 "stderr": "GITHUB_TOKEN=" + token + "\n</pre><script>alert(1)</script> @reviewer"}
+        report = {"validation": {"tests": {"unit": [check], "e2e": []}}}
+        comment = subject.test_failure_comment(report)
+        self.assertNotIn(token, comment)
+        self.assertNotIn("<script>", comment)
+        self.assertNotIn("@reviewer", comment)
+        self.assertIn("Controlled failure", comment)
+
     def test_permission_denied_issue_author_and_api_failure_never_execute(self):
         self.opened()
         for permission in ("read", "triage", "none", "unknown", None, "api_failure"):
@@ -634,6 +646,36 @@ class IntegratedIssueTests(unittest.TestCase):
         result = json.loads(Path(state["execution"]["workflow_result_path"]).read_text())
         self.assertRegex(result["publication"]["branch"], r"^ai_feature/\d{2}\.\d{2}\.\d{2}/JunSuHeo/로그인-화면-개선$")
         self.assertFalse(result["publication"]["attempted"])
+        self.assertEqual([call["operation"] for call in remote.calls].count("pr_create"), 1)
+
+    def test_failed_tests_are_commented_before_draft_creation_and_do_not_rerun(self):
+        self.fixture.config["pr_policy"]["allow_draft_on_failure"] = True
+        self.fixture.config["publishing"]["draft"] = False
+        self.fixture.write_config()
+        self.controller = subject.IssueController(self.fixture.config_path, self.fixture.root, self.fixture.results,
+                                                  self.github, KEY, BOT, analyzer=self.analyzer)
+        self.controller.handle("issues", {"action": "opened", "repository": {"full_name": "example/sample"},
+                                          "issue": self.github.issue(1)})
+        event = self.github.event()
+        remote = SimulatedGitHubCLI()
+        original = remote.create_pr
+        def create_after_comment(*args):
+            comments = [comment["body"] for comment in self.github.records if "### 테스트 실패" in comment["body"]]
+            self.assertEqual(len(comments), 1)
+            self.assertIn("unit", comments[0])
+            self.assertIn("unavailable", comments[0])
+            self.assertIn("Controlled test error", comments[0])
+            return original(*args)
+        with patch.object(remote, "create_pr", side_effect=create_after_comment), patch.object(
+                GitHubCLI, "preflight", side_effect=AssertionError("No real gh")), patch(
+                "workflow.runtime.publish.authenticated_git", side_effect=AssertionError("No credentials")):
+            state = self.controller.handle("issue_comment", event, adapter=test_publish.Worker(),
+                                           test_executor=test_publish.Tests("unavailable"), simulation_github=remote)
+        self.assertEqual(state["status"], "completed", state)
+        self.assertEqual(state["execution"]["validation_status"], "failed")
+        self.assertTrue(next(call["draft"] for call in remote.calls if call["operation"] == "pr_create"))
+        self.assertIn("테스트 검증은 실패", self.github.records[-1]["body"])
+        self.assertEqual(self.controller.handle("issue_comment", event)["status"], "ignored")
         self.assertEqual([call["operation"] for call in remote.calls].count("pr_create"), 1)
 
     def test_rejection_never_reaches_real_generation_validation_or_publisher(self):

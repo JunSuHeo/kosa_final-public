@@ -137,6 +137,38 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(len(self.test_process.calls), 1)
         self.assert_publication_not_run(result)
 
+    def test_failure_policy_reaches_simulated_draft_pr_and_preserves_skipped_checks(self):
+        self.fixture.config["pr_policy"]["allow_draft_on_failure"] = True
+        self.fixture.config["publishing"]["draft"] = False
+        self.fixture.write_config()
+        for status in ("failed", "timeout", "unavailable"):
+            with self.subTest(status=status):
+                self.github = SimulatedGitHubCLI()
+                self.test_process = TraceTests(status)
+                result = self.execute()
+                self.assertEqual(result["workflow_status"], "completed_simulation", result)
+                self.assertEqual(result["final_status"], "completed")
+                self.assertEqual(result["validation_status"], "failed")
+                self.assertEqual(len(self.test_process.calls), 1)
+                self.assertEqual(result["validation"]["tests"]["unit"][0]["status"], status)
+                self.assertEqual(result["validation"]["tests"]["e2e"][0]["status"], "not_run")
+                self.assertTrue(next(call["draft"] for call in self.github.calls if call["operation"] == "pr_create"))
+                sealed = json.loads(Path(result["result_path"]).read_text())
+                self.assertEqual(sealed["final_status"], "validation_failed")
+                self.assertTrue(sealed["errors"])
+
+    def test_failure_policy_still_blocks_a_test_that_changes_input_files(self):
+        self.fixture.config["pr_policy"]["allow_draft_on_failure"] = True
+        self.fixture.write_config()
+        original = self.test_process.run
+        def mutate_input(root, *args):
+            (root / "sample/src/main.py").write_text("modified during testing\n")
+            return original(root, *args)
+        with patch.object(self.test_process, "run", side_effect=mutate_input):
+            result = self.execute()
+        self.assertEqual(result["final_status"], "validation_failed")
+        self.assert_publication_not_run(result)
+
     def test_optional_e2e_skip_is_legitimate_and_visible(self):
         self.fixture.config["tests"]["e2e"][0].update(required=False, run_if="never", skip_reason="Optional scenario not applicable")
         self.fixture.write_config()

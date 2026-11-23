@@ -227,6 +227,7 @@ def execute_request(config_path: Path, task: str, repo_root: Path, results_dir: 
         report["validation"] = test_runner.validate_workspace(destination, config, before,
                                                                config_path.relative_to(root).as_posix(), executor=test_executor, stop_on_failure=stop_on_failure)
         report["validation_status"] = report["validation"]["status"]
+        report["draft_on_test_failure"] = test_runner.allow_failure_draft(config, report["validation"])
         report["final_status"] = "completed" if report["validation_status"] == "passed" else "validation_failed"
         report["errors"].extend({"status": "validation_failed", "message": message}
                                 for message in report["validation"]["errors"])
