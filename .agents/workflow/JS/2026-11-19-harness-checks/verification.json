@@ -1,0 +1,26 @@
+{
+  "docs": {
+    "status": "passed",
+    "exit_code": 0
+  },
+  "frontend": {
+    "status": "passed",
+    "exit_code": 0
+  },
+  "backend": {
+    "status": "passed",
+    "exit_code": 0
+  },
+  "contract": {
+    "status": "passed",
+    "exit_code": 0
+  },
+  "e2e": {
+    "status": "passed",
+    "exit_code": 0
+  },
+  "behavior": {
+    "status": "passed",
+    "exit_code": 0
+  }
+}
