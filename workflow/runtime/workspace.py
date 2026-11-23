@@ -43,10 +43,15 @@ _SOURCE_EXAMPLES = {
     "PRJ/compose.yaml": {"PASSWORD: studio}\n"},
     "PRJ/backend/tests/test_auth_and_recovery.py": {'api_key="secret-do-not-print"'},
     "PRJ/backend/tests/test_source_planning.py": {"password = 'fixture-hidden'", 'Bearer alice-fixture"'},
-    "PRJ/frontend/src/accounts/server.ts": {"access_token: result.access_token,"},
+    "PRJ/frontend/src/accounts/server.ts": {"access_token: result.access_token,", "password: body.password "},
     "PRJ/backend/app/manage.py": {"secret = password(args.password_file)\n", "password=secret),", "password=secret,"},
-    "PRJ/frontend/tests/supabase-accounts.spec.ts": {'access_token: "signed-test-boundary"'},
-    "PRJ/backend/tests/test_accounts.py": {'password="initial-password!"'},
+    "PRJ/frontend/tests/supabase-accounts.spec.ts": {
+        'access_token: "signed-test-boundary"', "Password = input.password;", "password = reload ",
+    },
+    "PRJ/frontend/tests/server-fixture.ts": {'password: "a123456789!"', 'Bearer e2e-service-role"'},
+    "PRJ/frontend/tests/app-journey-regressions.spec.ts": {'access_token: "fixture"'},
+    "PRJ/frontend/tests/app-drafts.spec.ts": {'access_token: "fixture"'},
+    "PRJ/backend/tests/test_accounts.py": {'password="initial-password!"', "password='reset-password!'"},
     **dict.fromkeys(
         ("PRJ/frontend/tests/business-helpers.ts", "PRJ/frontend/tests/login.spec.ts",
          "PRJ/frontend/tests/users.spec.ts"),

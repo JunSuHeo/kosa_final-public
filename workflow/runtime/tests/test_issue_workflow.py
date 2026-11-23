@@ -479,7 +479,9 @@ class BoundaryTests(unittest.TestCase):
         adapter.analyze.assert_called_once()
         prompt = adapter.analyze.call_args.args[0]
         for relative in ("PRJ/frontend/src/accounts/server.ts", "PRJ/backend/app/manage.py",
-                         "PRJ/frontend/tests/supabase-accounts.spec.ts", "PRJ/backend/tests/test_accounts.py"):
+                         "PRJ/frontend/tests/supabase-accounts.spec.ts", "PRJ/backend/tests/test_accounts.py",
+                         "PRJ/frontend/tests/server-fixture.ts", "PRJ/frontend/tests/app-drafts.spec.ts",
+                         "PRJ/frontend/tests/app-journey-regressions.spec.ts"):
             self.assertIn(relative, prompt)
         adapter.execute.assert_not_called()
 
