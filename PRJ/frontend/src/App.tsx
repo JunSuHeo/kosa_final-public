@@ -832,9 +832,7 @@ export default function App() {
             health={health}
             onOpen={navigate}
             onStart={(source, intent) => openPage("intake", source, intent)}
-            onSettings={() =>
-              openPage(allowed("sources.manage") ? "settings" : "assignments")
-            }
+            onAssignments={() => openPage("assignments")}
             onError={handleError}
           />
         )

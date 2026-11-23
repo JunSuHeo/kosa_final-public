@@ -54,7 +54,7 @@ export default function BusinessHome({
   health,
   onOpen,
   onStart,
-  onSettings,
+  onAssignments,
   onError,
 }: {
   accountMenu: ReactNode;
@@ -67,7 +67,7 @@ export default function BusinessHome({
   health: Health;
   onOpen: (id: string) => void;
   onStart: (source: Source, intent: PlanningIntent) => void;
-  onSettings: () => void;
+  onAssignments: () => void;
   onError: (e: unknown) => void;
 }) {
   const [sources, setSources] = useState<Source[]>([]);
@@ -131,10 +131,9 @@ export default function BusinessHome({
           <Brand />
         </div>
         <div className="business-header-actions">
-          {!navigation && (canManage || canAssign) && (
-            <button className="secondary" onClick={onSettings}>
-              <Settings2 size={16} />{" "}
-              {canManage ? "업무 연결 설정" : "업무 배정"}
+          {!navigation && !canManage && canAssign && (
+            <button className="secondary" onClick={onAssignments}>
+              <Settings2 size={16} /> 업무 배정
             </button>
           )}
           {accountMenu}

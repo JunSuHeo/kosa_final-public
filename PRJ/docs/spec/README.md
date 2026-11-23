@@ -88,6 +88,7 @@ JSON envelope는 project_id/version/created_at/snapshot이다. Markdown에는 PR
 
 ### 업무 게시와 코드 기준
 
+- 업무 선택 홈 상단에는 업무 연결 설정 버튼을 표시하지 않으며, 홈에서는 관리자 햄버거 메뉴의 ‘업무 연결 설정’ 항목으로 진입한다.
 - `POST /api/sources/{id}/snapshots/{snapshot_id}/publication-preview`는 선택적 design_profile을 받고 사용 가능한 필터링된 파일 manifest, 발췌 예시, 공급자/모델, 디자인과 fingerprint를 반환한다. 외부 모델을 호출하지 않는다.
 - `POST /api/sources/{id}/publish`는 snapshot_id/design_profile/fingerprint를 받는다. 소유자가 확인한 전체 허용 manifest·모델·디자인을 불변 publication으로 저장한다. 같은 fingerprint 재요청은 같은 publication을 반환한다.
 - 새 업무 대화는 현재 게시된 publication을 검증하고 요청 관련 발췌와 디자인을 revision 0에 고정한다. AI 공급자/모델/모드 변경 시 다시 게시해야 하며 과거 작업을 다른 설정으로 재개하지 않는다.

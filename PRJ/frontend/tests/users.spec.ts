@@ -329,8 +329,22 @@ test("업무 권한을 위임받은 역할은 본인 게시 업무만 배정하�
   const preview = await (await request.post(`/api/sources/${source.id}/snapshots/${snapshot.id}/publication-preview`, {headers:ownerHeaders,data:{}})).json();
   expect((await request.post(`/api/sources/${source.id}/publish`, {headers:ownerHeaders,data:{snapshot_id:snapshot.id,fingerprint:preview.fingerprint,design_profile:preview.design_profile}})).ok()).toBeTruthy();
   const user = await context.newPage(); await login(user,"/","user1");
+  const header = user.locator(".business-home .business-header");
+  const settings = header.getByRole("button", {
+    name: "업무 연결 설정",
+    exact: true,
+    includeHidden: true,
+  });
+  for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 1000 }]) {
+    await user.setViewportSize(viewport);
+    await expect(header).toBeVisible();
+    await expect(settings).toHaveCount(0);
+  }
   await expect(user.getByRole("button",{name:"관리자 메뉴 열기"})).toHaveCount(0);
-  await user.getByRole("button",{name:"업무 연결 설정",exact:true}).click();
+  await user.goto("/?view=settings");
+  await expect(
+    user.getByRole("heading", { name: "업무 연결 설정", exact: true }),
+  ).toBeVisible();
   await user.getByRole("button",{name:"업무 배정",exact:true}).click();
   await expect(user.getByRole("heading",{name:"업무 배정",exact:true})).toBeVisible();
   await user.getByLabel("배정할 업무",{exact:true}).selectOption(source.id);
