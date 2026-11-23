@@ -1,7 +1,7 @@
 # Issue 분석 sensitive_content 오탐 수정
 
 - 날짜: 2026-11-23 (Asia/Seoul)
-- 상태: 완료 (수정·검증 완료, PR 게시 준비)
+- 상태: 완료 (수정·검증 및 PR #14 게시)
 - 담당 팀원: SW (`kosa_final-public/.agent-local.md` 기준)
 - 참여 AI: Codex, 조사·런타임 수정·회귀 검증
 - 공동 작업: 해당 없음
@@ -34,6 +34,7 @@
 - 전체 검증: worktree 루트에서 `python3 -B -m unittest discover -s workflow/runtime/tests` 실행, 254개 통과, 10.426초, 종료 코드 0.
 - 게시 전 재검증: 같은 명령으로 254개 통과, 9.906초, 종료 코드 0. 원격 main과 기준 HEAD는 같은 커밋이다.
 - 정적 검증: `git diff --check` 통과.
+- 게시: 사용자 요청에 따라 수정 커밋 `e177912`를 `fix/sensitive-content-analysis` 브랜치로 푸시하고 [PR #14](https://github.com/JunSuHeo/kosa_final-public/pull/14)를 `main` 대상으로 생성했다. 사람 리뷰 대기 상태다.
 - 실제 모델 호출·GitHub 댓글·게시·서비스 DB는 사용하지 않았다. macOS 러너의 원격 Actions 재실행은 미확인이다.
 - 인계: 최신 main 기준 worktree `fix/sensitive-content-analysis`의 수정 사항을 main에 반영한 뒤 실패한 Issue 분석 이벤트를 재실행한다. 초기 WSL GitHub CLI는 인증되지 않았으며, 후속 커밋·푸시·PR 요청에서 Windows GitHub CLI의 저장소 쓰기 권한을 확인했다. 병합·Actions 재실행은 수행하지 않았다.
 - 원래 `fix/macos-backend-validation` 체크아웃의 서비스 소스는 변경하지 않았다.
