@@ -68,6 +68,21 @@ class ValidationTests(unittest.TestCase):
         self.assertGreaterEqual(result["ended_at"], result["started_at"])
         self.assertEqual(workspace.inventory(self.candidate), self.before)
 
+    def test_validation_works_when_temp_parent_has_a_symlink_alias(self):
+        physical = Path(self.temp.name).resolve() / "physical-temp"
+        physical.mkdir()
+        alias = physical.parent / "temp-alias"
+        alias.symlink_to(physical, target_is_directory=True)
+        factory = tempfile.TemporaryDirectory
+        with patch.object(test_runner.tempfile, "TemporaryDirectory",
+                          side_effect=lambda **kwargs: factory(dir=alias, **kwargs)):
+            result = self.validate()
+        self.assertEqual(result["status"], "passed", result["errors"])
+        self.assertEqual(result["scope_status"], "passed")
+        self.assertEqual([test["status"] for tests in result["tests"].values() for test in tests],
+                         ["passed", "passed"])
+        self.assertEqual(workspace.inventory(self.candidate), self.before)
+
     def test_unit_failure_still_collects_e2e(self):
         self.executor.statuses = ["failed", "passed"]
         result = self.validate()
