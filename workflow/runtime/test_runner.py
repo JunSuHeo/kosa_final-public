@@ -391,7 +391,7 @@ def validate_workspace(candidate: Path, config: dict[str, Any], before: dict[str
         validation["candidate_sha256"] = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
         executor = executor if executor is not None else IsolatedTestProcess()
         with tempfile.TemporaryDirectory(prefix="workflow-validation-") as temporary:
-            root = Path(temporary) / "workspace"
+            root = (Path(temporary) / "workspace").resolve()
             shutil.copytree(candidate, root, symlinks=True)
             if workspace.inventory(root) != content:
                 raise ExecutionError("validation_failed", "Candidate changed while preparing the independent test snapshot.")

@@ -63,6 +63,8 @@ CLI 종료 코드 `0`은 전체 흐름 성공, `1`은 실행·검증·게시 실
 
 Linux/WSL에서는 Bubblewrap(`bwrap`), macOS x86_64/ARM64에서는 Seatbelt 기반 `sandbox-exec`로 테스트를 격리한다. macOS sandbox preflight는 후보 snapshot과 private temp 쓰기, host home 차단, network bind 차단을 확인한다. `sandbox-exec`는 Apple이 deprecated 처리했으므로 도구가 없거나 capability 점검에 실패하면 `unavailable`로 기록하고 host에서 실행하지 않는다. 설치·인증·권한 상승은 수행하지 않는다.
 
+독립 검증은 엔진이 만든 임시 복사본의 루트를 실제 경로로 정규화한 뒤 테스트 cwd와 포함 관계를 비교한다. macOS의 `/var` → `/private/var`, `/tmp` → `/private/tmp` 별칭을 같은 경로로 처리하며, 후보 내부의 심볼릭 링크·허용 경로 밖 변경은 계속 차단한다. `validation_failed`와 `path_violation`이 함께 표시되면 원본 `result.json`의 `changed_files`, `validation.scope_status`, `validation.errors`, 검사 실행 여부를 확인한다. 이 코드는 임시 복사본과 파일 링크의 경계 오류에도 사용되므로 표시만으로 PRJ 밖 코드 변경을 의미하지 않는다.
+
 Linux 검증은 시스템 런타임(`/usr`, `/bin`, `/lib`, `/lib64`, `/etc/alternatives`, `/etc/ld.so.cache`)만 읽기 전용으로 제공한다. 테스트 복사본만 `/workspace`에 쓰기 가능하게 마운트하고 HOME·TMPDIR를 임시 경로로 둔 뒤 환경 변수를 비운다. PID·network namespace와 capability 제한을 적용한다. macOS에서는 시스템 runtime 경로, 검증 snapshot, private HOME/TMPDIR만 허용하는 Seatbelt profile을 적용하고 host home과 network 접근을 차단한다. 두 환경 모두 원본 checkout, Codex 인증 파일, host 서비스에 접근하지 않는다.
 
 `uv` 검사는 가상환경과 캐시를 샌드박스의 `/tmp`에 만든다. 검사마다 새 임시 공간을 사용하며, `/workspace`에 생긴 링크와 입력 파일 변경은 기존대로 차단한다.
