@@ -61,7 +61,11 @@ async function operation<T>(key: string, path: string, body: object): Promise<T>
 }
 
 const server: AccountService = {
-  async initialize() {},
+  async initialize() {
+    localStorage.removeItem("hplan-accounts.v1");
+    for (const key of ["hplan-session.v2", "hplan-test-session"]) sessionStorage.removeItem(key);
+    if (sessionStorage.getItem("studio-token")?.startsWith("local:")) setToken("");
+  },
   async login(identifier, password) {
     const version = ++generation;
     const result = await api<LoginResult>("/api/auth/login", { identifier, password });
@@ -85,11 +89,12 @@ const server: AccountService = {
   },
   accounts: () => api<Account[]>("/api/accounts"),
   assignmentAccounts: () => api<Pick<Account, "id" | "loginId" | "name" | "active">[]>("/api/accounts/assignment-options"),
-  create(input: AccountInput) {
+  create({ loginId, name, role, password }: AccountInput) {
+    const input = { loginId, name, role, password };
     return operation<Account>(`create:${input.loginId}:${input.name}:${input.role}`, "/api/accounts", input);
   },
-  async update(id, input) {
-    await api(`/api/accounts/${encodeURIComponent(id)}`, input, "PATCH");
+  async update(id, { name, role, active }) {
+    await api(`/api/accounts/${encodeURIComponent(id)}`, { name, role, active }, "PATCH");
     changed();
   },
   async resetPassword(id, password) {

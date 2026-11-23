@@ -6,25 +6,25 @@ REA로 매니패스트의 공개 JavaScript를 분석하고 로그인된 편집�
 
 ## 실행
 
-팀 개발용 mock 환경과 공용 명령은 [루트 팀 개발 가이드](../README.md)를 참고한다. 아래 명령은 `PRJ/`에서 실행한다.
+팀 개발용 Supabase 환경과 공용 명령은 [루트 팀 개발 가이드](../README.md)를 참고한다. 아래 명령은 `PRJ/`에서 실행한다.
 
 Docker Desktop이 필요하다. 처음 설치할 때 예제에서 로컬 환경 파일을 만든다.
 
 ```sh
 test -f .env || (umask 077; cp .env.example .env)
-docker compose up --build -d
-docker compose ps
-curl -f http://localhost:8010/health
+# 아래 Supabase 연결 절차로 .env.supabase 및 스키마·계정을 먼저 준비한다.
+cd ..
+make up
+make ps
 ```
 
 기존 체크아웃을 갱신할 때는 추적 해제 전에 로컬 `.env`를 안전한 위치에 백업한다. 공용 설정이 필요하면 예제에서 다시 만들고 현재 발급된 값으로 채운다.
 
-- 웹: [http://localhost:5174/](http://localhost:5174/)
-- API: [http://localhost:8010/docs](http://localhost:8010/docs)
-- DB: localhost:54331, Docker volume `planning-studio_studio-data`
+- 웹/API: `make up` 출력 또는 `make ps`의 포트를 사용한다. 이 장비의 Supabase 앱은 웹 5178/API 8014다.
+- DB: `.env.supabase`의 외부 Supabase PostgreSQL. 기존 로컬 DB는 자동 실행하거나 이전하지 않는다.
 - 소스: `frontend/`, `backend/app/`, `backend/migrations/`, `prompts/`
 
-`.env.example`의 기본값은 로컬 인증과 명시적 AI 데모다. 화면에 해당 모드가 표시된다. mock은 `APP_ENV=local`에서만 실행할 수 있다.
+`.env.example`은 공통 설정과 격리 백엔드 테스트용 mock 값을 제공한다. 브라우저 앱은 `.env.supabase`와 Supabase Compose 구성으로 실행한다. mock 인증은 백엔드 격리 검사 전용이며 브라우저 계정 저장소는 사용하지 않는다.
 
 ## Supabase PostgreSQL 연결
 
@@ -38,13 +38,23 @@ curl -f http://localhost:8010/health
 3. `MIGRATION_DATABASE_URL`은 스키마를 관리하는 계정에, `DATABASE_URL`은 `studio_runtime`을 상속하는 전용 실행 계정에 연결한다. 연결 문자열은 비밀번호를 URL 인코딩한 뒤 작은따옴표로 감싸고 `sslmode=require`를 지정한다. API와 worker는 시작할 때 마이그레이션을 실행하지 않는다.
 4. 인증 값과 명시적 마이그레이션, 초기 관리자 생성, 데이터 이전의 전제는 [Supabase 전환 안내](docs/supabase-transition.md)를 확인한다. 운영에 적용하기 전에 별도 DB와 테스트 계정으로 검증한다.
 
+2026-11-20 이 체크아웃에서 관리형 Supabase 연결을 검증했다. 기존 로컬 DB와 별도로 새 스키마·전용 실행 계정·초기 `admin`을 구성했으며 데이터 이전은 수행하지 않았다. 초기 비밀번호는 Git 제외 파일 `.env.supabase.admin-password`에 저장한다. 검증 앱은 다음 명령으로 실행하며 웹은 `http://localhost:5178`, API는 `http://localhost:8014`다.
+
+```sh
+STUDIO_COMPOSE_PROJECT=planning-studio-supabase STUDIO_API_PORT=8014 STUDIO_WEB_PORT=5178 APP_ENV=local AI_MODE=mock \
+  docker compose --env-file .env --env-file .env.supabase \
+  -f compose.yaml -f infra/supabase.compose.yaml up --build -d api worker web
+```
+
+실제 DB·인증과 mock AI를 사용한 검증 결과 및 제한은 [Supabase 실계정 검증](docs/supabase-verification.md#관리형-supabase-연결-검증-2026-11-20)에 기록한다. 재실행에는 이 장비의 Git 제외 설정 파일이 필요하다.
+
 ## 실제 AI
 
 서버 `.env`에서 설정한다. 키를 프런트엔드 또는 `VITE_*` 변수에 넣지 않는다.
 
 ```dotenv
 APP_ENV=local
-AUTH_MODE=mock
+AUTH_MODE=supabase
 AI_MODE=live
 LLM_PROVIDER=openrouter
 OPENROUTER_MODEL=openai/gpt-6.1-sol
@@ -54,7 +64,7 @@ OPENROUTER_API_KEY=서버에서만_사용할_키
 기존 `LLM_API_KEY`와 `LLM_MODEL`도 지원하며 공급자별 키/모델보다 우선한다. 공급자를 바꿀 때 일반 키와 모델도 함께 변경한다. OpenAI는 `LLM_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL`을 사용한다.
 
 ```sh
-docker compose up --build -d api worker
+cd .. && make up
 ```
 
 실패한 실제 호출을 mock으로 대체하지 않는다. 실행에 AI 모드·공급자·모델을 고정하며, 설정을 바꾼 뒤 이전 실행을 이어서 처리하지 않는다. 실제 모델 출력은 서버에서 JSON schema와 항목 연결을 검증한다. 연결 오류의 보정은 최대 한 번이다.
@@ -70,7 +80,7 @@ docker compose up --build -d api worker
 7. **현업 확인본 저장**은 버전을 보관하는 기능이며 IT 최종 승인을 의미하지 않는다. 확인본의 Markdown/JSON을 내보낼 수 있다.
 8. 기록에서 이전 확인본을 조회하고 복원 수정안을 만들 수 있다. 좁은 화면은 **대화/산출물** 전환과 **기획 도구** 메뉴를 사용한다.
 
-계정·권한은 mock 모드에서는 브라우저 목업으로, Supabase 모드에서는 서버 계정 API로 관리한다. 운영 인증 전환과 IT 최종 승인은 후속 범위다. 업무 연결은 소유자가 준비·게시하고 계정별로 배정한다. 관리자는 다른 계정의 기획을 열람하지 않는다. 코드 변경은 5분 간격으로 백그라운드 확인하며 기존 기획의 코드 기준을 자동 교체하지 않는다.
+계정·권한은 서버 계정 API와 DB로 관리하며 비밀번호 검증은 Supabase Auth가 담당한다. IT 최종 승인은 후속 범위다. 업무 연결은 소유자가 준비·게시하고 계정별로 배정한다. 관리자는 다른 계정의 기획을 열람하지 않는다. 코드 변경은 5분 간격으로 백그라운드 확인하며 기존 기획의 코드 기준을 자동 교체하지 않는다.
 
 새로고침과 재접속 후에도 프로젝트·질문·메시지·proposal·확정본이 PostgreSQL에 유지된다. worker 재시작은 저장된 단계부터 재개한다. DB 결과는 중복 생성하지 않지만, 저장 직전에 중단된 외부 모델 호출은 다시 일어날 수 있다.
 
@@ -78,15 +88,22 @@ docker compose up --build -d api worker
 
 실제 인증은 `AUTH_MODE=supabase`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_AUDIENCE`로 설정한다. 서버에 등록된 계정의 ID와 비밀번호로 로그인한다. 서버는 계정 관리에 `SUPABASE_SERVICE_ROLE_KEY`를 사용한다. 서버는 JWKS와 RS256/ES256 서명, issuer/audience/sub/iat/exp를 확인한다. 서버 인증 구현은 만료된 토큰을 갱신하고 갱신에 실패하면 로그인 화면으로 이동한다. 회원가입·조직·초대는 이번 범위에 없다.
 
-로컬 `AUTH_MODE=mock` UI는 중앙 로그인 카드를 사용한다. 기본 계정은 `admin`(ADMINISTRATOR), `user1`(USER1), `user2`(USER2)이며 초기 테스트 비밀번호는 모두 `a123456789!`다. admin의 내부 ID는 기존 `demo-user`이고 user1·user2는 `test-user-1`, `test-user-2`로 기획 소유권이 분리된다. ID·표시 이름·역할은 별개이며 역할을 바꿔도 소유권은 유지된다. 계정은 화면에 자동 입력하지 않는다.
+로컬 테스트 계정은 `admin`(ADMINISTRATOR), `user1`(USER1), `user2`(USER2)다. 명시적 관리 명령으로 구성하며, 앱 시작이나 브라우저 진입 시 자동 생성·초기화하지 않는다. admin의 기존 내부 ID와 기획 소유권을 유지하고 일반 계정에는 서버가 고유 ID를 발급한다. 브라우저 목업의 계정 ID·비밀번호 검증값은 이전하지 않는다.
+
+```sh
+docker compose --env-file .env --env-file .env.supabase \
+  -f compose.yaml -f infra/supabase.compose.yaml run --rm manage seed-test-accounts
+```
+
+비밀번호는 대화형 입력 또는 읽기 전용으로 마운트한 파일의 `--password-file`로 전달한다. 명령은 `APP_ENV=local`, `AUTH_MODE=supabase`에서만 허용한다. 기존 계정은 유지하고 없는 계정만 생성하며 역할·활성 상태가 다르면 오류로 중단한다. 기존 비밀번호도 바꾸려는 경우에만 `--reset-passwords`를 붙인다. 이 장비의 세 계정은 사용자 지정 공통 테스트 비밀번호로 구성하며 관리자 비밀번호 파일도 Git 제외 상태로 유지한다.
 
 관리자의 왼쪽 위 메뉴에서 **계정 관리 / 역할·권한 설정 / 변경 이력**을 연다. 계정 등록·이름/역할/상태 변경·비밀번호 재설정·게시 업무 배정을 지원하며 마지막 활성 관리자는 보호한다. 업무는 연결 소유자가 게시한 뒤 배정하고, 사용자는 배정된 업무로 본인 기획을 만든다. 배정을 해제해도 기존 문서와 확인본 내보내기는 유지되지만 새 AI 요청은 차단된다.
 
-`frontend/src/accounts/types.ts`의 비동기 `AccountService`가 로그인·현재 계정·관리·권한 정책·이력 인터페이스이고 `accounts/index.ts`에서 인증 모드에 따라 브라우저 구현 또는 서버 구현을 선택한다. 목업 계정·정책·이력은 버전 있는 localStorage에, 세션은 계정 ID와 세션 버전만 sessionStorage에 보관한다. 비밀번호는 계정별 임의 salt와 PBKDF2-SHA256(120,000회) 검증값으로 저장한다. 역할·사용 상태·비밀번호 변경은 세션 버전을 올려 다른 탭에도 적용한다. 브라우저 목업 권한은 운영 보안 경계가 아니며 운영 계정 검증은 후속이다. 서버는 기존 프로젝트 소유권과 업무 배정·업무 소유권을 별도로 검증하고 Supabase 경로는 유지한다.
+`frontend/src/accounts/types.ts`의 비동기 `AccountService`는 서버 구현만 사용한다. `studio_accounts`는 계정·역할·활성 상태를, `studio_role_permissions`는 역할별 권한을, `studio_auth_sessions`는 세션 버전과 해제 상태를, `studio_audit`는 변경 이력을 저장한다. 비밀번호 검증은 Supabase Auth가 담당하며 브라우저와 앱 테이블에 비밀번호·검증값을 저장하지 않는다. 브라우저의 sessionStorage에는 서버 세션 토큰과 만료 시각만 보관한다. 과거 브라우저 목업 계정·세션은 초기화 시 제거한다. 역할·사용 상태·비밀번호 변경은 서버 세션을 해제하며 권한 정책은 서버 요청마다 검증한다.
 
-업무 배정 API는 `GET /api/sources/{id}/assignments`, `PUT/DELETE /api/sources/{id}/assignments/{account_id}`다. actor는 인증 토큰에서만 가져오며 대상 account_id만 경로로 전달한다. `005_source_assignments.sql`은 배정 관계를 추가하고 프로젝트의 source-owner 복합 FK를 source FK로 바꾼다. 스냅샷·게시 기준·revision 불변성과 snapshot/source 복합 FK는 유지된다. 계정 저장소 초기화는 계정·정책·이력을 초기화하므로 일반 사용 중에는 브라우저 사이트 데이터를 삭제하지 않는다.
+업무 배정 API는 `GET /api/sources/{id}/assignments`, `PUT/DELETE /api/sources/{id}/assignments/{account_id}`다. actor는 인증 토큰에서만 가져오며 대상 account_id만 경로로 전달한다. `005_source_assignments.sql`은 배정 관계를 추가하고 프로젝트의 source-owner 복합 FK를 source FK로 바꾼다. 스냅샷·게시 기준·revision 불변성과 snapshot/source 복합 FK는 유지된다. 브라우저 사이트 데이터를 삭제해도 서버의 계정·정책·이력과 기획 데이터는 유지된다.
 
-mock 인증은 로컬 UI 검증 전용이다. 모든 API는 서버에서 소유권을 검사한다. 인증 오류는 401, 없는/다른 소유자의 리소스는 동일한 404, 버전·멱등성 충돌은 409다.
+mock Bearer 인증은 격리 백엔드 테스트 전용이다. 브라우저 앱은 Supabase 인증을 사용한다. 모든 API는 서버에서 소유권을 검사한다. 인증 오류는 401, 없는/다른 소유자의 리소스는 동일한 404, 버전·멱등성 충돌은 409다.
 
 ## 검증
 
@@ -140,7 +157,7 @@ npm ci
 npm run build
 ```
 
-격리된 mock E2E는 루트에서 다음을 실행한다. 실행마다 별도 Compose 프로젝트·DB volume·자동 할당된 루프백 포트를 사용한다. 종료 시 해당 실행의 컨테이너와 볼륨을 정리한다.
+격리 E2E는 `PRJ/`에서 다음을 실행한다(저장소 루트에서는 `make e2e`). 실행마다 별도 Compose 프로젝트·DB volume·자동 할당된 루프백 포트를 사용한다. `infra/e2e.compose.yaml`의 테스트 전용 Auth가 ES256 JWT/JWKS를 제공하고 실제 API·DB 계정·권한 경로를 검증한다. 각 테스트는 전용 DB/Auth 상태를 초기화하며 실제 Supabase 키·DB와 모델은 사용하지 않는다. 종료 시 해당 실행의 컨테이너와 볼륨을 정리하고 실패 증거는 Git 제외 `.research/`에 보존한다.
 
 ```sh
 sh scripts/e2e.sh

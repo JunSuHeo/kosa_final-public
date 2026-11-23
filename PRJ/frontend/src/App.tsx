@@ -529,7 +529,6 @@ export default function App() {
   if (!authed)
     return (
       <Login
-        mock={health.auth_mode === "mock"}
         notice={error || authNotice}
         onLogin={async (identifier, password) => {
           setError("");
@@ -738,9 +737,9 @@ export default function App() {
               </button>
               <div
                 className="avatar"
-                title={health.auth_mode === "mock" ? "로컬 사용자" : "로그인됨"}
+                title="로그인됨"
               >
-                {health.auth_mode === "mock" ? "A" : "나"}
+                나
               </div>
             </div>
           </nav>
@@ -1014,6 +1013,7 @@ export default function App() {
                 <button
                   className="secondary small"
                   disabled={
+                    working ||
                     viewIsCandidate ||
                     !visibleVersion ||
                     !!edit ||

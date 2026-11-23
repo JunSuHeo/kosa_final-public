@@ -9,11 +9,9 @@ import {
 import { Brand } from "./BusinessHome";
 
 export default function Login({
-  mock,
   onLogin,
   notice,
 }: {
-  mock: boolean;
   onLogin: (id: string, password: string) => Promise<void>;
   notice?: string;
 }) {
@@ -57,7 +55,6 @@ export default function Login({
         >
           <div className="login-brand-row">
             <Brand />
-            {mock && <span className="test-badge">테스트 환경</span>}
           </div>
           <span className="login-emblem" aria-hidden="true">
             <LockKeyhole size={25} />

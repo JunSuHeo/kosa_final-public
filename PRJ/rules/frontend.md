@@ -24,7 +24,7 @@ React 19, TypeScript, Vite 6, React Flow(`@xyflow/react`), `lucide-react`를 사
 
 관리자 홈의 업무 연결 설정은 왼쪽 햄버거 메뉴에서 연다. 관리자 내비게이션이 있는 경우 오른쪽 위의 중복 바로가기는 표시하지 않는다. 관리자 내비게이션 없이 업무 관리·배정 권한을 받은 사용자는 홈의 바로가기를 사용한다.
 
-Supabase 모드도 ID 로그인을 사용한다. `accounts/server.ts`가 서버 계정 API와 탭 세션·토큰 갱신을 처리하고, `accounts/index.ts`에서 mock/browser 구현과 선택한다. Supabase 모드의 실제 권한 검증은 API 서버가 수행한다. 실제 계정 전환의 검증 상태는 [전환 인계](../docs/supabase-transition.md)를 확인한다.
+브라우저 앱은 ID 로그인을 사용한다. `accounts/server.ts`가 서버 계정 API와 탭 세션·토큰 갱신을 처리하며 `accounts/index.ts`는 서버 구현만 제공한다. 브라우저 계정·정책·비밀번호 검증 구현은 제거했다. 실제 권한 검증은 API 서버가 수행한다. 실제 계정 전환의 검증 상태는 [전환 인계](../docs/supabase-transition.md)를 확인한다.
 
 ## 실제 코드 사용 예시
 
@@ -68,7 +68,7 @@ update((snapshot) => {
 ## 변경 시 확인할 계약
 
 - 표시 우선순위는 편집 draft → 과거 revision → 선택된 proposal → 현재 revision이다. 확정본과 검토 중인 수정안을 구분한다.
-- `api.ts`는 토큰을 `sessionStorage`의 `studio-token`에 보관한다. mock 앱은 `local:demo-user`, 실제 모드는 서버 로그인 응답 토큰을 사용한다.
+- 서버 로그인 응답 토큰·만료 시각은 `hplan-supabase-session.v1`, API 토큰은 `studio-token`에 보관한다. 초기화 시 과거 목업 계정·세션과 `local:` 토큰을 제거한다. 계정·역할 정책·감사 이력은 브라우저에 저장하지 않는다.
 - 401에서 인증 초기화, 404/409 오류 표시·새 상태 조회, 프로젝트 전환 중 응답 취소를 확인한다.
 - snapshot 변경은 서버 schema·검증·프롬프트·문서와 `types.ts`를 함께 검토한다.
 - 역할 검토는 proposal ID 또는 확정 버전에 연결한다. 다른 대상의 결과를 재사용하지 않는다.
@@ -86,7 +86,7 @@ npm run build
 
 개발 서버는 `127.0.0.1:5174`, `/api`·`/health` 프록시는 `127.0.0.1:8010`이다. Compose web도 기본 5174이므로 동시 실행 때 포트를 조정한다.
 
-UI 동작 검증은 `PRJ/`에서 `sh scripts/e2e.sh`를 실행한다. 세부 전제는 [infra.md](infra.md)를 따른다. 스크립트는 테스트 환경을 기동하고 자동 할당된 주소를 Playwright에 전달한다. 스크립트 없이 실행할 때는 준비한 환경의 주소를 `E2E_BASE_URL`로 명시한다.
+UI 동작 검증은 `PRJ/`에서 `sh scripts/e2e.sh`를 실행한다. 세부 전제는 [infra.md](infra.md)를 따른다. 스크립트는 테스트 환경을 기동하고 자동 할당된 주소를 Playwright에 전달한다. DB 계정 E2E는 `server-fixture.ts`로 각 테스트의 격리 DB/Auth를 초기화하고 실제 API 로그인을 사용한다. `E2E_BASE_URL`과 `E2E_AUTH_URL`은 실행 스크립트가 제공한다. 테스트 전용 Auth의 초기화 API를 실제 환경에 노출하지 않는다.
 
 | 테스트 | 용도 |
 | --- | --- |
@@ -95,4 +95,4 @@ UI 동작 검증은 `PRJ/`에서 `sh scripts/e2e.sh`를 실행한다. 세부 전
 | `frontend/tests/live-review.spec.ts`, `live-preview.spec.ts` | 실제 호출 결과가 있는 대상 검사. 파일별 전제 확인 |
 | `frontend/tests/luna-usability.spec.ts` | 지정한 기존 프로젝트의 데스크톱·모바일 관찰 |
 
-live 검사와 격리 mock E2E를 구분한다. 기존 통과 기록을 이번 변경의 결과로 보고하지 않는다. UI 구조·사용 흐름 변경은 이 문서와 관련 테스트에 반영한다.
+실제 Supabase 검사와 격리 Auth/mock AI E2E를 구분한다. 기존 통과 기록을 이번 변경의 결과로 보고하지 않는다. UI 구조·사용 흐름 변경은 이 문서와 관련 테스트에 반영한다.

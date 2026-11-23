@@ -34,7 +34,9 @@ worker → 모델 공급자 / 허용된 로컬 저장소 / GitHub
 
 Supabase 구성은 `infra/supabase.compose.yaml`의 `manage` 서비스를 통해 스키마 변경·초기 관리자 생성·데이터 이전을 명시적으로 실행한다. API·worker는 `AUTO_MIGRATE=false`이며 worker에는 Auth 관리자 키와 이전용 DB 연결을 전달하지 않는다. 현재 준비 상태와 후속 절차는 [전환 인계](../docs/supabase-transition.md)를 확인한다.
 
-팀 개발용 `make up`은 저장소 루트에서 실행한다. 체크아웃 전용 Compose 프로젝트와 자동 할당 포트로 mock 앱을 실행한다. 나머지 공용 명령은 [팀 개발 가이드](../../README.md#자주-쓰는-명령)를 참고한다.
+2026-11-20 이 체크아웃의 관리형 Supabase 앱은 별도 `planning-studio-supabase` 프로젝트의 웹 5178/API 8014에서 실제 인증·mock AI로 검증했다. 실행 명령은 [README의 Supabase 연결](../README.md#supabase-postgresql-연결), 실제 확인 사항은 [실계정 검증](../docs/supabase-verification.md#관리형-supabase-연결-검증-2026-11-20)을 따른다. 기존 기본 프로젝트의 로컬 DB·서비스와 구분한다.
+
+팀 개발용 `make up`은 저장소 루트에서 실행한다. `.env`와 `.env.supabase`로 Supabase 앱을 실행한다. `infra/dev.compose.yaml`은 기본적으로 체크아웃 전용 프로젝트와 자동 할당 포트를 사용하고, `.env.supabase`의 `STUDIO_COMPOSE_PROJECT`, `STUDIO_API_PORT`, `STUDIO_WEB_PORT`로 기존 앱을 재사용할 수 있다. 로컬 DB는 자동 실행하지 않는다. 나머지 공용 명령은 [팀 개발 가이드](../../README.md#자주-쓰는-명령)를 참고한다.
 
 기존 상태를 먼저 확인한다. `.env` 원문은 로그에 출력하지 않는다.
 
@@ -49,7 +51,7 @@ curl -fsS http://localhost:8010/health
 
 ```sh
 test -f .env || cp .env.example .env
-docker compose up --build -d
+cd .. && make up
 ```
 
 설정 변경·재기동은 사용자 요청 범위와 서비스 영향을 확인한 뒤 수행한다. 문서·정적 코드 작업 때문에 서비스나 모델 설정을 변경하지 않는다.
@@ -99,7 +101,7 @@ UI·API·worker 통합 검증은 다음을 사용한다.
 sh scripts/e2e.sh
 ```
 
-스크립트는 실행마다 별도 Compose 프로젝트, DB 볼륨, 임시 Git fixture와 루프백 포트를 사용한다. `infra/test.compose.yaml`로 mock 인증/AI 및 예제 환경을 지정한다. 종료 시 해당 실행의 컨테이너·볼륨·빌드 이미지를 정리하고 실패 시 브라우저 증거를 보존한다. 같은 호스트에서 병렬로 실행할 수 있다.
+스크립트는 실행마다 별도 Compose 프로젝트, DB 볼륨, 임시 Git fixture와 루프백 포트를 사용한다. `infra/test.compose.yaml`과 `infra/e2e.compose.yaml`로 예제 설정, 별도 `studio_e2e` DB, 테스트 전용 Auth와 mock AI를 지정한다. Auth fixture는 ES256 JWT/JWKS를 제공하며 각 테스트 시작 시 DB/Auth를 초기화한다. 전용 DB 이름·호스트·fixture 키를 검사하며 실제 Supabase 설정을 읽지 않는다. 종료 시 해당 실행의 컨테이너·볼륨·빌드 이미지를 정리하고 실패 시 브라우저 증거와 테스트 서비스 로그를 보존한다. 같은 호스트에서 병렬로 실행할 수 있다.
 
 운영 검증은 [README](../README.md)의 별도 `planning-studio-ops` / `54333/8012/5176` 전제를 따른다. 원본 DB를 덮어쓰지 않고 별도 DB에 복원한다. dump·민감 원시 로그는 Git 제외 경로에 둔다.
 

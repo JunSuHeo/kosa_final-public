@@ -1,15 +1,15 @@
 import { login } from "./business-helpers";
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./server-fixture";
 test.beforeEach(async ({ page }) => {
   await login(page);
 });
 import { begin, draft, confirm, readBundle } from "./business-helpers";
-const headers = { Authorization: "Bearer local:demo-user" };
+import { headers } from "./server-fixture";
 
 test.beforeEach(async ({ request }) => {
   const health = await (await request.get("/health")).json();
   test.skip(
-    health.ai_mode !== "mock" || health.auth_mode !== "mock",
+    health.ai_mode !== "mock" || health.auth_mode !== "supabase",
     "isolated mock flow",
   );
 });

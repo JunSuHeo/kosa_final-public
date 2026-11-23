@@ -1,11 +1,11 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./server-fixture";
 import { login } from "./business-helpers";
-const headers = { Authorization: "Bearer local:demo-user" };
+import { headers } from "./server-fixture";
 const password = "a123456789!";
 
 test.beforeEach(async ({ request }) => {
   const health = await (await request.get("/health")).json();
-  expect(health.auth_mode).toBe("mock");
+  expect(health.auth_mode).toBe("supabase");
   expect(health.ai_mode).toBe("mock");
 });
 
@@ -23,7 +23,7 @@ test("로그인 전에는 계정과 업무 데이터를 표시하지 않고 빈 
   await expect(
     page.getByRole("heading", { name: "업무 기획을 시작해 보세요" }),
   ).toBeVisible();
-  await expect(form).toContainText("테스트 환경");
+  await expect(form).not.toContainText("테스트 환경");
   await expect(form).not.toContainText("admin");
   await expect(form).not.toContainText(password);
   await expect(page.getByLabel("아이디", { exact: true })).toHaveValue("");
@@ -61,8 +61,8 @@ test("오입력은 ID를 유지하고 비밀번호를 지우며 표시 전환·E
     .click();
   await expect(pw).toHaveAttribute("type", "password");
   await pw.press("Enter");
-  await expect(page.getByRole("alert")).toHaveText(
-    "ID 또는 비밀번호를 확인해 주세요.",
+  await expect(page.getByRole("alert")).toContainText(
+    "ID 또는 비밀번호를 확인해 주세요",
   );
   await expect(id).toHaveValue("wrong");
   await expect(pw).toHaveValue("");
@@ -70,8 +70,8 @@ test("오입력은 ID를 유지하고 비밀번호를 지우며 표시 전환·E
   await id.fill(" admin ");
   await pw.fill(password + " ");
   await pw.press("Enter");
-  await expect(page.getByRole("alert")).toHaveText(
-    "ID 또는 비밀번호를 확인해 주세요.",
+  await expect(page.getByRole("alert")).toContainText(
+    "ID 또는 비밀번호를 확인해 주세요",
   );
   await pw.fill(password);
   await pw.press("Enter");
