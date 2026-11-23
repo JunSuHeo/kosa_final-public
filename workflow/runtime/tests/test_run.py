@@ -319,6 +319,35 @@ class EngineTests(unittest.TestCase):
                 with patch.dict(os.environ, {"WORKFLOW_TEST_TOKEN": value}):
                     self.assertTrue(workspace._has_sensitive_source(original, path))
 
+    def test_reviewed_authentication_expressions_are_scoped_to_their_files(self):
+        examples = {
+            "PRJ/frontend/src/accounts/server.ts": "operationInputs.set(key, { id, password: body.password });",
+            "PRJ/frontend/tests/supabase-accounts.spec.ts":
+                'actualPassword = input.password;\nconst password = reload ? "first-password!" : "second-password!";',
+        }
+        for path, text in examples.items():
+            with self.subTest(path=path):
+                self.assertFalse(workspace._has_sensitive_source(text, path))
+                self.assertTrue(workspace._has_sensitive_source(text, "other/" + Path(path).name))
+                self.assertTrue(workspace._has_sensitive_source(text + '\npassword="synthetic-private-value"', path))
+
+    def test_reviewed_authentication_fixtures_reject_changed_values_and_inherited_secrets(self):
+        examples = (
+            ("PRJ/frontend/tests/server-fixture.ts", 'password: "a123456789!"', "a123456789!"),
+            ("PRJ/frontend/tests/server-fixture.ts", 'Authorization: "Bearer e2e-service-role"', "e2e-service-role"),
+            ("PRJ/frontend/tests/app-journey-regressions.spec.ts", 'access_token: "fixture"', "fixture"),
+            ("PRJ/frontend/tests/app-drafts.spec.ts", 'access_token: "fixture"', "fixture"),
+            ("PRJ/backend/tests/test_accounts.py", "login(password='reset-password!')", "reset-password!"),
+        )
+        for path, text, value in examples:
+            with self.subTest(path=path, value=value):
+                self.assertFalse(workspace._has_sensitive_source(text, path))
+                self.assertTrue(workspace._has_sensitive_source(text, "other/" + Path(path).name))
+                for replacement in ("synthetic-private-value", value + " synthetic-extra"):
+                    self.assertTrue(workspace._has_sensitive_source(text.replace(value, replacement), path))
+                with patch.dict(os.environ, {"WORKFLOW_TEST_TOKEN": value}):
+                    self.assertTrue(workspace._has_sensitive_source(text, path))
+
     def test_task_redaction(self):
         with patch.dict(os.environ, {"WORKFLOW_TEST_TOKEN": "synthetic-private-value"}):
             result = self.execute(task="Use synthetic-private-value and password=made-up-value")

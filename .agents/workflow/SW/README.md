@@ -8,4 +8,4 @@ SW가 AI와 진행한 작업의 계획·판단 요약·변경·검증·인계를
 
 ## 작업 목록
 
-아직 등록된 작업이 없다.
+- [2026-11-23 Issue 분석 sensitive_content 오탐 수정](2026-11-23-sensitive-content-analysis/README.md)
