@@ -24,7 +24,8 @@ def execute_workflow(config_path: Path, task: str, repo_root: Path, results_dir:
     result.update(execution_id=generation["run_id"], project_name=generation["project_id"],
                   workflow_mode=publish_mode, workflow_status="failed", workflow_result_path=None,
                   publication={"status": "not_run", "attempted": False, "pr_url": None})
-    if generation["final_status"] == "completed" and generation["validation_status"] == "passed":
+    if ((generation["final_status"] == "completed" and generation["validation_status"] == "passed")
+            or (generation["final_status"] == "validation_failed" and generation.get("draft_on_test_failure"))):
         stage = {"name": "publication", "status": "running", "started_at": run._now(), "ended_at": None}
         result["stages"].append(stage)
         # Pass only sealed evidence to the existing publisher. Simulated adapters
@@ -42,6 +43,7 @@ def execute_workflow(config_path: Path, task: str, repo_root: Path, results_dir:
                        and not publication["blocked_reasons"])
             stage.update(status="passed" if success else "failed", ended_at=run._now())
             if success:
+                result["final_status"] = "completed"
                 result["workflow_status"] = {"simulate": "completed_simulation", "prepare": "prepared", "real": "published"}[publish_mode]
             else:
                 result["final_status"] = ("approval_invalidated" if any(reason.get("status") == "approval_invalidated"

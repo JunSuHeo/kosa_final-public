@@ -8,7 +8,7 @@ Python 3.12 이상과 표준 라이브러리를 사용한다. 현재 Codex 어�
 
 `CLI → 설정의 고정된 복사본 검증 → 환경·문서·CLI 확인 → 격리된 파일 복사 → Codex 실행 → 변경 경로·내용 검증 → 별도 임시 복사본에서 Unit/E2E 실행 → 실제 결과 판정 → 검증 근거 저장 → 게시 조건 재검사 → 외부 로컬 Commit 준비 → 모의 Push·PR 요청 → 통합 결과 저장`
 
-`orchestrator.execute_workflow(...)`는 기존 `run.execute_request(...)`와 `publish.publish(...)`를 호출하는 통합 제어 함수다. `execute_request(...)`의 기존 생성·검증 전용 인터페이스는 유지한다. Codex 실패 시 변경 수집·테스트·게시를 진행하지 않으며, 허용 범위 위반 시 테스트·게시를 차단한다. 필수 또는 차단 정책 테스트가 실패하면 후속 테스트를 `not_run`으로 기록하고 게시를 실행하지 않는다. 검증 통과 후에도 변경 없음, 기준 Branch 불일치, 기존 사용자 변경, 근거 손상 등 게시 조건을 만족하지 못하면 실패로 종료한다.
+`orchestrator.execute_workflow(...)`는 기존 `run.execute_request(...)`와 `publish.publish(...)`를 호출하는 통합 제어 함수다. `execute_request(...)`의 기존 생성·검증 전용 인터페이스는 유지한다. Codex 실패 시 변경 수집·테스트·게시를 진행하지 않으며, 허용 범위 위반 시 테스트·게시를 차단한다. 필수 또는 차단 정책 테스트가 실패하면 후속 테스트를 `not_run`으로 기록한다. `pr_policy.allow_draft_on_failure=true`이면 테스트 실패·실행 불가·시간 초과를 보존하고 검토용 Draft PR 게시로 이어진다. PRJ 설정은 이 정책을 활성화했다. 변경 없음, 기준 Branch 불일치, 기존 사용자 변경, 근거 손상이나 테스트 입력 변경은 게시를 차단한다.
 
 `run.py`는 기존 `validate_config.validate_config(config_path, repo_root)`를 호출한다. 검증기의 JSON 읽기·경로 검사 함수를 내부적으로 재사용한다. 설정의 임시 복사본은 개인 접근 권한으로 생성하고 Codex 실행 전에 삭제한다. 이후 테스트도 이때 고정한 설정으로 실행하며 후보나 원본에서 변경된 설정을 다시 읽지 않는다.
 
@@ -45,6 +45,8 @@ python -B -m workflow.runtime.run \
 
 CLI 종료 코드 `0`은 전체 흐름 성공, `1`은 실행·검증·게시 실패, `2`는 인자 오류다. 성공 시 기존 `final_status=completed`를 유지하고 `workflow_status`로 `completed_simulation`, `prepared`, `published`를 구분한다. 게시 실패는 `final_status=publication_failed`로 기록한다. 통합 결과에서 모의 성공은 실제 GitHub 권한이나 원격 게시 성공을 뜻하지 않는다. 기존 검증 근거 `result.json`은 게시 실패 시에도 덮어쓰지 않는다. 과거 결과의 `completed_unverified`는 독립 검증 이전 상태이며 검증 통과로 재해석하지 않는다. 테스트 통과는 사용자 요청의 완전한 달성이나 병합 승인을 보증하지 않는다.
 
+실패 후 Draft PR 게시가 완료되면 통합 보고서 `workflow.json`의 `final_status`는 `completed`이며 `validation_status=failed`와 실제 검사 결과·오류는 유지한다. 검증 근거 `result.json`의 `final_status=validation_failed`도 그대로 보존한다. `draft_on_test_failure`는 고정된 정책과 테스트 결과로 판정한 Draft 게시 대상 여부이며, 게시 모듈은 설정과 근거를 다시 검증한다.
+
 ## 독립 테스트 설정과 실행
 
 공통 실행 코드는 프로젝트의 `tests.unit`, `tests.e2e` 항목에서 `command.program`, `command.args`, `cwd`, `required`를 사용한다. 통합 실행은 Unit Test 이후 E2E를 실행하며, 차단되는 실패가 발생하면 후속 검사를 `not_run`과 사유로 남긴다. `on_failure=record`인 선택 검사 실패는 기록 후 계속할 수 있다. 기존 `validate_workspace(...)`와 `execute_request(...)`를 직접 호출하면 기본적으로 나머지 검사도 수집하는 동작을 유지하며, 통합 제어 함수는 `stop_on_failure=True`를 전달한다. 명령과 인수는 배열로 전달하고 셸 문자열로 합치지 않는다. 명령 자체가 실행하는 코드의 안전성은 별도 검토가 필요하다.
@@ -71,7 +73,7 @@ Linux 검증은 시스템 런타임(`/usr`, `/bin`, `/lib`, `/lib64`, `/etc/alte
 
 `prj-backend-check`는 Linux와 macOS에서 임시 `studio_test` PostgreSQL로 백엔드 pytest를 실행한다. PRJ 설정은 `required: true`, `run_if: always`, `on_failure: block`이다. 러너의 시스템 PATH에 `uv`와 Python 3.12 이상, PostgreSQL 서버·클라이언트 도구가 필요하다. PostgreSQL 도구는 PATH 외에도 Linux의 `/usr/lib/postgresql/*/bin`, macOS Homebrew의 `/opt/homebrew/opt/postgresql@*/bin` 및 `/usr/local/opt/postgresql@*/bin`에서 찾는다. 실행 중 도구를 설치하거나 서비스 DB에 연결하지 않는다.
 
-Actions는 승인 확인 후 신뢰된 기준 checkout의 잠금 파일로 별도 `/tmp/workflow-prj-deps.*` 위치에 의존성 캐시를 준비한다. 이 단계의 `uv sync`는 비밀값 없는 환경에서 `--frozen --no-build --no-python-downloads`로 실행하며, 후보의 코드나 설치 스크립트를 실행하지 않는다. 완료된 캐시만 `WORKFLOW_PRJ_UV_CACHE`로 검증기에 전달하고 실행 종료 시 삭제한다. 실제 검사는 해당 캐시에서 `--offline --frozen --no-build --no-python-downloads`로 설치하므로 후보가 새 의존성을 요구하면 검사 준비 실패로 차단한다.
+Actions는 승인 확인 후 신뢰된 기준 checkout의 잠금 파일로 별도 `/tmp/workflow-prj-deps.*` 위치에 의존성 캐시를 준비한다. 이 단계의 `uv sync`는 비밀값 없는 환경에서 `--frozen --no-build --no-python-downloads`로 실행하며, 후보의 코드나 설치 스크립트를 실행하지 않는다. 완료된 캐시만 `WORKFLOW_PRJ_UV_CACHE`로 검증기에 전달하고 실행 종료 시 삭제한다. 캐시 준비 단계의 실패 후에도 코드 실행과 검증으로 이어지며, 검증기는 준비되지 않은 캐시를 `unavailable`로 기록한다. 실제 검사는 해당 캐시에서 `--offline --frozen --no-build --no-python-downloads`로 설치하고, 후보가 새 의존성을 요구하면 검사 준비 실패로 기록한다. Draft 허용 정책에 따라 게시 여부를 판정한다.
 
 Linux는 기존 Bubblewrap의 읽기 전용 캐시 마운트를 유지한다. macOS는 신뢰된 실행 스크립트만 private scratch로 복사하고 캐시에 읽기 권한만 준다. 짧은 `/private/tmp/wpg-*` 경로에 DB·소켓·가상환경을 만들어 Unix 소켓의 104바이트 제한을 피한다. PostgreSQL의 System V semaphore와 기본 시스템 사용자 조회를 허용하고 공유 메모리는 mmap 파일로 제한한다. 네트워크는 해당 scratch의 PostgreSQL Unix 소켓에만 허용하며 TCP, 다른 Unix 소켓, host HOME은 차단한다. 별도 capability 점검에서 사용자 조회, 소켓 왕복, 캐시 읽기·쓰기 차단, 외부 Unix 소켓·TCP·HOME 차단을 확인한 뒤 실행한다. 점검 실패나 의존성·DB 준비 실패는 `unavailable`이며 host 실행으로 대체하지 않는다.
 
@@ -94,7 +96,7 @@ WORKFLOW_PRJ_TESTS=1 WORKFLOW_PRJ_UV_CACHE=/absolute/prepared/uv-cache \
 | `unavailable` | 격리·실행 파일·런타임·출력 수집 문제로 검사 불가 |
 | `timeout` | 설정한 시간 제한 초과. 종료 코드와 수집된 부분 로그 포함 |
 
-필수 검사 중 하나라도 `passed`가 아니면 최종 검증은 실패다. 선택 검사의 `block` 정책 위반도 실패이며 `record` 정책의 결과는 그대로 남긴다. 실제 성공한 검사가 하나도 없으면 `not_run`으로 판정하고 실행을 완료 상태로 표시하지 않는다. 테스트 실패 후 Codex를 자동 재호출하지 않는다.
+필수 검사 중 하나라도 `passed`가 아니면 최종 검증은 실패다. 선택 검사의 `block` 정책 위반도 실패이며 `record` 정책의 결과는 그대로 남긴다. 차단하는 실패가 없고 실제 성공한 검사도 없으면 `not_run`으로 판정하며 Draft 예외를 적용하지 않는다. 테스트 실패 후 Codex를 자동 재호출하지 않는다. Draft 예외는 실패한 테스트가 있고 검증 오류가 그 테스트 판정과 일치할 때만 허용하며, 누락된 검사 근거나 입력 변경 등 별도 검증 오류에는 적용하지 않는다.
 
 ## Codex CLI 연결
 
@@ -144,8 +146,8 @@ Issue 분석도 모델 호출 전에 같은 검사를 수행한다. `sensitive_c
 
 | 최종 상태 | 의미 |
 | --- | --- |
-| `completed` | 생성·독립 검증 통과. 통합 보고서는 `workflow_status`로 게시 모드를 구분. 사람 승인·병합 없음. |
-| `publication_failed` | 검증은 통과했으나 게시 조건 또는 선택한 게시 모드 실행이 실패. 검증 근거는 유지. |
+| `completed` | 생성·독립 검증 통과 또는 통합 보고서에서 정책에 따른 실패 후 Draft 게시 완료. 검증 성공 여부는 `validation_status`로 확인. 사람 승인·병합 없음. |
+| `publication_failed` | 게시 조건 또는 선택한 게시 모드 실행이 실패. 통과·실패한 검증 근거는 유지. |
 | `validation_failed` | 필수 또는 차단 정책 검사 실패·실행 불가·시간 초과, 전체 미실행, 입력 변경 또는 검증 준비 실패. |
 | `completed_unverified` | 과거 버전 결과에서만 사용. 독립 검증을 수행하지 않았음. |
 | `config_error` | 파일·JSON·Schema·실행 필수 설정 오류 |

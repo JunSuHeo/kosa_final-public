@@ -4,7 +4,7 @@
 
 ## 통합 실행과 모의 게시
 
-`python3 -B -m workflow.runtime.run --config CONFIG --task "작업 내용"`은 기본적으로 생성·독립 검증 후 게시 조건을 재확인하고 모의 게시까지 진행한다. 실패한 단계의 후속 단계는 실행하지 않는다. 기본값 `--publish-mode simulate`는 GitHub CLI·인증정보·실제 원격 전송을 사용하지 않는다. 준비 Commit·Branch는 원본이 아닌 외부의 별도 로컬 Git 저장소에 만든다. `--publish-mode prepare`는 로컬 준비까지만 수행하고, 실제 게시 모드에는 명시적인 `--publish-mode real`이 필요하다.
+`python3 -B -m workflow.runtime.run --config CONFIG --task "작업 내용"`은 기본적으로 생성·독립 검증 후 게시 조건을 재확인하고 모의 게시까지 진행한다. 실패한 단계의 후속 단계는 실행하지 않으며, 테스트 실패에 대한 명시적 Draft 허용 정책은 아래 조건을 따른다. 기본값 `--publish-mode simulate`는 GitHub CLI·인증정보·실제 원격 전송을 사용하지 않는다. 준비 Commit·Branch는 원본이 아닌 외부의 별도 로컬 Git 저장소에 만든다. `--publish-mode prepare`는 로컬 준비까지만 수행하고, 실제 게시 모드에는 명시적인 `--publish-mode real`이 필요하다.
 
 기존 게시 기능만 모의 실행하려면 다음 명령을 사용한다.
 
@@ -58,13 +58,13 @@ CLI 종료 코드는 `prepared`·`published`·`simulated`에서 0, 차단·실�
 | `draft` | 검증 통과 PR의 Draft 여부. 데모는 `true` |
 | `commit_author` | 선택 사항인 `name`, `email`. 없으면 원본 저장소의 로컬 Git user 설정을 조회하며 없으면 차단. 전역 Git 설정은 가져오지 않음 |
 
-기존 `pr_policy.require_human_approval=true`, `allow_auto_merge=false`를 유지한다. 이번 단계에서는 모든 필수 검사가 통과한 결과만 게시한다. `allow_draft_on_failure=true`여도 실패 결과를 게시하는 경로는 제공하지 않는다.
+기존 `pr_policy.require_human_approval=true`, `allow_auto_merge=false`를 유지한다. `pr_policy.allow_draft_on_failure=true`이면 필수·차단 정책 검사 실패, 시간 초과, 실행 불가 결과를 보존하고 Draft PR을 생성할 수 있다. PRJ 설정은 이 정책을 활성화했다. 실패 후에는 `publishing.draft=false`여도 Draft를 강제하며 PR 본문에 검증 실패와 실제 결과를 표시한다. Codex 실패, 경로 위반, 입력 변경, 누락·손상된 검증 근거에는 예외를 적용하지 않는다.
 
 `{date}`는 실행 결과 `started_at`의 한국 시간(Asia/Seoul) 날짜를 `YY.MM.DD`로 표시한다. 이후 같은 결과를 다시 게시 준비해도 날짜가 달라지지 않는다. `{approver}`와 `{issue_title}`은 실행 결과에 저장된 승인 Issue 데이터에서 읽는다. 제목은 한글을 유지하고 공백·Git 금지 문자를 `-`로 바꾸며, 경로 구분자·`..`·`.lock`을 정리한다. 제목 부분은 UTF-8 120바이트까지 사용하고 정리한 결과가 비면 `issue`를 사용한다. 예: `feature/ai/26.11.17/JunSuHeo/로그인-화면-개선`.
 
 요청한 Issue 규칙에는 실행 UUID를 추가하지 않는다. 같은 날짜·승인자·제목의 원격 Branch나 PR이 이미 있으면 기존 충돌 검사로 게시를 차단한다.
 
-게시 전 결과의 형식·소유자·개인 접근 권한·체크섬, 실행 ID·설정 해시·Git 기준 SHA·파일 해시를 확인한다. 테스트의 종류·명령·필수 여부·종료 코드·상태·시간 정보가 설정과 일치해야 한다. 누락·중복·실행 불가·시간 초과·필수 미실행은 차단한다. 선택 미실행은 명시된 설정 조건이 실제 변경 목록에 적용될 때만 인정한다. 설정된 차단 정책도 재판정한다.
+게시 전 결과의 형식·소유자·개인 접근 권한·체크섬, 실행 ID·설정 해시·Git 기준 SHA·파일 해시를 확인한다. 테스트의 종류·명령·필수 여부·종료 코드·상태·시간 정보가 설정과 일치해야 한다. 누락·중복과 정당한 사유 없는 필수 미실행은 차단한다. 선택 미실행은 명시된 설정 조건이 실제 변경 목록에 적용될 때만 인정한다. Draft 예외에서는 앞선 차단 검사 실패로 후속 검사가 미실행된 근거도 인정한다. 검증 오류 전체가 기록된 테스트 판정과 일치하는지 재확인한다.
 
 기준 Branch와 작업 시작 HEAD는 같아야 한다. SHA-1 Git 저장소를 초기 지원한다. 기준 Branch를 remote에서 다시 확인하고 검증 때와 다른 커밋이면 재생성·재검증을 요구한다. 현재 source HEAD를 무조건 Commit하거나 `git add .`로 원본 사용자 변경을 수집하지 않는다.
 

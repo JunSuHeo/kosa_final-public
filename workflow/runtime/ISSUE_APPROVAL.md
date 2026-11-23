@@ -53,6 +53,8 @@ Issue 등록은 읽기 전용 요구사항 분석과 계획 댓글 작성까지�
 
 기본 흐름은 `received → analyzing → awaiting_approval → approved → executing → validating → publishing → completed`다. `received`와 `analyzing`은 내부 이력에만 기록하고 GitHub 댓글을 남기지 않는다. 추가 질문이 있으면 분석 뒤 `awaiting_plan`으로 이동한다. `/plan`으로 재분석해 준비된 계획을 게시하면 `awaiting_approval`에서 새 `/approve`를 기다린다. 이전 버전에서 게시한 대기 중 계획도 `/plan`으로 이어갈 수 있다. 거부는 `rejected`, 실패는 `analysis_failed`, `approval_invalidated`, `execution_failed`, `validation_failed`, `publishing_failed`로 구분한다.
 
+PRJ의 `pr_policy.allow_draft_on_failure=true` 정책에서는 테스트 실패·시간 초과·실행 불가 후에도 `publishing`으로 넘어간다. 이때 PR 게시 전에 상태 댓글에 실패 검사 ID·명령·상태·종료 코드·사유·stdout·stderr를 표시한다. 비밀값과 HTML·멘션 문법을 가리고 출력은 6,000자로 제한한다. 실패한 검증 근거는 유지하며 PR은 Draft로 생성한다. 완료 댓글에도 실패한 검증과 Draft 게시를 명시하고, 실제 게시가 확인되면 PR 링크를 포함한다. 서명된 실행 상태의 `validation_status`로 검증 성공 여부를 확인한다.
+
 계획에는 UUID, Issue 번호, 제목/본문 SHA-256 snapshot, 분석 시각, version, 승인 상태를 포함한다. 별도의 bot journal 댓글은 전체 상태, 계획, 계획 댓글 ID/본문 해시, 설정 파일 해시, 승인자·승인 시각·승인 댓글 ID, 최근 100개 전이 및 실행 결과 경로를 저장한다. 이전 journal 댓글은 보존되어 전체 과거 이력을 확인할 수 있다. 같은 상태를 기존 원자적 evidence 저장으로 `<results-dir>/issues/<UUID>/issue.json`에도 기록한다. 실제 엔진 결과는 기존 `<results-dir>/<run UUID>/result.json`, `workflow.json`에 승인 Issue 데이터를 포함한다.
 
 원격 복구는 `github-actions[bot]`의 Bot 댓글과 HMAC-SHA256 서명을 모두 확인한다. 최신 신뢰 bot journal이 손상되면 과거 상태로 돌아가 실행하지 않는다. 사람이 같은 marker나 과거 signed text를 댓글로 붙여도 bot 작성자가 아니므로 상태로 인정하지 않는다. 계획 댓글의 실제 본문과 저장된 해시, 계획 ID/snapshot을 포함한 예상 Markdown을 비교하여 수정·교체를 감지한다.

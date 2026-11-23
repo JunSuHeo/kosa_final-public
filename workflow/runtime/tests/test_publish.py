@@ -31,9 +31,13 @@ class Worker:
 
 
 class Tests:
+    def __init__(self, status="passed"):
+        self.status = status
+
     def run(self, root, cwd, command, timeout):
-        return {"status": "passed", "return_code": 0, "duration_seconds": 0.1,
-                "stdout": "", "stderr": "Ran 1 test\nOK\n", "reason": None}
+        return {"status": self.status, "return_code": 0 if self.status == "passed" else None if self.status == "unavailable" else 1,
+                "duration_seconds": 0.1, "stdout": "", "stderr": "Ran 1 test\nOK\n" if self.status == "passed" else "Controlled test error",
+                "reason": None if self.status == "passed" else "Controlled test failure"}
 
 
 class NetworkGit:
@@ -126,10 +130,10 @@ class PublishTests(unittest.TestCase):
     def write_config(self):
         self.config_path.write_text(json.dumps(self.config))
 
-    def generate(self, worker=None):
+    def generate(self, worker=None, test_executor=None, expected_status="completed"):
         self.report = run.execute_request(self.config_path, "Improve the sample", self.root, self.results,
-                                          adapter=worker or Worker(), test_executor=Tests())
-        self.assertEqual(self.report["final_status"], "completed", self.report)
+                                          adapter=worker or Worker(), test_executor=test_executor or Tests())
+        self.assertEqual(self.report["final_status"], expected_status, self.report)
         self.result_path = Path(self.report["result_path"])
 
     def change_report(self, action):
@@ -162,6 +166,47 @@ class PublishTests(unittest.TestCase):
 
     def test_failed_final_validation_blocks(self):
         self.change_report(lambda r: r.update(validation_status="failed"))
+        self.assertEqual(self.perform()["status"], "blocked")
+
+    def test_explicit_failure_policy_prepares_a_draft_without_rewriting_failed_evidence(self):
+        self.config["pr_policy"]["allow_draft_on_failure"] = True
+        self.config["publishing"]["draft"] = False
+        self.write_config()
+        for status in ("failed", "timeout", "unavailable"):
+            with self.subTest(status=status):
+                self.generate(test_executor=Tests(status), expected_status="validation_failed")
+                original = self.result_path.read_bytes()
+                result = self.perform()
+                self.assertEqual(result["status"], "prepared", result)
+                self.assertTrue(result["draft"])
+                self.assertEqual(self.result_path.read_bytes(), original)
+                body = (self.result_path.parent / "publication/pr-body.md").read_text()
+                self.assertIn("independent tests did not pass", body)
+                self.assertIn("unit/unit: " + status, body)
+                self.assertIn("Final validation: failed", body)
+
+    def test_failure_draft_rejects_missing_tests_and_non_test_validation_errors(self):
+        self.config["pr_policy"]["allow_draft_on_failure"] = True
+        self.write_config()
+        for change in (lambda r: r["validation"]["tests"].update(e2e=[]),
+                       lambda r: r["validation"]["errors"].append("A test modified or deleted candidate input files."),
+                       lambda r: r["validation"].update(scope_status="failed")):
+            with self.subTest(change=change):
+                self.generate(test_executor=Tests("failed"), expected_status="validation_failed")
+                self.change_report(change)
+                self.assertEqual(self.perform()["status"], "blocked")
+
+    def test_failure_draft_rejects_an_unjustified_required_skip(self):
+        from workflow.runtime import test_runner
+        self.config["pr_policy"]["allow_draft_on_failure"] = True
+        self.write_config()
+        self.generate(test_executor=Tests("failed"), expected_status="validation_failed")
+        def unjustified_skip(report):
+            report["validation"]["tests"]["unit"][0].update(status="not_run", reason="No applicable skip policy")
+            results = report["validation"]["tests"]["unit"] + report["validation"]["tests"]["e2e"]
+            report["validation"]["errors"] = test_runner.judge(results)[1]
+            report["errors"] = [{"status": "validation_failed", "message": message} for message in report["validation"]["errors"]]
+        self.change_report(unjustified_skip)
         self.assertEqual(self.perform()["status"], "blocked")
 
     def test_missing_test_evidence_blocks(self):

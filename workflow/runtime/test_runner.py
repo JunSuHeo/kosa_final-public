@@ -367,6 +367,15 @@ def judge(results: list[dict[str, Any]]) -> tuple[str, list[str]]:
     return "passed", []
 
 
+def allow_failure_draft(config: dict[str, Any], validation: dict[str, Any]) -> bool:
+    results = validation.get("tests", {}).get("unit", []) + validation.get("tests", {}).get("e2e", [])
+    status, reasons = judge(results)
+    return (config["pr_policy"]["allow_draft_on_failure"]
+            and validation.get("scope_status") == "passed" and validation.get("status") == "failed"
+            and status == "failed" and validation.get("errors") == reasons
+            and any(result["status"] in ("failed", "timeout", "unavailable") for result in results))
+
+
 def validate_workspace(candidate: Path, config: dict[str, Any], before: dict[str, Any],
                        config_relative: str, *, executor=None, stop_on_failure=False) -> dict[str, Any]:
     """Verify candidate boundaries then run Unit/E2E checks using frozen policy."""

@@ -77,6 +77,7 @@ jobs:
             --defer-execution
       - name: Prepare offline PRJ backend test dependencies
         id: dependencies
+        continue-on-error: true
         if: steps.intake.outputs.plan_id != ''
         shell: bash
         run: |

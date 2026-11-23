@@ -92,13 +92,18 @@ def load_verified(result_path, config_path, root):
         raise ExecutionError("untrusted_result", "Configuration differs from the tested run; execute and validate again.")
     if report["run_id"] != directory.name or report["result_path"] != str(result_path):
         raise ExecutionError("untrusted_result", "Run ID or evidence location is inconsistent.")
-    if (report["final_status"] != "completed" or report["codex_status"] != "succeeded"
-            or report["validation_status"] != "passed" or report["errors"]):
-        raise ExecutionError("validation_blocked", "Only successfully generated and independently verified results may be published.")
     validation = report["validation"]
-    if validation["status"] != "passed" or validation["scope_status"] != "passed" or validation["errors"]:
+    failure_draft = test_runner.allow_failure_draft(config, validation)
+    expected_status = "failed" if failure_draft else "passed"
+    expected_errors = [{"status": "validation_failed", "message": message} for message in validation["errors"]] if failure_draft else []
+    if (report["final_status"] != ("validation_failed" if failure_draft else "completed")
+            or report["codex_status"] != "succeeded" or report["validation_status"] != expected_status
+            or report["errors"] != expected_errors):
+        raise ExecutionError("validation_blocked", "Generation and validation evidence do not satisfy the publishing policy.")
+    if validation["status"] != expected_status or validation["scope_status"] != "passed" or (validation["errors"] and not failure_draft):
         raise ExecutionError("validation_blocked", "Independent validation is missing, failed or inconsistent.")
     all_tests = []
+    blocking_failure = False
     for kind in ("unit", "e2e"):
         actual = validation["tests"][kind]
         expected = config["tests"][kind]
@@ -115,7 +120,9 @@ def load_verified(result_path, config_path, root):
                 raise ExecutionError("validation_blocked", "Unknown test status.")
             if result["status"] == "passed" and (type(result["return_code"]) is not int or result["return_code"] != 0):
                 raise ExecutionError("validation_blocked", "A passed test lacks a successful process exit code.")
-            if result["status"] == "not_run" and test_runner._skip(test, report["changes"]) is None:
+            stopped_after_failure = (failure_draft and blocking_failure
+                                     and result.get("reason") == "A previous blocking test failed; later checks were not run.")
+            if result["status"] == "not_run" and test_runner._skip(test, report["changes"]) is None and not stopped_after_failure:
                 raise ExecutionError("validation_blocked", "A test was skipped without an applicable project policy.")
             if result["status"] == "passed" and test_runner._NO_TESTS.search(result["stdout"] + "\n" + result["stderr"]):
                 raise ExecutionError("validation_blocked", "A passed test reports zero executed tests.")
@@ -124,7 +131,10 @@ def load_verified(result_path, config_path, root):
                     or datetime.fromisoformat(result["ended_at"]) < datetime.fromisoformat(result["started_at"])):
                 raise ExecutionError("validation_blocked", "Test timing evidence is incomplete.")
             all_tests.append(result)
-    if test_runner.judge(all_tests)[0] != "passed":
+            if ((result["required"] and result["status"] != "passed")
+                    or (result["status"] in ("failed", "unavailable", "timeout") and result["on_failure"] == "block")):
+                blocking_failure = True
+    if test_runner.judge(all_tests)[0] != "passed" and not failure_draft:
         raise ExecutionError("validation_blocked", "Mandatory tests or optional blocking checks did not pass.")
     baseline_raw = private_file(directory / "baseline.json")
     if hashlib.sha256(baseline_raw).hexdigest() != report["baseline_sha256"]:
@@ -189,7 +199,9 @@ def pr_text(config, report, issue=None):
         # Treat task/output as data, suppress image attachment and mention syntax.
         return html.escape(str(value)).replace("!", "&#33;").replace("[", "&#91;").replace("@", "&#64;")
     title = f"[{config['project_id']}] " + " ".join(report["task"].split())[:100]
-    body = ["## Summary", "Verified automation changes for " + escape(config["project_id"]),
+    summary = ("Draft for human review: independent tests did not pass."
+               if report["validation_status"] != "passed" else "Verified automation changes for " + escape(config["project_id"]))
+    body = ["## Summary", summary,
             "", "## User request", escape(report["task"]), "", "## Changed files"]
     body += [f"- {escape(c['change'])}: {escape(c['path'])}" for c in report["changes"]]
     changed_docs = [c["path"] for c in report["changes"] if c["path"] in config["design_documents"]]
@@ -323,6 +335,7 @@ def publish(result_path, config_path, root, *, execute=False, issue=None, github
             raise ExecutionError("publication_conflict", "A previous external publication attempt is unresolved. Do not retry until its branch and PR state have been reconciled.")
         config, report, baseline, candidate = load_verified(result_path, config_path, root)
         outcome["run_id"] = report["run_id"]
+        outcome["draft"] = config["publishing"]["draft"] or report["validation_status"] != "passed"
         url = remote_url(config, root)
         branch = branch_name(config, report["run_id"], report)
         outcome["branch"] = branch
@@ -399,7 +412,7 @@ def publish(result_path, config_path, root, *, execute=False, issue=None, github
             save()
             creation_error = None
             try:
-                gh.create_pr(repo, config["base_branch"], branch, title, prepared / "pr-body.md", config["publishing"]["draft"], checkout)
+                gh.create_pr(repo, config["base_branch"], branch, title, prepared / "pr-body.md", outcome["draft"], checkout)
             except ExecutionError as exc:
                 creation_error = exc
             operation = "confirm_pr"
