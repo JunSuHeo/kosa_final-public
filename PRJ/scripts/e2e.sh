@@ -66,5 +66,5 @@ printf 'E2E project %s at %s\n' "$project" "$E2E_BASE_URL"
 if [ "$#" -gt 0 ]; then
   npm run test:e2e -- "$@"
 else
-  npm run test:e2e -- tests/studio.spec.ts tests/source-planning.spec.ts tests/users.spec.ts tests/login.spec.ts tests/supabase-accounts.spec.ts tests/workflow-review.spec.ts
+  npm run test:e2e -- tests/studio.spec.ts tests/source-planning.spec.ts tests/users.spec.ts tests/login.spec.ts tests/supabase-accounts.spec.ts tests/workflow-review.spec.ts tests/business-journey.spec.ts tests/app-drafts.spec.ts tests/app-journey-regressions.spec.ts tests/workspace-width.spec.ts
 fi

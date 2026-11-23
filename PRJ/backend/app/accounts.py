@@ -35,20 +35,27 @@ def auth_request(method, path, body=None, *, admin=False, token=None):
     headers = {'apikey': key}
     if token or admin:
         headers['Authorization'] = 'Bearer ' + (token or key)
+    uncertain = {'code': 'auth_write_uncertain', 'message': '인증 서버 응답을 확인하지 못했습니다. 다시 로그인이 필요하면 기존 또는 새 비밀번호로 확인한 뒤 같은 작업을 다시 시도해 주세요.'}
+    write = admin and method in ('POST', 'PUT', 'PATCH', 'DELETE')
     try:
         response = httpx.request(method, s.supabase_url.rstrip('/') + '/auth/v1' + path,
                                  headers=headers, json=body, timeout=20)
     except httpx.HTTPError:
-        raise HTTPException(503, '인증 서버에 연결할 수 없습니다.') from None
+        raise HTTPException(503, uncertain if write else '인증 서버에 연결할 수 없습니다.') from None
     if response.status_code >= 400:
+        if response.status_code == 429:
+            raise HTTPException(429, '인증 서버 요청이 많습니다. 잠시 후 다시 시도해 주세요.')
         if response.status_code >= 500:
-            raise HTTPException(503, '인증 서버에 연결할 수 없습니다.')
+            raise HTTPException(503, uncertain if write else '인증 서버에 연결할 수 없습니다.')
         if admin and response.status_code == 404:
             raise HTTPException(404, '인증 계정을 찾을 수 없습니다.')
         if admin:
             raise HTTPException(409, '인증 계정 처리를 완료하지 못했습니다. ID와 비밀번호 정책을 확인하고 다시 시도해 주세요.')
         raise HTTPException(401, 'ID 또는 비밀번호를 확인해 주세요')
-    return response.json() if response.content else {}
+    try:
+        return response.json() if response.content else {}
+    except ValueError:
+        raise HTTPException(503, uncertain if write else '인증 서버 응답을 확인할 수 없습니다.') from None
 
 
 def public_account(row):
@@ -111,7 +118,7 @@ def request_permission(path, method):
 def session_account(c, claims):
     try:
         sid, subject = UUID(claims['session_id']), UUID(claims['sub'])
-    except (ValueError, KeyError, TypeError):
+    except (ValueError, KeyError, TypeError, AttributeError):
         raise HTTPException(401, '다시 로그인해 주세요.') from None
     row = c.execute('SELECT a.* FROM studio_accounts a JOIN studio_auth_sessions s ON s.account_id=a.id '
                     'WHERE s.id=%s AND a.auth_user_id=%s AND NOT s.revoked AND a.active '
@@ -126,16 +133,27 @@ def revoke(c, account_id):
     c.execute('UPDATE studio_auth_sessions SET revoked=true WHERE account_id=%s', (account_id,))
 
 
-def rate_limit(identifier, address):
-    # A DB-backed window works across API processes and never stores raw addresses/IDs.
+def attempt_key(value):
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def add_attempt(c, key):
+    return c.execute(
+        'INSERT INTO studio_login_attempts(key,attempts) VALUES (%s,1) '
+        'ON CONFLICT(key) DO UPDATE SET '
+        "attempts=CASE WHEN studio_login_attempts.started_at < now()-interval '15 minutes' THEN 1 ELSE studio_login_attempts.attempts+1 END, "
+        "started_at=CASE WHEN studio_login_attempts.started_at < now()-interval '15 minutes' THEN now() ELSE studio_login_attempts.started_at END RETURNING attempts",
+        (key,),
+    ).fetchone()['attempts']
+
+
+def rate_limit(address):
+    # Atomic DB windows work across processes and never store raw addresses/IDs.
     with connect() as c:
         c.execute("DELETE FROM studio_login_attempts WHERE started_at < now()-interval '15 minutes'")
-        for text in ('id:' + identifier, 'ip:' + address):
-            key = hashlib.sha256(text.encode()).hexdigest()
-            row = c.execute('INSERT INTO studio_login_attempts(key,attempts) VALUES (%s,1) '
-                            'ON CONFLICT(key) DO UPDATE SET attempts=studio_login_attempts.attempts+1 RETURNING attempts', (key,)).fetchone()
-            if row['attempts'] > 30:
-                raise HTTPException(429, '로그인 시도가 많습니다. 잠시 후 다시 시도해 주세요.')
+        attempts = add_attempt(c, attempt_key('ip:' + address))
+    if attempts > 600:
+        raise HTTPException(429, '로그인 시도가 많습니다. 잠시 후 다시 시도해 주세요.')
 
 
 class Input(BaseModel):
@@ -197,22 +215,43 @@ def login(inp: Login, request: Request):
     from .auth import verify_token
     server_mode()
     identifier = (inp.identifier or inp.email or '').strip()
-    rate_limit(identifier, request.client.host if request.client else '')
+    rate_limit(request.client.host if request.client else '')
     with connect() as c:
         account = c.execute(
             "SELECT * FROM studio_accounts WHERE (login_id=%s OR (auth_user_id::text || '@accounts.hplanit.invalid')=%s) AND active AND provisioning_status='ready'", (identifier, identifier)).fetchone()
-    if not account:
-        raise HTTPException(401, 'ID 또는 비밀번호를 확인해 주세요')
-    result = auth_request('POST', '/token?grant_type=password', {'email': internal_email(account['auth_user_id']), 'password': inp.password})
+    key = attempt_key('id:' + (account['id'] if account else identifier))
+    # Hold the credential lock through verification so concurrent failures cannot
+    # all pass the quota check. The failure transaction commits before raising.
+    error = None
+    with connect() as c:
+        c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,2))', (key,))
+        attempts = c.execute("SELECT attempts FROM studio_login_attempts WHERE key=%s AND started_at >= now()-interval '15 minutes'", (key,)).fetchone()
+        if attempts and attempts['attempts'] >= 30:
+            raise HTTPException(429, '로그인 시도가 많습니다. 잠시 후 다시 시도해 주세요.')
+        try:
+            if not account:
+                raise HTTPException(401, 'ID 또는 비밀번호를 확인해 주세요')
+            result = auth_request('POST', '/token?grant_type=password', {'email': internal_email(account['auth_user_id']), 'password': inp.password})
+        except HTTPException as exc:
+            if exc.status_code != 401:
+                raise
+            add_attempt(c, key)
+            error = exc
+    if error:
+        raise error
     claims = verify_token(result['access_token'])
     if claims.get('sub') != str(account['auth_user_id']):
         raise HTTPException(401, 'ID 또는 비밀번호를 확인해 주세요')
+    try:
+        session_id = UUID(claims['session_id'])
+    except (ValueError, KeyError, TypeError, AttributeError):
+        raise HTTPException(401, '로그인 정보가 유효하지 않습니다.') from None
     with connect() as c:
         current = c.execute('SELECT * FROM studio_accounts WHERE id=%s FOR UPDATE', (account['id'],)).fetchone()
         if not current['active'] or current['provisioning_status'] != 'ready' or current['session_version'] != account['session_version']:
             raise HTTPException(401, '계정 설정이 변경되었습니다. 다시 로그인해 주세요.')
         c.execute('INSERT INTO studio_auth_sessions(id,account_id,session_version) VALUES (%s,%s,%s)',
-                  (UUID(claims['session_id']), current['id'], current['session_version']))
+                  (session_id, current['id'], current['session_version']))
         current = c.execute('UPDATE studio_accounts SET last_login_at=now() WHERE id=%s RETURNING *', (current['id'],)).fetchone()
         audit(c, current['login_id'], '로그인', current['login_id'])
         result['identity'] = identity(c, current)
@@ -289,25 +328,36 @@ def provision(inp, actor, *, account_id=None, bootstrap=False):
                     account = c.execute('SELECT * FROM studio_accounts WHERE id=%s', (op['account_id'],)).fetchone()
                     if op['completed']:
                         return public_account(account)
+                    if c.execute(
+                        'SELECT 1 FROM studio_account_operations WHERE account_id=%s AND action=%s AND (created_at,id)>(%s,%s) LIMIT 1',
+                        (account['id'], action, op['created_at'], op['id']),
+                    ).fetchone():
+                        raise HTTPException(409, {
+                            'code': 'account_operation_superseded',
+                            'message': '더 새 계정 변경 작업이 있습니다. 계정 상태를 확인한 뒤 다시 제출해 주세요.',
+                        })
                 else:
                     if action == 'create':
                         if bootstrap and c.execute('SELECT 1 FROM studio_accounts LIMIT 1').fetchone():
                             raise HTTPException(409, '초기 관리자가 이미 구성되어 있습니다.')
-                        if c.execute('SELECT 1 FROM studio_accounts WHERE login_id=%s', (inp.loginId,)).fetchone():
-                            raise HTTPException(409, '이미 사용 중인 ID입니다.')
-                        uid = uuid4()
-                        account = c.execute('INSERT INTO studio_accounts(id,auth_user_id,login_id,name,role) VALUES (%s,%s,%s,%s,%s) RETURNING *',
-                                            ('demo-user' if bootstrap else str(uuid4()), uid, inp.loginId, payload['name'], inp.role)).fetchone()
+                        account = c.execute('SELECT * FROM studio_accounts WHERE login_id=%s FOR UPDATE', (inp.loginId,)).fetchone()
+                        if account:
+                            if account['provisioning_status'] != 'pending' or (account['name'], account['role']) != (payload['name'], payload['role']):
+                                raise HTTPException(409, '이미 사용 중인 ID입니다.')
+                        else:
+                            uid = uuid4()
+                            account = c.execute('INSERT INTO studio_accounts(id,auth_user_id,login_id,name,role) VALUES (%s,%s,%s,%s,%s) RETURNING *',
+                                                ('demo-user' if bootstrap else str(uuid4()), uid, inp.loginId, payload['name'], inp.role)).fetchone()
                     else:
                         account = c.execute('SELECT * FROM studio_accounts WHERE id=%s FOR UPDATE', (account_id,)).fetchone()
                         if not account:
                             raise HTTPException(404, '계정을 찾을 수 없습니다.')
                         if account['provisioning_status'] != 'ready':
                             raise HTTPException(409, '이전 계정 작업을 먼저 재시도해 주세요.')
-                        revoke(c, account_id)
-                        c.execute("UPDATE studio_accounts SET provisioning_status='pending' WHERE id=%s", (account_id,))
                     c.execute('INSERT INTO studio_account_operations(id,actor_id,account_id,action,input) VALUES (%s,%s,%s,%s,%s)',
                               (inp.operation_id, actor, account['id'], action, Jsonb(payload)))
+                if action == 'reset':
+                    revoke(c, account_id)
             uid = str(account['auth_user_id'])
             if action == 'create':
                 try:
@@ -325,6 +375,8 @@ def provision(inp, actor, *, account_id=None, bootstrap=False):
             else:
                 auth_request('PUT', f'/admin/users/{uid}', {'password': inp.password}, admin=True)
             with connect() as c:
+                if action == 'reset':
+                    revoke(c, account_id)
                 account = c.execute("UPDATE studio_accounts SET provisioning_status='ready',active=CASE WHEN %s='create' THEN true ELSE active END WHERE id=%s RETURNING *", (action, account['id'])).fetchone()
                 c.execute('UPDATE studio_account_operations SET completed=true WHERE id=%s', (inp.operation_id,))
                 audit(c, actor, '계정 등록' if action == 'create' else '비밀번호 재설정', account['login_id'], '기존 세션 종료' if action == 'reset' else account['role'])
@@ -396,4 +448,4 @@ def history(owner: User, before: int | None = None, limit: int = 100):
     with connect() as c:
         require(c, owner, 'audit.read')
         rows = c.execute('SELECT * FROM studio_audit WHERE (%s::bigint IS NULL OR id<%s) ORDER BY id DESC LIMIT %s', (before, before, limit + 1)).fetchall()
-        return {'items': [{**row, 'id': str(row['id'])} for row in rows[:limit]], 'next': rows[limit-1]['id'] if len(rows) > limit else None}
+        return {'items': [{**row, 'id': str(row['id'])} for row in rows[:limit]], 'next': str(rows[limit-1]['id']) if len(rows) > limit else None}

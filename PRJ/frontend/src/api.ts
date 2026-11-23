@@ -28,16 +28,20 @@ export async function api<T>(
   });
   if (!res.ok) {
     let detail = "요청을 처리하지 못했습니다.";
+    let code: string | undefined;
     try {
       const data = await res.json();
+      if (typeof data.detail?.code === "string") code = data.detail.code;
       detail =
         typeof data.detail === "string"
           ? data.detail
-          : "입력한 내용을 확인해 주세요.";
+          : typeof data.detail?.message === "string"
+            ? data.detail.message
+            : "입력한 내용을 확인해 주세요.";
     } catch {
       /* HTTP response without a JSON error */
     }
-    throw new ApiError(detail, res.status);
+    throw new ApiError(detail, res.status, code);
   }
   return res.json();
 }
@@ -45,6 +49,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
+    public code?: string,
   ) {
     super(message);
   }

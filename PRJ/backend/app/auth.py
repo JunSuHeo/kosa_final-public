@@ -47,5 +47,7 @@ def verify_token(token):
         if not isinstance(payload["sub"], str) or not payload["sub"]:
             raise ValueError("missing subject")
         return payload
-    except (jwt.PyJWTError, ValueError, OSError):
+    except (jwt.PyJWKClientConnectionError, OSError):
+        raise HTTPException(503, "인증 서버에 연결할 수 없습니다.") from None
+    except (jwt.PyJWTError, ValueError):
         raise HTTPException(401, "로그인이 만료되었거나 유효하지 않습니다.") from None

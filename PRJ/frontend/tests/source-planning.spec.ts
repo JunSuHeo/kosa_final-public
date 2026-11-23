@@ -93,7 +93,7 @@ test("게시된 코드·디자인 기준은 재접속과 확인본 내보내기�
   await page.getByRole("button", { name: "내보내기" }).click();
   const download = page.waitForEvent("download");
   await page
-    .getByRole("button", { name: "Markdown (.md)", exact: true })
+    .getByRole("button", { name: "문서 파일 (.md)", exact: true })
     .click();
   expect((await download).suggestedFilename()).toBe("studio-v1.md");
 });

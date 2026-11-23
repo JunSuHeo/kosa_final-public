@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import type { Bundle, Health, Job } from "./types";
+import { readTabDraft, removeTabDraft, tabDraftKey, useTabDraft } from "./drafts";
 
 export const busyStatuses = ["queued", "running", "awaiting_answers"];
 const stages = [
@@ -69,13 +70,23 @@ function Questions({
   job,
   onAnswer,
   working,
+  draftScope,
 }: {
+  draftScope: string;
   job: Job;
-  onAnswer: (answers: Record<string, string>) => void;
+  onAnswer: (answers: Record<string, string>) => Promise<boolean>;
   working: boolean;
 }) {
-  const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [draft, setDraft, clearDraft] = useTabDraft(
+    tabDraftKey(draftScope, "questions", job.id),
+    { step: 0, answers: {} as Record<string, string> },
+  );
+  const { step, answers } = draft;
+  const setStep = (step: number) => setDraft({ ...draft, step });
+  const setAnswers = (answers: Record<string, string>) => setDraft({ ...draft, answers });
+  const submit = async (answers: Record<string, string>) => {
+    if (await onAnswer(answers)) clearDraft();
+  };
   const q = job.questions[step];
   if (!q) return null;
   return (
@@ -125,7 +136,7 @@ function Questions({
           onClick={() =>
             step < job.questions.length - 1
               ? setStep(step + 1)
-              : onAnswer(
+              : submit(
                   Object.fromEntries(
                     job.questions.map((x) => [x.key, answers[x.key] || ""]),
                   ),
@@ -143,7 +154,7 @@ function Questions({
         className="text-button skip"
         disabled={working}
         onClick={() =>
-          onAnswer(Object.fromEntries(job.questions.map((x) => [x.key, ""])))
+          submit(Object.fromEntries(job.questions.map((x) => [x.key, ""])))
         }
       >
         AI가 가정하고 바로 진행
@@ -157,14 +168,24 @@ function DialogueQuestionCard({
   question,
   onSend,
   working,
+  draftKey,
+  onDraftChange,
 }: {
+  draftKey: string;
+  onDraftChange: (key: string, pending: boolean) => void;
   question: DialogueQuestion;
   onSend: (text: string) => Promise<boolean>;
   working: boolean;
 }) {
-  const [choice, setChoice] = useState<string | null>(null);
-  const [custom, setCustom] = useState("");
-  const [sent, setSent] = useState(false);
+  const [draft, setDraft, clearDraft] = useTabDraft(
+    draftKey, { choice: null as string | null, custom: "", sent: false },
+  );
+  const { choice, custom, sent } = draft;
+  const setChoice = (choice: string) => setDraft({ ...draft, choice });
+  const setCustom = (custom: string) => setDraft({ ...draft, custom });
+  useEffect(() => {
+    onDraftChange(draftKey, !sent && !!(choice || custom.trim()));
+  }, [draftKey, choice, custom, sent, onDraftChange]);
   const [sending, setSending] = useState(false);
   const answer = choice === "custom" ? custom.trim() : choice;
   if (sent) return null;
@@ -188,6 +209,14 @@ function DialogueQuestionCard({
             {choice === String(index) && <Check size={15} />}
           </button>
         ))}
+        <button
+          className={choice === "undecided" ? "chosen" : ""}
+          aria-pressed={choice === "undecided"}
+          disabled={working || sending}
+          onClick={() => setChoice("undecided")}
+        >
+          아직 미정이에요
+        </button>
         <button
           className={choice === "custom" ? "chosen" : ""}
           aria-pressed={choice === "custom"}
@@ -217,11 +246,16 @@ function DialogueQuestionCard({
             const value =
               choice === "custom"
                 ? custom.trim()
-                : question.options[Number(choice)];
+                : choice === "undecided"
+                  ? "아직 미정이에요"
+                  : question.options[Number(choice)];
             setSending(true);
             try {
-              if (await onSend(`${question.title}\n답변: ${value}`))
-                setSent(true);
+              if (await onSend(`${question.title}\n답변: ${value}`)) {
+                clearDraft();
+                setDraft({ choice: null, custom: "", sent: true });
+                onDraftChange(draftKey, false);
+              }
             } finally {
               setSending(false);
             }
@@ -247,13 +281,17 @@ export default function Chat({
   onGenerate,
   disabled = false,
   working,
+  draftScope,
+  onUnsentChange,
 }: {
+  draftScope: string;
+  onUnsentChange?: (pending: boolean) => void;
   bundle: Bundle;
   health: Health;
   selected: { id: string; title: string } | null;
   onClear: () => void;
   onSend: (text: string) => Promise<boolean>;
-  onAnswer: (a: Record<string, string>) => void;
+  onAnswer: (a: Record<string, string>) => Promise<boolean>;
   onCancel: () => void;
   onReview: () => void;
   onRetry: () => void;
@@ -261,23 +299,43 @@ export default function Chat({
   disabled?: boolean;
   working: boolean;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useTabDraft(tabDraftKey(draftScope, "chat", "input"), "");
+  const [pendingQuestions, setPendingQuestions] = useState<Record<string, boolean>>({});
+  const composing = useRef(false);
+  const questionDraftChanged = useRef((key: string, pending: boolean) => {
+    setPendingQuestions((current) => current[key] === pending ? current : { ...current, [key]: pending });
+  }).current;
   const bottom = useRef<HTMLDivElement>(null);
   const job = bundle.job;
   const busy = !!job && busyStatuses.includes(job.status);
   const locked = busy || disabled;
   const brief = bundle.project.conversation_brief;
   const discussion = job?.partial.discussion as
-    | { suggestions?: string[]; questions?: DialogueQuestion[] }
+    | { reply?: string; suggestions?: string[]; questions?: DialogueQuestion[] }
     | undefined;
+  const currentQuestions = !locked && job?.kind === "discuss" && job.status === "completed"
+    ? discussion?.questions || [] : [];
+  const unsent = !!text.trim() || currentQuestions.some((question) =>
+    pendingQuestions[tabDraftKey(draftScope, "dialogue", `${job?.id}:${question.key}`)],
+  );
+  useEffect(() => { onUnsentChange?.(unsent); }, [unsent, onUnsentChange]);
+  const questionSuffix = currentQuestions.map((question) =>
+    `\n\n${question.title}\n${question.options.join(" / ")}`,
+  ).join("");
+  const latestAssistant = bundle.messages.map((message) => message.role).lastIndexOf("assistant");
   useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    bottom.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "end" });
   }, [bundle.messages.length, job?.status]);
   const send = async () => {
     if (text.trim() && !working && !locked) {
       const sent = text;
-      if (await onSend(sent.trim()))
-        setText((current) => (current === sent ? "" : current));
+      const sentKey = tabDraftKey(draftScope, "chat", "input");
+      if (await onSend(sent.trim())) {
+        const saved = readTabDraft<string | null>(sentKey, null);
+        if (saved === sent) removeTabDraft(sentKey);
+        if (saved === sent || saved === null)
+          setText((current) => (current === sent ? "" : current));
+      }
     }
   };
   return (
@@ -301,19 +359,22 @@ export default function Chat({
             업무 내용이 정리되면 초안을 만들 수 있어요.
           </p>
         </div>
-        {bundle.messages.map((message) => (
+        {bundle.messages.map((message, index) => (
           <div key={message.id} className={`message ${message.role}`}>
             {message.role === "assistant" && (
               <div className="message-name">
                 <Sparkles size={12} /> 기획 파트너
               </div>
             )}
-            <div>{message.content}</div>
+            <div>{index === latestAssistant && questionSuffix && message.content.endsWith(questionSuffix)
+              ? message.content.slice(0, -questionSuffix.length)
+              : message.content}</div>
           </div>
         ))}
         {job?.status === "awaiting_answers" && (
           <Questions
             key={job.id}
+            draftScope={draftScope}
             job={job}
             onAnswer={onAnswer}
             working={working}
@@ -322,17 +383,16 @@ export default function Chat({
         {job && ["queued", "running"].includes(job.status) && (
           <Progress job={job} />
         )}{" "}
-        {!locked &&
-          job?.kind === "discuss" &&
-          job.status === "completed" &&
-          discussion?.questions?.map((question) => (
-            <DialogueQuestionCard
-              key={`${job.id}:${question.key}`}
-              question={question}
-              onSend={onSend}
-              working={working}
-            />
-          ))}
+        {currentQuestions.map((question) => (
+          <DialogueQuestionCard
+            key={`${job?.id}:${question.key}`}
+            draftKey={tabDraftKey(draftScope, "dialogue", `${job?.id}:${question.key}`)}
+            onDraftChange={questionDraftChanged}
+            question={question}
+            onSend={onSend}
+            working={working}
+          />
+        ))}
         {bundle.proposal && (
           <button
             className="review-chat-card"
@@ -359,7 +419,7 @@ export default function Chat({
             <button
               className="secondary small"
               onClick={onRetry}
-              disabled={working || disabled}
+              disabled={working || disabled || unsent}
             >
               다시 시도
             </button>
@@ -427,8 +487,10 @@ export default function Chat({
             aria-label="업무 대화 입력"
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onCompositionStart={() => { composing.current = true; }}
+            onCompositionEnd={() => { composing.current = false; }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey && !composing.current && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
                 e.preventDefault();
                 send();
               }
@@ -471,14 +533,15 @@ export default function Chat({
         </div>
         <button
           className="primary draft-action"
-          disabled={locked || working || !brief}
+          disabled={locked || working || !brief || unsent}
           onClick={onGenerate}
         >
           <Sparkles size={16} />
           {bundle.proposal || bundle.project.current_version
-            ? "수정 내용 반영"
+            ? "수정안 만들기"
             : "기획 초안 만들기"}
         </button>
+        {unsent && <p className="composer-unsent" role="status">입력한 내용을 먼저 보내면 초안에 반영할 수 있어요.</p>}
         <div className="composer-hint">
           {health.ai_mode === "mock"
             ? "데모 모드 · 예시 결과로 동작합니다"

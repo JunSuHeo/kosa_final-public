@@ -84,9 +84,6 @@ export async function begin(page: Page) {
   await page.goto("/");
   await page.locator(`.business-card[data-source-id="${source.id}"]`).click();
   await page
-    .getByRole("button", { name: "기획 시작하기", exact: true })
-    .click();
-  await page
     .getByLabel("업무 설명", { exact: true })
     .fill(
       "발주 담당자가 주문을 확인한 뒤 승인하도록 개선하고 싶어요. " +

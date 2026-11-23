@@ -24,12 +24,7 @@ test("업무 선택과 대화 후 명시적으로 초안을 만들고 확인본�
   page.on("pageerror", (error) => errors.push(error.message));
   const id = await begin(page);
   expect((await readBundle(page, id)).proposal).toBeNull();
-  await expect(page.getByRole("tab")).toHaveText([
-    "기획 내용",
-    "기능 상세",
-    "업무 흐름",
-    "화면 시안",
-  ]);
+  await expect(page.getByRole("tab")).toHaveCount(0);
   await page
     .getByLabel("업무 대화 입력")
     .fill("현업 담당자가 요청하고 팀장이 승인해요.");
@@ -84,7 +79,7 @@ test("업무 선택과 대화 후 명시적으로 초안을 만들고 확인본�
   ).toBeVisible();
   await page.getByRole("button", { name: "내보내기" }).click();
   const downloaded = page.waitForEvent("download");
-  await page.getByRole("button", { name: "JSON (.json)", exact: true }).click();
+  await page.getByRole("button", { name: "기획 데이터 (.json)", exact: true }).click();
   expect((await downloaded).suggestedFilename()).toBe("studio-v2.json");
   expect(errors).toEqual([]);
 });

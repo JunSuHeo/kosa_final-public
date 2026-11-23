@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowRight,
-  Check,
   FileText,
   FolderOpen,
   Home as HomeIcon,
@@ -11,6 +10,7 @@ import {
 } from "lucide-react";
 import { api } from "./api";
 import { accountService } from "./accounts";
+import { tabDraftKey, useTabDraft } from "./drafts";
 import type {
   Health,
   PlanningIntent,
@@ -75,7 +75,6 @@ export default function BusinessHome({
   const [sourceId, setSourceId] = useState(
     new URLSearchParams(location.search).get("source") || "",
   );
-  const [intent, setIntent] = useState<PlanningIntent>("improve");
   const [query, setQuery] = useState("");
   useEffect(() => {
     let active = true;
@@ -119,7 +118,6 @@ export default function BusinessHome({
     )
       void api(`/api/sources/${sourceId}/check`, {}).catch(onError);
   }, [sourceId, canManage, sources, onError]);
-  const selected = sources.find((s) => s.id === sourceId);
   const shown = projects.filter(
     (p) =>
       (!sourceId || p.source_id === sourceId) &&
@@ -150,7 +148,7 @@ export default function BusinessHome({
         </div>
         <section className="home-step" aria-label="업무 선택">
           <h2>
-            <span className="step-number">1</span> 업무 선택
+            기획할 업무 선택
           </h2>
           {loading ? (
             <p role="status">
@@ -165,20 +163,15 @@ export default function BusinessHome({
                   <button
                     key={source.id}
                     data-source-id={source.id}
-                    className={`business-card ${source.id === sourceId ? "selected" : ""}`}
-                    aria-pressed={source.id === sourceId}
-                    disabled={!available}
-                    onClick={() => setSourceId(source.id)}
+                    className="business-card"
+                    disabled={!canCreate || !available}
+                    onClick={() => onStart(source, "improve")}
                   >
                     <span className="business-card-top">
                       <FolderOpen size={23} />
-                      {source.id === sourceId ? (
-                        <Check size={19} />
-                      ) : (
-                        <span className="business-status">
-                          {available ? "기획 가능" : "연결 준비 필요"}
-                        </span>
-                      )}
+                      <span className="business-status">
+                        {available ? "대화 시작하기" : "연결 준비 필요"}
+                      </span>
                     </span>
                     <strong>{source.name}</strong>
                     <p>
@@ -208,45 +201,17 @@ export default function BusinessHome({
             </div>
           )}
         </section>
-        <section className="home-step" aria-label="기획 유형">
-          <h2>
-            <span className="step-number">2</span> 기획 유형 선택
-          </h2>
-          <div className="intent-grid">
-            {Object.entries(intentLabels).map(([key, label]) => (
-              <button
-                key={key}
-                aria-pressed={intent === key}
-                className={`intent-card ${intent === key ? "selected" : ""}`}
-                onClick={() => setIntent(key as PlanningIntent)}
-              >
-                {label}
-                {intent === key && <Check size={16} />}
-              </button>
-            ))}
-          </div>
-          <div className="start-planning">
-            <span>
-              {selected
-                ? `${selected.name} · ${intentLabels[intent]}`
-                : "기획할 업무를 먼저 선택해 주세요."}
-            </span>
-            <button
-              className="primary"
-              disabled={
-                !canCreate || !selected || !sourceAvailable(selected, health)
-              }
-              onClick={() => selected && onStart(selected, intent)}
-            >
-              기획 시작하기 <ArrowRight size={17} />
-            </button>
-          </div>
-        </section>
         <section className="my-plans">
           <div className="projects-heading">
             <h2>
               내 기획 <span>{shown.length}</span>
             </h2>
+            <div className="plan-filters">
+              <select aria-label="내 기획 업무 필터" value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
+                <option value="">모든 업무</option>
+                {sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}
+              </select>
+              {sourceId && <button className="text-button" onClick={() => setSourceId("")}>필터 초기화</button>}
             <div className="search-field">
               <Search size={16} />
               <input
@@ -256,6 +221,7 @@ export default function BusinessHome({
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
+            </div>
           </div>
           {!canRead ? (
             <p className="access-notice">
@@ -263,7 +229,16 @@ export default function BusinessHome({
             </p>
           ) : shown.length ? (
             <div className="project-grid">
-              {shown.map((project) => (
+              {shown.map((project) => {
+                const progress = {
+                  conversation: ["대화 중", "대화 이어가기"],
+                  awaiting_answers: ["답변 기다리는 중", "질문에 답하기"],
+                  generating: ["초안 만드는 중", "진행 확인하기"],
+                  review_ready: ["초안 준비됨", "초안 확인하기"],
+                  failed: ["작업 중단됨", "다시 시도하기"],
+                  confirmed: ["현업 확인 완료", "확인본 보기"],
+                }[project.progress_status || (project.current_version ? "confirmed" : "conversation")];
+                return (
                 <button
                   className="project-card"
                   key={project.id}
@@ -277,16 +252,15 @@ export default function BusinessHome({
                   <p>{project.idea}</p>
                   <div>
                     <span className="version-tag">
-                      {project.current_version
-                        ? `현업 확인본 v${project.current_version}`
-                        : "작성 중"}
+                      {progress[0]}
                     </span>
                     <small>
                       {new Date(project.updated_at).toLocaleDateString("ko-KR")}
                     </small>
                   </div>
+                  <span className="project-next-action">{progress[1]} <ArrowRight size={14} /></span>
                 </button>
-              ))}
+              ); })}
             </div>
           ) : (
             <div className="home-empty">
@@ -321,25 +295,31 @@ export function Intake({
   onCreate,
   onError,
   working,
+  draftOwner,
 }: {
+  draftOwner: string;
   health: Health;
   onHome: () => void;
   accountMenu: ReactNode;
   navigation: ReactNode;
-  onCreate: (text: string, source: Source, intent: PlanningIntent) => void;
+  onCreate: (text: string, source: Source, intent: PlanningIntent) => Promise<boolean>;
   onError: (e: unknown) => void;
   working: boolean;
 }) {
   const [source, setSource] = useState<Source | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [text, setText] = useState("");
   const params = new URLSearchParams(location.search);
   const sourceId = params.get("source");
-  const intent = (
+  const initialIntent = (
     (params.get("intent") || "") in intentLabels
       ? params.get("intent")
       : "improve"
   ) as PlanningIntent;
+  const [draft, setDraft, clearDraft] = useTabDraft(
+    tabDraftKey(draftOwner, "intake", sourceId || "none"),
+    { text: "", intent: initialIntent },
+  );
+  const { text, intent } = draft;
   useEffect(() => {
     api<Source[]>("/api/sources")
       .then((data) => setSource(data.find((s) => s.id === sourceId) || null))
@@ -386,24 +366,27 @@ export function Intake({
           </div>
         ) : (
           <form
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
-              if (source && text.trim().length >= 3)
-                onCreate(text.trim(), source, intent);
+              if (!working && source && text.trim().length >= 3 && await onCreate(text.trim(), source, intent))
+                clearDraft();
             }}
           >
+            <label htmlFor="planning-intent">기획 유형 (선택)</label>
+            <select id="planning-intent" value={intent} disabled={working} onChange={(e) => setDraft({ ...draft, intent: e.target.value as PlanningIntent })}>
+              {Object.entries(intentLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select>
             <label htmlFor="first-message">업무 설명</label>
             <textarea
               id="first-message"
-              autoFocus
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => setDraft({ ...draft, text: e.target.value })}
               maxLength={8000}
               placeholder="현재 업무와 바꾸고 싶은 점을 편하게 적어 주세요."
               disabled={working}
             />
             <div className="intake-actions">
-              <span>대화한 내용은 자동으로 저장됩니다.</span>
+              <span>입력한 내용은 이 탭에서 임시 저장됩니다.</span>
               <button
                 className="primary"
                 disabled={working || !source || text.trim().length < 3}

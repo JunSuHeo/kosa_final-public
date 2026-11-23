@@ -46,6 +46,15 @@ function readable(value: unknown): string {
       .join("\n");
   return String(value);
 }
+function businessComparison(change: Change) {
+  if (change.before && change.after && typeof change.before === "object" && typeof change.after === "object" && !Array.isArray(change.before)) {
+    const before = change.before as Record<string, unknown>;
+    const after = change.after as Record<string, unknown>;
+    return Object.keys(labels).filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
+      .map((key) => ({ label: labels[key], before: readable(before[key]), after: readable(after[key]) }));
+  }
+  return [{ label: "업무 내용", before: readable(change.before), after: readable(change.after) }];
+}
 const metadata: Record<string, string> = {
   "prd:roles": "업무 담당자",
   "prd:platforms": "사용 환경",
@@ -247,6 +256,17 @@ function ChangeReview({
                           ? "이번 초안에 새로 담았어요."
                           : "이번 초안에서 내용이 달라졌어요."}
                     </p>
+                    <div className="business-comparison">
+                      {businessComparison(change).map((field) => (
+                        <section key={field.label}>
+                          <h5>{field.label}</h5>
+                          <dl>
+                            <div><dt>이전 업무</dt><dd>{field.before || "없음"}</dd></div>
+                            <div><dt>이번 업무</dt><dd>{field.after || "없음"}</dd></div>
+                          </dl>
+                        </section>
+                      ))}
+                    </div>
                     {change.kind !== "removed" && (
                       <button
                         className="text-button"

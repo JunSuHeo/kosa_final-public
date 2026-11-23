@@ -1,5 +1,5 @@
 import { api, ApiError, setToken } from "../api";
-import type { Account, AccountInput, AccountService, AuditEntry, Identity, Permission, Policy, Role } from "./types";
+import type { Account, AccountInput, AccountService, AuditPage, Identity, Permission, Policy, Role } from "./types";
 
 const SESSION = "hplan-supabase-session.v1";
 const CHANGE = "hplan-server-accounts-changed";
@@ -8,6 +8,8 @@ type LoginResult = { access_token: string; refresh_token: string; expires_in: nu
 let refreshing: Promise<void> | null = null;
 let generation = 0;
 const OPERATIONS = "hplan-account-operations.v1";
+// Passwords live only in module memory to recognize an exact retry in this page.
+const operationInputs = new Map<string, { id: string; password: string }>();
 const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("hplan-account-updates");
 
 function read(): Session | null {
@@ -48,16 +50,29 @@ export async function ensureSession() {
   }
   await refreshing;
 }
-async function operation<T>(key: string, path: string, body: object): Promise<T> {
+async function operation<T>(key: string, path: string, body: { password: string }): Promise<T> {
   const operations: Record<string, string> = JSON.parse(sessionStorage.getItem(OPERATIONS) || "{}");
-  const id = operations[key] || crypto.randomUUID();
+  const remembered = operationInputs.get(key);
+  const id = operations[key] && remembered?.id === operations[key] && remembered.password === body.password
+    ? operations[key] : crypto.randomUUID();
   operations[key] = id;
+  operationInputs.set(key, { id, password: body.password });
   sessionStorage.setItem(OPERATIONS, JSON.stringify(operations));
-  const result = await api<T>(path, { ...body, operation_id: id });
-  delete operations[key];
-  sessionStorage.setItem(OPERATIONS, JSON.stringify(operations));
-  changed();
-  return result;
+  const forget = () => {
+    const current: Record<string, string> = JSON.parse(sessionStorage.getItem(OPERATIONS) || "{}");
+    if (current[key] === id) delete current[key];
+    sessionStorage.setItem(OPERATIONS, JSON.stringify(current));
+    if (operationInputs.get(key)?.id === id) operationInputs.delete(key);
+  };
+  try {
+    const result = await api<T>(path, { ...body, operation_id: id });
+    forget();
+    changed();
+    return result;
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "account_operation_superseded") forget();
+    throw error;
+  }
 }
 
 const server: AccountService = {
@@ -73,9 +88,15 @@ const server: AccountService = {
     save(result);
     return result.identity;
   },
-  async logout() {
-    try { if (read()) await api("/api/auth/logout", {}); }
-    finally { clear(); sessionStorage.removeItem(OPERATIONS); }
+  async logout({ explicit = true } = {}) {
+    try { if (explicit && read()) await api("/api/auth/logout", {}); }
+    finally {
+      clear();
+      if (explicit) {
+        sessionStorage.removeItem(OPERATIONS);
+        operationInputs.clear();
+      }
+    }
   },
   async current() {
     if (!read()) { setToken(""); return null; }
@@ -105,9 +126,10 @@ const server: AccountService = {
     await api(`/api/roles/${role}/${permission}`, { enabled }, "PUT");
     changed();
   },
-  async audit() {
-    const result = await api<{ items: AuditEntry[] }>("/api/audit?limit=200");
-    return result.items;
+  audit(cursor) {
+    const query = new URLSearchParams({ limit: "200" });
+    if (cursor) query.set("before", cursor);
+    return api<AuditPage>(`/api/audit?${query}`);
   },
   // Assignment mutations and their audit records are committed by the server together.
   async recordAssignment() { changed(); },

@@ -2535,3 +2535,57 @@ textarea::placeholder {
 .canvas-legend .legend-hint {
   color: #64748b;
 }
+
+/* Keep business decisions and unfinished input legible on narrow screens. */
+.plan-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.plan-filters select,
+.intake-main select {
+  max-width: 100%;
+  padding: 10px 12px;
+  color: var(--text);
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+}
+.intake-main select { margin-bottom: 18px; }
+.project-next-action {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+.composer-unsent {
+  margin: 8px 0 0;
+  color: #8a4b10;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.business-comparison section { margin: 12px 0; }
+.business-comparison h5 { margin: 0 0 7px; font-size: 13px; }
+.business-comparison dl { display: grid; gap: 8px; margin: 0; }
+.business-comparison dl > div {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 7px;
+  background: #f4f6f9;
+}
+.business-comparison dl > div:last-child { background: #edf5ff; }
+.business-comparison dt { font-size: 11px; color: #56657a; margin-bottom: 5px; }
+.business-comparison dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+@media (max-width: 600px) {
+  .plan-filters { width: 100%; }
+  .plan-filters .search-field { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-history { scroll-behavior: auto; }
+}

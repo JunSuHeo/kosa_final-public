@@ -112,6 +112,7 @@ export type Project = {
   title: string;
   idea: string;
   current_version: number;
+  progress_status?: "conversation" | "awaiting_answers" | "generating" | "review_ready" | "failed" | "confirmed";
   created_at: string;
   updated_at: string;
   start_mode?: "generate" | "conversation";

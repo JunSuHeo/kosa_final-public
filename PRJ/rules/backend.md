@@ -108,3 +108,17 @@ docker compose --profile test run --build --rm test
 | `test_source_planning.py` | 분석·제외·기준 고정·전송 확인·인계 |
 
 live smoke는 호출 비용과 데이터를 발생시킨다. 실행 환경과 사용자 요청 범위를 확인하고 mock 결과와 구분해 기록한다.
+
+## 인증 안정화와 진행 상태 (2026-11-23)
+
+비밀번호 reset은 계정 active/ready와 별도로 operation 상태를 관리한다. 매 실제 재시도 전에 세션을 폐기하고 Auth 성공 후 다시 세션 폐기·완료·감사를 한 트랜잭션으로 저장한다. 실패해도 기존 ready 계정은 재로그인할 수 있다. 같은 operation ID의 완료 재요청은 부작용 없이 반환하며 더 최근 reset이 생긴 오래된 미완료 작업은409다. 원격 쓰기 반영 여부가 불명인 오류는503 `detail={code:"auth_write_uncertain",message:...}`로 구분한다. 암호는 operation/감사 테이블에 저장하지 않는다.
+
+로그인 자격증명 실패는 계정별15분30회, 전체 요청 폭주는 IP별15분600회로 분리한다. 성공 및 Auth 장애는 계정 실패에 넣지 않는다. 원본 IP는 신뢰된 전용 nginx 네트워크에서만 반영한다. Auth429는429로 유지하고 JWKS 연결 오류는503, 잘못된 토큰/claim은401이다.
+
+`GET /api/audit?before=<id>&limit=200`의 `next`는 문자열 또는 null이다. `GET /api/projects`는 소유 프로젝트의 최신 작업·pending proposal·확인본에서 `progress_status`(conversation/awaiting_answers/generating/review_ready/failed/confirmed)를 계산한다. 별도 상태 저장이나 승인 정책 변경은 없다. 테스트는 test_accounts/test_auth_errors/test_project_progress/test_proxy가 격리 PostgreSQL과 외부 Auth 대체 경계에서 검증한다.
+
+성공한 새 대화는 과거 대화 실패 표시를 해제한다. 취소된 재시도는 실패를 해제하지 않으며 문서 생성 실패는 대화 성공만으로 해제하지 않는다. 기존 초안·확인본은 상태 표시 변경으로 바뀌지 않는다.
+
+비밀번호 입력은 브라우저 저장소에 남기지 않는다. 같은 페이지 생명주기에서 동일 입력의 재인증 재시도는 기존 operation ID를 사용한다. 입력이 달라졌거나 탭을 새로고침해 이전 입력 동일성을 확인할 수 없으면 새 작업 ID를 사용한다. superseded409는 기존 ID를 정리하고 다음 명시적인 재시도를 허용하며 자동으로 쓰기를 재전송하지 않는다.
+
+등록이 중단된 pending 계정은 관리자 명시 재시도에서 새 operation ID여도 동일 loginId/이름/역할이면 기존 계정·Auth UID로 완료할 수 있다. ready 계정의 중복 등록과 pending 계정의 메타데이터 변경은409다. 새 등록 작업이 만들어진 뒤 오래된 미완료 작업은 superseded409로 차단한다.

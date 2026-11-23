@@ -177,11 +177,13 @@ test("다른 탭의 역할·비밀번호·사용 상태 변경은 세션을 종�
   page,
   context,
 }) => {
+  const source = await businessSource(page.request);
   await login(page);
   await menu(page, "계정 관리");
   const user = await context.newPage();
   await login(user, "/", "user1");
   let detail = await manage(page, "user1");
+  await detail.locator(`[data-source-id="${source.id}"] input[type="checkbox"]`).check();
   await detail.getByLabel("역할", { exact: true }).selectOption("USER2");
   await detail.getByRole("button", { name: "계정 정보 저장" }).click();
   await expect(
@@ -215,13 +217,13 @@ test("다른 탭의 역할·비밀번호·사용 상태 변경은 세션을 종�
   await menu(page, "역할·권한 설정");
   await page.getByLabel("USER2 기획 작성", { exact: true }).uncheck();
   await expect(
-    user.getByRole("button", { name: "기획 시작하기", exact: true }),
+    user.locator(".business-card").first(),
   ).toBeDisabled();
   await user.goto("/?view=intake");
   await expect(user).toHaveURL(/\/$/);
   await user.reload();
   await expect(
-    user.getByRole("button", { name: "기획 시작하기", exact: true }),
+    user.locator(".business-card").first(),
   ).toBeDisabled();
   await expect(
     page.getByLabel("USER1 계정 관리", { exact: true }),
@@ -249,9 +251,6 @@ test("업무 배정으로 같은 업무의 기획을 분리하고 배정 해제 
   for (const id of ["user1", "user2"]) {
     await login(user, "/", id);
     await user.locator(`[data-source-id="${source.id}"]`).click();
-    await user
-      .getByRole("button", { name: "기획 시작하기", exact: true })
-      .click();
     await user
       .getByLabel("업무 설명", { exact: true })
       .fill(`${id}의 발주 승인 업무를 개선합니다 ${Date.now()}`);

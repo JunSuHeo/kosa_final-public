@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { begin, login } from "./business-helpers";
+import { begin, draft, login } from "./business-helpers";
 test("작업 화면 너비를 드래그로만 조절하고 복원하며 모바일에서는 전환한다", async ({
   page,
 }) => {
   await login(page);
   await begin(page);
+  await draft(page);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const divider = page.getByRole("separator", {

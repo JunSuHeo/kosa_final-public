@@ -28,6 +28,7 @@ import {
 import { api, ApiError, download } from "./api";
 import type {
   Bundle,
+  Job,
   Health,
   Panel,
   Project,
@@ -51,6 +52,15 @@ import Wireframes from "./Wireframes";
 import { ImplementationDocument } from "./Sources";
 import BusinessHome, { Brand, Intake } from "./BusinessHome";
 import SourceSettings from "./SourceSettings";
+import { clearTabDrafts, readTabDraft, removeTabDraft, tabDraftKey, writeTabDraft } from "./drafts";
+import "./journey.css";
+
+type EditorDraft = {
+  baseVersion: number;
+  proposalId: string | null;
+  candidate: boolean;
+  snapshot: Snapshot;
+};
 
 const tabs: { id: Tab; label: string; icon: typeof FileText }[] = [
   { id: "prd", label: "기획 내용", icon: FileText },
@@ -92,7 +102,12 @@ export default function App() {
     login,
     logout,
     allowed,
+    recovering,
+    unavailable,
+    retry,
   } = useAuth(health?.auth_mode);
+  const accountRef = useRef(identity?.account.id);
+  accountRef.current = identity?.account.id;
   const [adminNavOpen, setAdminNavOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [page, setPage] = useState(pageFromURL);
@@ -110,6 +125,11 @@ export default function App() {
   const [historical, setHistorical] = useState<Revision | null>(null);
   const historyRequest = useRef(0);
   const [edit, setEdit] = useState<Snapshot | null>(null);
+  const editBasis = useRef<Omit<EditorDraft, "snapshot"> | null>(null);
+  const restoredProject = useRef<string | null>(null);
+  const enteredProject = useRef<string | null>(null);
+  const [staleEdit, setStaleEdit] = useState(false);
+  const [hasUnsent, setHasUnsent] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
@@ -122,7 +142,7 @@ export default function App() {
   const handleError = useCallback((e: unknown) => {
     if (e instanceof DOMException && e.name === "AbortError") return;
     if (e instanceof ApiError && e.status === 401) {
-      void logoutRef.current();
+      void logoutRef.current({ explicit: false });
       setProjects([]);
       setBundle(null);
     }
@@ -195,11 +215,41 @@ export default function App() {
     setEdit(null);
     setSelected(null);
     setCandidate(true);
+    restoredProject.current = null;
+    enteredProject.current = null;
+    setStaleEdit(false);
+    setHasUnsent(false);
     proposalRef.current = null;
     historyRequest.current++;
     if (projectId && authed && allowed("plans.read"))
       refresh().catch(handleError);
   }, [projectId, authed, identity?.account.id, refresh, handleError]);
+  const editorKey = identity && projectId
+    ? tabDraftKey(identity.account.id, "edit", projectId) : null;
+  useEffect(() => {
+    if (!bundle || bundle.project.id !== projectId || !editorKey || restoredProject.current === editorKey) return;
+    restoredProject.current = editorKey;
+    const saved = readTabDraft<EditorDraft | null>(editorKey, null);
+    if (!saved?.snapshot?.prd || !Array.isArray(saved.snapshot.prd.sections)) return;
+    if (saved.baseVersion !== bundle.project.current_version ||
+        saved.proposalId !== (bundle.proposal?.id || null)) {
+      setStaleEdit(true);
+      return;
+    }
+    editBasis.current = saved;
+    setCandidate(saved.candidate);
+    setEdit(saved.snapshot);
+  }, [bundle, editorKey, projectId]);
+  useEffect(() => {
+    if (!bundle || bundle.project.id !== projectId || !editorKey || enteredProject.current === editorKey) return;
+    enteredProject.current = editorKey;
+    const active = bundle.job && busyStatuses.includes(bundle.job.status);
+    if (bundle.proposal && !active && bundle.job?.status !== "failed" && !readTabDraft(editorKey, null)) {
+      setPanel("review");
+      setSideOpen(true);
+      setCandidate(true);
+    }
+  }, [bundle, editorKey, projectId]);
   useEffect(() => {
     if (!authed || !projectId || !allowed("plans.read")) return;
     void refresh().catch(handleError);
@@ -218,9 +268,13 @@ export default function App() {
   }, [projectId, authed, busy, bundle?.job?.status, refresh, handleError]);
   useEffect(() => {
     const back = () => {
+      idRef.current = projectFromURL();
       setProjectId(projectFromURL());
       setPage(pageFromURL());
       setTab("prd");
+      setPanel("chat");
+      setMobileView("chat");
+      setSideOpen(true);
     };
     window.addEventListener("popstate", back);
     return () => window.removeEventListener("popstate", back);
@@ -288,25 +342,37 @@ export default function App() {
       setError("이 화면을 사용할 권한이 없어 업무 홈으로 이동했습니다.");
     }
   }, [authed, health, page, projectId, identity]);
-  const create = (idea: string, source: Source, intent: PlanningIntent) =>
-    run(async () => {
-      const p = await api<Project>("/api/projects", {
-        id: crypto.randomUUID(),
+  const create = async (idea: string, source: Source, intent: PlanningIntent) =>
+    !!(await run(async () => {
+      const owner = identity!.account.id;
+      const key = tabDraftKey(owner, "intake", source.id);
+      const payload = {
         idea,
         source_id: source.id,
         code_snapshot_id: source.published_snapshot_id,
         source_publication_id: source.publication_id,
         start_mode: "conversation",
         planning_intent: intent,
-      });
-      await refreshProjects();
-      navigate(p.id);
-    });
+      };
+      const draft = readTabDraft<{ text: string; intent: PlanningIntent; operation?: { id: string; payload: typeof payload } }>(key, { text: idea, intent });
+      const operation = draft.operation && JSON.stringify(draft.operation.payload) === JSON.stringify(payload)
+        ? draft.operation : { id: crypto.randomUUID(), payload };
+      writeTabDraft(key, { ...draft, operation });
+      const p = await api<Project>("/api/projects", { id: operation.id, ...operation.payload });
+      // POST success is authoritative; list refresh must not turn it into a retry.
+      if (accountRef.current !== owner) return;
+      await refreshProjects().catch(handleError);
+      const current = new URLSearchParams(location.search);
+      if (accountRef.current === owner && !idRef.current && current.get("view") === "intake" && current.get("source") === source.id)
+        navigate(p.id);
+    }));
   const update = (fn: (s: Snapshot) => void) =>
     setEdit((previous) => {
       if (!previous) return previous;
       const next = structuredClone(previous);
       fn(next);
+      if (editorKey && editBasis.current)
+        writeTabDraft(editorKey, { ...editBasis.current, snapshot: next });
       return next;
     });
   const changeTab = (next: Tab) => {
@@ -329,6 +395,29 @@ export default function App() {
   const viewIsCandidate = !!bundle?.proposal && candidate && !historical;
   const hasAnyArtifact =
     snapshot && visibleTabs.some(({ id }) => hasArtifact(snapshot, id));
+  const persistedArtifact = [bundle?.proposal?.candidate, bundle?.revision.snapshot]
+    .some((value) => value && visibleTabs.some(({ id }) => hasArtifact(value, id)));
+  const conversationStage = !persistedArtifact && !edit;
+  const confirmedWithPending = !!bundle?.proposal && !viewIsCandidate;
+  const availablePanels = conversationStage ? panels.filter(item => item.id === "chat") : panels;
+  const startEditing = () => {
+    if (!snapshot || !bundle || !editorKey || confirmedWithPending) return;
+    editBasis.current = {
+      baseVersion: bundle.project.current_version,
+      proposalId: bundle.proposal?.id || null,
+      candidate: viewIsCandidate,
+    };
+    const draft = structuredClone(snapshot);
+    writeTabDraft(editorKey, { ...editBasis.current, snapshot: draft });
+    setStaleEdit(false);
+    setEdit(draft);
+  };
+  const discardEdit = () => {
+    if (editorKey) removeTabDraft(editorKey);
+    editBasis.current = null;
+    setEdit(null);
+    setStaleEdit(false);
+  };
   const showReviewGuide = () => {
     setReviewVisit((value) => value + 1);
     setPanel("review");
@@ -414,51 +503,127 @@ export default function App() {
           ),
         ].find((x) => x.id === selected)
       : null;
-  const submitAnswers = (answers: Record<string, string>) =>
-    run(async () => {
+  const submitAnswers = async (answers: Record<string, string>) =>
+    !!(await run(async () => {
       if (!bundle?.job) return;
-      await api(`/api/projects/${projectId}/jobs/${bundle.job.id}/answers`, {
+      const owner = identity!.account.id;
+      const id = projectId;
+      const accepted = await api<Job>(`/api/projects/${projectId}/jobs/${bundle.job.id}/answers`, {
         base_version: bundle.job.base_version,
         answers,
       });
-      await refresh();
-    });
+      if (accountRef.current === owner && idRef.current === id) {
+        setBundle((previous) => previous && previous.project.id === id ? { ...previous, job: accepted } : previous);
+        await refresh().catch(handleError);
+      }
+    }));
   const send = async (request: string) =>
     !!(await run(async () => {
-      if (!bundle) return;
-      await api(`/api/projects/${projectId}/jobs`, {
-        id: crypto.randomUUID(),
+      if (!bundle || !projectId || !identity) return;
+      const owner = identity.account.id;
+      const id = projectId;
+      const key = tabDraftKey(`${owner}:${id}`, "request", "discuss");
+      const payload = {
         base_version: bundle.project.current_version,
         kind: "discuss",
         request,
         target_id: selectedItem?.id || null,
         base_proposal_id: bundle.proposal?.id || null,
-      });
-      await refresh();
+      };
+      const previous = readTabDraft<{ id: string; payload: typeof payload } | null>(key, null);
+      const operation = previous && JSON.stringify(previous.payload) === JSON.stringify(payload)
+        ? previous : { id: crypto.randomUUID(), payload };
+      writeTabDraft(key, operation);
+      const accepted = await api<Job>(`/api/projects/${id}/jobs`, { id: operation.id, ...operation.payload });
+      removeTabDraft(key);
+      if (accountRef.current === owner && idRef.current === id) {
+        setBundle((previous) => previous && previous.project.id === id ? { ...previous, job: accepted } : previous);
+        await refresh().catch(handleError);
+      }
     }));
-  const writeDraft = (repair = false) =>
-    run(async () => {
-      if (!bundle) return;
+  const blockUnsentInput = () => {
+    const pending = identity && projectId && readTabDraft(
+      tabDraftKey(`${identity.account.id}:${projectId}`, "chat", "input"), "",
+    ).trim();
+    const questions = bundle?.job?.partial.discussion as { questions?: { key: string }[] } | undefined;
+    const pendingQuestion = identity && projectId && questions?.questions?.some((question) => {
+      const saved = readTabDraft<{ choice: string | null; custom: string; sent: boolean } | null>(
+        tabDraftKey(`${identity.account.id}:${projectId}`, "dialogue", `${bundle!.job!.id}:${question.key}`), null,
+      );
+      return saved && !saved.sent && !!(saved.choice || saved.custom.trim());
+    });
+    if (hasUnsent || pending || pendingQuestion) {
+      setError("입력한 내용을 먼저 보내 주세요.");
+      setPanel("chat");
+      setSideOpen(true);
+      setMobileView("chat");
+      return true;
+    }
+    return false;
+  };
+  const writeDraft = (repair = false) => {
+    if (blockUnsentInput()) return Promise.resolve(false);
+    return run(async () => {
+      if (!bundle || !identity || !projectId) return;
+      const owner = identity.account.id;
+      const id = projectId;
+      const key = tabDraftKey(`${owner}:${id}`, "request", repair ? "repair" : "generate");
       const hasDraft = !!bundle.proposal || bundle.project.current_version > 0;
       const request = repair
         ? "지적된 연결 오류만 정리해 주세요."
         : bundle.messages.filter((message) => message.role === "user").at(-1)
             ?.content || bundle.project.idea;
-      await api(`/api/projects/${projectId}/jobs`, {
-        id: crypto.randomUUID(),
+      const payload = {
         base_version: bundle.project.current_version,
         kind: repair ? "repair" : hasDraft ? "revise" : "generate",
         request,
         target_id: repair ? null : selectedItem?.id || null,
         base_proposal_id: bundle.proposal?.id || null,
-      });
+      };
+      const previous = readTabDraft<{ id: string; payload: typeof payload } | null>(key, null);
+      const operation = previous && JSON.stringify(previous.payload) === JSON.stringify(payload)
+        ? previous : { id: crypto.randomUUID(), payload };
+      writeTabDraft(key, operation);
+      const accepted = await api<Job>(`/api/projects/${id}/jobs`, { id: operation.id, ...operation.payload });
+      removeTabDraft(key);
+      if (accountRef.current !== owner || idRef.current !== id) return;
+      setBundle((previous) => previous && previous.project.id === id ? { ...previous, job: accepted } : previous);
       setPanel("chat");
       setSideOpen(true);
-      await refresh();
+      await refresh().catch(handleError);
     });
+  };
+  const retryJob = () => {
+    if (blockUnsentInput()) return Promise.resolve(false);
+    return run(async () => {
+      if (!bundle?.job || !identity || !projectId) return;
+      const owner = identity.account.id;
+      const id = projectId;
+      const job = bundle.job;
+      const key = tabDraftKey(`${owner}:${id}`, "request", `retry:${job.id}`);
+      const payload = {
+        base_version: bundle.project.current_version,
+        kind: job.kind,
+        base_proposal_id: job.base_proposal_id || null,
+        target_id: (job.partial.target_id as string | null) || null,
+        request: job.request || bundle.project.idea,
+      };
+      const previous = readTabDraft<{ id: string; payload: typeof payload } | null>(key, null);
+      const operation = previous && JSON.stringify(previous.payload) === JSON.stringify(payload)
+        ? previous : { id: crypto.randomUUID(), payload };
+      writeTabDraft(key, operation);
+      const accepted = await api<Job>(`/api/projects/${id}/jobs`, { id: operation.id, ...operation.payload });
+      removeTabDraft(key);
+      if (accountRef.current !== owner || idRef.current !== id) return;
+      setBundle((previous) => previous && previous.project.id === id ? { ...previous, job: accepted } : previous);
+      await refresh().catch(handleError);
+    });
+  };
   const decide = (decision: "approve" | "reject", ack: boolean) =>
     run(async () => {
-      if (!bundle?.proposal) return;
+      if (!bundle?.proposal || !identity) return;
+      const owner = identity.account.id;
+      const id = projectId;
       await api(
         `/api/projects/${projectId}/proposals/${bundle.proposal.id}/${decision}`,
         {
@@ -466,6 +631,7 @@ export default function App() {
           acknowledge_warnings: ack,
         },
       );
+      if (accountRef.current !== owner || idRef.current !== id) return;
       setCandidate(false);
       setHistorical(null);
       setEdit(null);
@@ -475,14 +641,27 @@ export default function App() {
     });
   const save = () =>
     run(async () => {
-      if (!edit || !bundle) return;
+      if (!edit || !bundle || !editorKey || !identity) return;
+      const owner = identity.account.id;
+      const id = projectId;
+      const savedEditorKey = editorKey;
+      if (editBasis.current?.baseVersion !== bundle.project.current_version ||
+          editBasis.current?.proposalId !== (bundle.proposal?.id || null)) {
+        setStaleEdit(true);
+        setEdit(null);
+        return;
+      }
       await api(`/api/projects/${projectId}/proposals`, {
-        base_version: bundle.project.current_version,
+        base_version: editBasis.current.baseVersion,
         snapshot: edit,
-        base_proposal_id: viewIsCandidate ? bundle.proposal?.id : null,
+        base_proposal_id: editBasis.current?.proposalId || null,
         summary: "문서와 화면 직접 편집",
       });
+      removeTabDraft(savedEditorKey);
+      if (accountRef.current !== owner || idRef.current !== id) return;
+      editBasis.current = null;
       setEdit(null);
+      setStaleEdit(false);
       setSelected(null);
       setTab("prd");
       showReviewGuide();
@@ -527,6 +706,17 @@ export default function App() {
       </div>
     );
   if (!authed)
+    if (unavailable)
+      return (
+        <main className="boot-screen" aria-busy={recovering}>
+          <Logo />
+          <p role="alert">{authNotice || "로그인 상태를 확인하지 못했습니다. 다시 연결해 주세요."}</p>
+          <button className="primary" disabled={recovering} onClick={() => void retry()}>
+            {recovering ? "연결 확인 중…" : "다시 연결"}
+          </button>
+        </main>
+      );
+  if (!authed)
     return (
       <Login
         notice={error || authNotice}
@@ -542,6 +732,7 @@ export default function App() {
       displayName={identity?.account.name}
       role={identity?.account.role}
       onLogout={() => {
+        clearTabDrafts();
         void logout().then(() => window.location.replace("/"));
       }}
     />
@@ -561,6 +752,14 @@ export default function App() {
     allowed("plans.edit") && bundle?.source_access?.can_use !== false;
   return (
     <>
+      {authed && unavailable && (
+        <div className="connection-notice" role="status">
+          <span>{authNotice || "연결을 확인하고 있습니다. 작성 중인 내용은 유지됩니다."}</span>
+          <button disabled={recovering} onClick={() => void retry()}>
+            {recovering ? "연결 확인 중…" : "다시 연결"}
+          </button>
+        </div>
+      )}
       {adminNavOpen && navigation && (
         <AdminNavigation
           page={page}
@@ -612,6 +811,7 @@ export default function App() {
           />
         ) : page === "intake" && allowed("plans.create") ? (
           <Intake
+            draftOwner={identity!.account.id}
             navigation={navigation}
             accountMenu={accountMenu}
             health={health}
@@ -649,6 +849,7 @@ export default function App() {
       ) : (
         <div
           className="studio"
+          data-stage={conversationStage ? "conversation" : "documents"}
           data-mobile-view={mobileView}
           data-resizing={workspaceWidth.resizing}
           style={workspaceWidth.style}
@@ -686,7 +887,7 @@ export default function App() {
                 }
               }}
             >
-              {panels.map((item) => (
+              {availablePanels.map((item) => (
                 <option value={item.id} key={item.id}>
                   {item.label}
                 </option>
@@ -704,7 +905,7 @@ export default function App() {
               <Logo compact />
             </button>
             <div className="rail-items">
-              {panels.map(({ id, label, icon: Icon }) => (
+              {availablePanels.map(({ id, label, icon: Icon }) => (
                 <button
                   className={panel === id && sideOpen ? "active" : ""}
                   key={id}
@@ -777,22 +978,10 @@ export default function App() {
                     })
                   }
                   onReview={openReview}
-                  onRetry={() =>
-                    run(async () => {
-                      await api(`/api/projects/${projectId}/jobs`, {
-                        id: crypto.randomUUID(),
-                        base_version: bundle.project.current_version,
-                        kind: bundle.job?.kind || "discuss",
-                        base_proposal_id: bundle.job?.base_proposal_id || null,
-                        target_id:
-                          (bundle.job?.partial?.target_id as string | null) ||
-                          null,
-                        request: bundle.job?.request || bundle.project.idea,
-                      });
-                      await refresh();
-                    })
-                  }
+                  onRetry={() => void retryJob()}
                   working={working}
+                  draftScope={`${identity!.account.id}:${bundle.project.id}`}
+                  onUnsentChange={setHasUnsent}
                 />
               ) : panel === "review" ? (
                 <Review
@@ -978,7 +1167,9 @@ export default function App() {
               />
               <div className="header-status">
                 <span className="status-dot" />
-                {busy ? "생성 중" : "저장됨"}
+                {edit ? "직접 편집 미저장" : hasUnsent ? "미전송 입력 임시 보관" :
+                  bundle.job?.status === "awaiting_answers" ? "답변 대기" :
+                  busy ? "기획 정리 중" : working ? "저장 중…" : "전송한 대화 저장됨"}
               </div>
               {accountMenu}
             </header>
@@ -990,6 +1181,17 @@ export default function App() {
                 </span>
               </div>
             )}
+            {staleEdit && (
+              <div className="draft-conflict" role="alert">
+                <p>다른 기준 버전에서 작성한 임시 편집이 있습니다. 현재 문서에는 자동 적용하지 않았습니다.</p>
+                <button className="secondary" onClick={discardEdit}>임시 편집 버리기</button>
+              </div>
+            )}
+            <div className="journey-stage" role="status">
+              {conversationStage ? "1 업무 대화 · 내용을 정리한 뒤 기획 초안을 만듭니다" :
+                viewIsCandidate ? "2 초안 확인 · 업무와 맞는지 살펴보고 확인본으로 저장하세요" :
+                  "3 현업 확인본 · 내려받거나 새 수정안을 만들 수 있습니다"}
+            </div>
             <div
               className="workspace-tabs"
               role="tablist"
@@ -1039,16 +1241,28 @@ export default function App() {
                     )}
                     <button onClick={() => exportFile("markdown")}>
                       <FileText size={15} />
-                      Markdown (.md)
+                      문서 파일 (.md)
                     </button>
                     <button onClick={() => exportFile("json")}>
                       <FileText size={15} />
-                      JSON (.json)
+                      기획 데이터 (.json)
                     </button>
                   </div>
                 )}
               </div>
             </div>
+            {viewIsCandidate && (
+              <div className="export-guide">
+                <span>초안을 확인본으로 저장하면 내려받을 수 있어요.</span>
+                <button className="text-button" onClick={openReview}>초안 내용 확인</button>
+                {!!bundle.project.current_version && (
+                  <button className="text-button" disabled={working || !allowed("plans.export")}
+                    onClick={() => run(() => download(`/api/projects/${projectId}/revisions/${bundle.project.current_version}/export?format=markdown`))}>
+                    확인본 v{bundle.project.current_version} 내려받기
+                  </button>
+                )}
+              </div>
+            )}
             {panel === "review" && (
               <div className="review-document-bar">
                 <span>
@@ -1115,7 +1329,7 @@ export default function App() {
                     <button
                       className="text-button"
                       disabled={working}
-                      onClick={() => setEdit(null)}
+                      onClick={discardEdit}
                     >
                       취소
                     </button>
@@ -1149,8 +1363,8 @@ export default function App() {
                 ) : (
                   <button
                     className="text-button"
-                    disabled={working || busy || !hasAnyArtifact || !editable}
-                    onClick={() => setEdit(structuredClone(snapshot))}
+                    disabled={working || busy || !hasAnyArtifact || !editable || staleEdit || confirmedWithPending}
+                    onClick={startEditing}
                   >
                     <Pencil size={13} />
                     직접 편집
@@ -1158,6 +1372,7 @@ export default function App() {
                 )}
               </div>
             </div>
+            {confirmedWithPending && !edit && <p className="journey-stage">작성 중인 초안을 선택한 뒤 편집해 주세요.</p>}
             {!hasArtifact(snapshot, tab) ? (
               <div className="workspace-empty">
                 <div className="empty-orbit">
@@ -1208,7 +1423,7 @@ export default function App() {
                     {bundle.project.conversation_brief && (
                       <button
                         className="primary"
-                        disabled={busy || working}
+                        disabled={busy || working || hasUnsent}
                         onClick={() => void writeDraft()}
                       >
                         기획 초안 만들기 <ArrowRight size={16} />
