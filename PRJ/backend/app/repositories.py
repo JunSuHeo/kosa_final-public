@@ -1,5 +1,6 @@
 """Read-only Git access and bounded, commit-specific source analysis."""
 
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -11,20 +12,23 @@ import time
 from urllib.parse import quote
 from uuid import uuid4
 
+from fastapi import HTTPException
 import httpx
 
 from psycopg.types.json import Jsonb
 
 from .config import settings
 from .db import connect
+from .github_connection import connected_token
 
-ANALYSIS_VERSION = "git-text.v1"
+LOCAL_ANALYSIS_VERSION = "git-text.v1"
+GITHUB_ANALYSIS_VERSION = "git-text.v2"
 MAX_FILES = 360
 MAX_FILE_BYTES = 40_000
 MAX_TOTAL_BYTES = 2_400_000
 MAX_MODEL_BYTES = 32_000
 MAX_TREE_BYTES = 1_000_000
-MAX_SECONDS = 60
+LOCAL_ANALYSIS_SECONDS = 60
 RULE_FILES = {"agents.md", "readme", "readme.md", "makefile", "contributing.md", "package.json", "pyproject.toml",
               "pom.xml", "build.gradle", "tsconfig.json", "go.mod", "cargo.toml"}
 SOURCE_SUFFIXES = {
@@ -162,25 +166,30 @@ def resolve(source):
                              directory=path, deadline=deadline, limit=MAX_TREE_BYTES))
     else:
         git(["check-ref-format", "refs/heads/" + ref], deadline=deadline)
-        with github_client(source) as client:
-            branch = github_get(client, "/branches/" + quote(ref, safe=""), deadline=deadline)
-        sha = str(branch.get("commit", {}).get("sha", "")).encode()
+        path = "branches/" + quote(ref, safe="")
+        with github_repository(source, path, deadline) as (_, branch):
+            sha = str(branch.get("commit", {}).get("sha", "")).encode()
         dirty = False
     if not re.fullmatch(rb"(?:[0-9a-f]{40}|[0-9a-f]{64})", sha):
         raise RepositoryError("커밋을 확인할 수 없습니다.")
     return sha.decode(), dirty
 
 
+def analysis_version(source):
+    return GITHUB_ANALYSIS_VERSION if source["kind"] == "github" else LOCAL_ANALYSIS_VERSION
+
+
 def schedule(c, source, sha, dirty):
+    version = analysis_version(source)
     c.execute(
         "INSERT INTO studio_code_snapshots(id,source_id,commit_sha,analysis_version,dirty,status) "
         "VALUES (%s,%s,%s,%s,%s,'queued') ON CONFLICT(source_id,commit_sha,analysis_version) DO NOTHING",
-        (uuid4(), source["id"], sha, ANALYSIS_VERSION, dirty),
+        (uuid4(), source["id"], sha, version, dirty),
     )
     return c.execute(
         "SELECT id,commit_sha,analysis_version,dirty,status,error,created_at FROM studio_code_snapshots "
         "WHERE source_id=%s AND commit_sha=%s AND analysis_version=%s",
-        (source["id"], sha, ANALYSIS_VERSION),
+        (source["id"], sha, version),
     ).fetchone()
 
 
@@ -206,36 +215,69 @@ def git_entries(directory, sha, deadline):
         yield name.decode("utf-8", errors="replace"), mode, oid, int(size) if size != "-" else 0
 
 
-def github_client(source):
-    token = github_token(source["owner_id"])
+class GitHubAccessError(RepositoryError):
+    pass
+
+
+@contextmanager
+def github_repository(source, path, deadline=None):
+    owner = source["owner_id"]
+    legacy_token = github_token(owner)
+    connection_error = None
+    try:
+        app_token = connected_token(owner)
+    except HTTPException as error:
+        app_token, connection_error = None, str(error.detail)
+    token = app_token or legacy_token
     repository = github_url(source["repository"]).removeprefix("https://github.com/")
     headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2026-03-10"}
     if token:
         headers["Authorization"] = "Bearer " + token
-    return httpx.Client(base_url=f"https://api.github.com/repos/{repository}/", headers=headers,
-                        timeout=10, trust_env=False, follow_redirects=False)
+    with httpx.Client(base_url=f"https://api.github.com/repos/{repository}/", headers=headers,
+                      timeout=10, trust_env=False, follow_redirects=False) as client:
+        try:
+            first = github_get(client, path, deadline=deadline)
+        except GitHubAccessError:
+            if not app_token or app_token == legacy_token:
+                if connection_error:
+                    raise RepositoryError(connection_error) from None
+                raise
+            if legacy_token:
+                client.headers["Authorization"] = "Bearer " + legacy_token
+            else:
+                del client.headers["Authorization"]
+            first = github_get(client, path, deadline=deadline)
+        yield client, first
 
 
-def github_get(client, path, *, deadline, limit=50_000, raw=False):
-    if time.monotonic() >= deadline:
+def github_get(client, path, *, deadline=None, limit=50_000, raw=False):
+    remaining = deadline - time.monotonic() if deadline is not None else None
+    if remaining is not None and remaining <= 0:
         raise RepositoryLimit("저장소 분석 시간이 상한을 초과했습니다.")
     try:
         headers = {"Accept": "application/vnd.github.raw+json"} if raw else {}
         with client.stream("GET", path.lstrip("/"), headers=headers,
-                           timeout=min(10, deadline - time.monotonic())) as response:
+                           timeout=10 if remaining is None else min(10, remaining)) as response:
             if response.status_code in {403, 429} and response.headers.get("X-RateLimit-Remaining") == "0":
                 raise RepositoryLimit("GitHub 읽기 한도에 도달했습니다.")
+            if response.status_code == 401:
+                raise GitHubAccessError("GitHub 권한을 확인할 수 없습니다. GitHub를 다시 연결해 주세요.")
+            if response.status_code in {403, 404}:
+                raise GitHubAccessError("GitHub 저장소 또는 지정한 참조에 접근할 수 없습니다.")
             if response.status_code != 200:
                 raise RepositoryError("GitHub 저장소 또는 지정한 참조에 접근할 수 없습니다.")
             data = bytearray()
             for chunk in response.iter_bytes(chunk_size=8192):
-                if time.monotonic() >= deadline:
+                if deadline is not None and time.monotonic() >= deadline:
                     raise RepositoryLimit("저장소 분석 시간이 상한을 초과했습니다.")
                 if len(data) + len(chunk) > limit:
                     raise RepositoryLimit("GitHub 응답이 분석 상한을 초과했습니다.")
                 data.extend(chunk)
         return bytes(data) if raw else json.loads(data)
-    except (httpx.HTTPError, ValueError):
+    except (httpx.HTTPError, ValueError) as error:
+        if (remaining is not None and isinstance(error, httpx.TimeoutException)
+                and (remaining <= 10 or time.monotonic() >= deadline)):
+            raise RepositoryLimit("저장소 분석 시간이 상한을 초과했습니다.") from None
         raise RepositoryError("GitHub 저장소를 읽을 수 없습니다.") from None
 
 
@@ -301,8 +343,8 @@ def inspect_tree(entries, read_blob, *, priorities=(), tree_truncated=False):
 
 def analyze(source, snapshot):
     sha = snapshot["commit_sha"]
-    deadline = time.monotonic() + MAX_SECONDS
     if source["kind"] == "local":
+        deadline = time.monotonic() + LOCAL_ANALYSIS_SECONDS
         path = local_path(source["repository"])
         local_gitdir(path, deadline)
         return inspect_tree(
@@ -310,17 +352,16 @@ def analyze(source, snapshot):
             lambda oid: git(["cat-file", "blob", oid], directory=path, deadline=deadline, limit=MAX_FILE_BYTES),
             priorities=source.get("analysis_paths", []),
         )
-    with github_client(source) as client:
-        commit = github_get(client, f"git/commits/{sha}", deadline=deadline)
+    with github_repository(source, f"git/commits/{sha}") as (client, commit):
         tree_sha = commit["tree"]["sha"]
-        tree = github_get(client, f"git/trees/{tree_sha}?recursive=1", deadline=deadline, limit=8_000_000)
+        tree = github_get(client, f"git/trees/{tree_sha}?recursive=1", limit=8_000_000)
         entries = (
             (item["path"], item["mode"], item["sha"], item.get("size", 0))
             for item in tree["tree"] if item["type"] != "tree"
         )
 
         def read_blob(oid):
-            content = github_get(client, f"git/blobs/{oid}", deadline=deadline, limit=MAX_FILE_BYTES, raw=True)
+            content = github_get(client, f"git/blobs/{oid}", limit=MAX_FILE_BYTES, raw=True)
             if hashlib.sha1(f"blob {len(content)}\0".encode() + content).hexdigest() != oid:
                 raise RepositoryError("GitHub 파일의 객체 해시를 검증할 수 없습니다.")
             return content
@@ -343,7 +384,7 @@ def process_analysis(snapshot_id):
             return
         source = lease.execute("SELECT * FROM studio_sources WHERE id=%s", (snapshot["source_id"],)).fetchone()
         try:
-            if snapshot["analysis_version"] != ANALYSIS_VERSION:
+            if snapshot["analysis_version"] != analysis_version(source):
                 raise RepositoryError("분석 버전이 변경되었습니다. 새 스냅샷을 요청해 주세요.")
             result = analyze(source, snapshot)
         except (RepositoryError, OSError, KeyError, TypeError, ValueError) as error:

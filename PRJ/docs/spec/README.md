@@ -67,6 +67,7 @@ JSON envelope는 project_id/version/created_at/snapshot이다. Markdown에는 PR
 ## 기준 프로젝트와 코드 스냅샷
 
 - `POST /api/sources`는 이름, 설명, 로컬 상대 경로 또는 GitHub URL, 브랜치, 선택적인 분석 우선 경로를 받는다. `GET /api/sources`는 로그인 사용자의 등록 목록과 최근 확인 상태를 반환한다.
+- `GET /api/sources/github`는 GitHub App 설정과 현재 H‑PlanIT 계정의 연결 상태를 반환한다. `POST /api/sources/github/start`는 10분 동안 유효한 일회성 OAuth 요청을 생성하고, `POST /api/sources/github/complete`는 동일 계정의 state와 PKCE를 확인하고 코드를 교환한다. `GET /api/sources/github/repositories`는 GitHub App 및 연결 계정이 읽을 수 있는 저장소의 이름·기본 브랜치·공개 여부를 반환한다. 네 경로 모두 `sources.manage` 권한을 검사한다. GitHub 토큰은 서버에 암호화해 보관한다.
 - `POST /api/sources/{source_id}/analyze`는 현재 참조를 commit SHA로 확인하고 `source_id/commit_sha/analysis_version` 당 하나의 분석을 예약한다. 커밋 확인 실패는 기준 프로젝트의 오류로 기록한다.
 - `GET /api/sources/{source_id}/snapshots/{snapshot_id}`는 상태·제외 사유·읽은 파일의 경로와 SHA-256을 반환한다. `POST .../retry`는 같은 커밋의 실패 분석만 재개한다. 준비된 분석은 DB에서 수정할 수 없다.
 - `POST .../preview`는 `{idea}`로 모델에 전달할 발췌, 공급자·모델, 확인 fingerprint를 계산한다. 이 요청에서 모델을 호출하지 않는다.

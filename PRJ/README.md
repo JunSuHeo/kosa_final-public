@@ -209,9 +209,17 @@ STUDIO_REPOSITORY_HOST_ROOT=/절대경로/저장소모음 \
   docker compose -f compose.yaml -f infra/repositories.compose.yaml up --build -d
 ```
 
-호스트에서 API와 worker를 실행할 때는 두 프로세스에 동일한 `LOCAL_REPOSITORY_ROOT`를 설정한다. GitHub 공개 저장소는 토큰 없이 읽을 수 있다. 비공개 저장소에는 읽기 전용 Contents 권한을 연결한다. 서버 관리자가 `GITHUB_USER_TOKENS`에 실제 JWT subject별 토큰을 매핑한다. `GITHUB_LOCAL_TOKEN`은 로컬 mock의 기본 웹 사용자만 사용하는 검증용이다. 이 값은 서버 환경에만 둔다.
+호스트에서 API와 worker를 실행할 때는 두 프로세스에 동일한 `LOCAL_REPOSITORY_ROOT`를 설정한다. GitHub 공개 저장소는 토큰 없이 읽을 수 있다. 수동 설정으로 비공개 저장소를 읽으려면 서버의 `GITHUB_USER_TOKENS`에 저장소 소유자의 H‑PlanIT 계정 ID(`studio_accounts.id`)별 읽기 전용 토큰을 매핑한다. `GITHUB_LOCAL_TOKEN`은 로컬 mock의 기본 웹 사용자 검증용이다.
 
-분석을 시작하면 branch에서 확인한 커밋만 읽는다. 워킹 트리의 미커밋 변경은 상태에 표시한다. 개별 파일 40KB, 최대 360개, 총 2.4MB, 분석 60초, 모델 발췌 32KB를 상한으로 적용한다. 읽기 상한·제외 규칙·민감 패턴에 해당하는 파일은 분석 결과에 사유를 기록한다. 등록과 분석은 저장소의 설치 스크립트와 애플리케이션을 실행하지 않는다.
+### 업무 연결에서 GitHub 승인
+
+1. [GitHub App을 등록한다](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app). Repository permissions에서 **Contents: Read-only**를 부여하고, 만료형 사용자 토큰을 활성화한다. Callback URL은 웹 서비스 주소 뒤에 `/github/callback`을 붙인다. 예를 들어 웹이 5178이면 `http://localhost:5178/github/callback`을 등록한다.
+2. API·worker 서버 환경에 `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_CALLBACK_URL`, `GITHUB_APP_SLUG`, `GITHUB_TOKEN_ENCRYPTION_KEY`를 같은 값으로 설정한다. 암호화 키는 서버 Python에서 `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'`로 생성해 서버 비밀 저장소에 보관한다. Supabase 구성에서는 [Supabase 마이그레이션 절차](docs/supabase-transition.md)로 `008_github_connections.sql`을 적용한 뒤 API·worker·web을 갱신한다.
+3. **업무 연결 설정 → 기준 프로젝트 등록 → GitHub → GitHub 연결**에서 승인한다. 목록에 저장소가 없으면 **GitHub App 설치·저장소 권한 설정**에서 대상 저장소를 허용하고 목록을 새로고침한다. 저장소를 선택하면 기본 브랜치가 채워진다. 필요하면 브랜치를 수정하고 등록한다. 이미 등록한 비공개 저장소는 동일 소유자 계정에서 연결한 뒤 분석을 다시 시작한다.
+
+GitHub App이 허용한 저장소 중 로그인한 GitHub 사용자가 접근할 수 있는 저장소가 표시된다. 토큰은 서버에서 암호화해 저장하고 API·worker가 만료 전에 갱신한다. 설정하지 않은 배포에서는 URL 직접 입력과 기존 서버 토큰을 사용할 수 있다.
+
+분석을 시작하면 branch에서 확인한 커밋만 읽는다. 워킹 트리의 미커밋 변경은 상태에 표시한다. 개별 파일 40KB, 최대 360개, 총 2.4MB, 모델 발췌 32KB를 상한으로 적용한다. 로컬 저장소 분석에는 전체 60초 제한이 적용된다. GitHub 백그라운드 분석에는 전체 시간 제한을 두지 않으며 요청별 네트워크 타임아웃과 GitHub 읽기 한도를 적용한다. 읽기 상한·제외 규칙·민감 패턴에 해당하는 파일은 분석 결과에 사유를 기록한다. 등록과 분석은 저장소의 설치 스크립트와 애플리케이션을 실행하지 않는다.
 
 업무 연결 설정에서 소유자가 허용 코드 범위와 AI 공급자/모델을 확인하고 게시한다. live 모델은 허용 범위 안에서 요청 관련 발췌를 전송하며, H-PlanIT은 고정 기준과 발췌를 기획·검토 기록에 보관한다. 공급자에서의 처리와 보관은 해당 공급자 설정과 정책을 따른다. 민감 패턴 검사는 자동 필터이므로 비공개 저장소를 전송하기 전에 발췌를 검토한다.
 

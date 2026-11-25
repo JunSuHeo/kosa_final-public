@@ -9,6 +9,7 @@ from psycopg.types.json import Jsonb
 from .auth import current_user
 from .accounts import router as accounts_router
 from .config import settings
+from .github_connection import router as github_router
 from .db import connect, initialize
 from .schema import Snapshot, empty_snapshot
 from .review import review
@@ -32,6 +33,7 @@ async def lifespan(app):
 app = FastAPI(title="H-PlanIT API", version="2.1.0", lifespan=lifespan)
 
 
+app.include_router(github_router)
 app.include_router(source_router)
 app.include_router(accounts_router)
 
