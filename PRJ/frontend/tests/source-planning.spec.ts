@@ -97,3 +97,52 @@ test("게시된 코드·디자인 기준은 재접속과 확인본 내보내기�
     .click();
   expect((await download).suggestedFilename()).toBe("studio-v1.md");
 });
+
+test("GitHub 승인 후 업무 연결 등록에서 비공개 저장소를 선택한다", async ({ page }) => {
+  const state = "a".repeat(43);
+  let connected = false;
+  await page.route("**/api/sources/github", (route) => route.fulfill({
+    json: { enabled: true, connected, login: connected ? "octo" : null, install_url: null },
+  }));
+  await page.route("**/api/sources/github/start", (route) => route.fulfill({
+    json: { url: `https://github.com/login/oauth/authorize?state=${state}` },
+  }));
+  await page.route("https://github.com/login/oauth/authorize?*", (route) => route.fulfill({
+    status: 302, headers: { location: new URL(`/github/callback?state=${state}&code=example`, page.url()).href },
+  }));
+  await page.route("**/api/sources/github/complete", (route) => {
+    expect(route.request().postDataJSON()).toEqual({ state, code: "example" });
+    connected = true;
+    return route.fulfill({ json: { enabled: true, connected, login: "octo", install_url: null } });
+  });
+  await page.route("**/api/sources/github/repositories", (route) => route.fulfill({
+    json: [{ name: "octo/private", branch: "trunk", private: true }],
+  }));
+  await page.route("**/api/sources/*/analyze", (route) => route.fulfill({
+    json: { status: "queued" },
+  }));
+  await page.goto("/?view=settings");
+  await page.getByRole("button", { name: "기준 프로젝트 등록" }).click();
+  await page.getByLabel("연결 유형").selectOption("github");
+  await page.getByLabel("이름", { exact: true }).fill("케이터링");
+  await page.getByRole("button", { name: "GitHub 연결", exact: true }).click();
+  await expect(page).toHaveURL(/\?view=settings$/);
+  await expect(page.getByText("GitHub 연결됨 · octo")).toBeVisible();
+  await expect(page.getByLabel("이름", { exact: true })).toHaveValue("케이터링");
+  await page.getByLabel("연결한 GitHub 저장소").selectOption("octo/private");
+  await expect(page.getByLabel("저장소", { exact: true })).toHaveValue("https://github.com/octo/private");
+  await expect(page.getByLabel("브랜치", { exact: true })).toHaveValue("trunk");
+  const registered = page.waitForRequest((request) =>
+    request.method() === "POST" && new URL(request.url()).pathname === "/api/sources"
+  );
+  await page.getByRole("button", { name: "등록하고 분석" }).click();
+  expect((await registered).postDataJSON()).toMatchObject({
+    kind: "github", repository: "https://github.com/octo/private", ref: "trunk",
+  });
+  await expect(page.getByRole("button", { name: "기준 프로젝트 등록" })).toBeVisible();
+  await page.getByRole("button", { name: "업무 선택으로 돌아가기" }).click();
+  await page.getByRole("button", { name: "관리자 메뉴 열기" }).click();
+  await page.getByRole("navigation", { name: "관리자 메뉴" })
+    .getByRole("button", { name: "업무 연결 설정" }).click();
+  await expect(page.getByRole("button", { name: "기준 프로젝트 등록" })).toBeVisible();
+});

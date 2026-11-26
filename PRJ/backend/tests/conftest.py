@@ -14,7 +14,7 @@ def isolated_database():
     initialize()
     with connect() as c:
         c.execute(
-            "TRUNCATE studio_messages,studio_proposals,studio_jobs,studio_revisions,studio_projects,studio_sources,studio_code_snapshots RESTART IDENTITY CASCADE"
+            "TRUNCATE studio_github_authorizations,studio_github_connections,studio_messages,studio_proposals,studio_jobs,studio_revisions,studio_projects,studio_sources,studio_code_snapshots RESTART IDENTITY CASCADE"
         )
 
 

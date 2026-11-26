@@ -1,5 +1,8 @@
 from pathlib import Path
 from functools import lru_cache
+import re
+
+from cryptography.fernet import Fernet
 from urllib.parse import urlsplit
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import model_validator
@@ -30,6 +33,11 @@ class Settings(BaseSettings):
     local_repository_root: str = ""
     github_local_token: str = ""
     github_user_tokens: dict[str, str] = {}
+    github_app_client_id: str = ""
+    github_app_client_secret: str = ""
+    github_app_callback_url: str = ""
+    github_app_slug: str = ""
+    github_token_encryption_key: str = ""
     local_screen_previews: dict[str, dict[str, str]] = {}
 
     @model_validator(mode="after")
@@ -55,6 +63,25 @@ class Settings(BaseSettings):
             raise ValueError("live 모드에는 공급자의 서버 API 키가 필요합니다.")
         if self.auth_mode == "supabase" and not self.supabase_url:
             raise ValueError("Supabase URL이 필요합니다.")
+        github_app = (
+            self.github_app_client_id, self.github_app_client_secret, self.github_app_callback_url,
+            self.github_app_slug, self.github_token_encryption_key,
+        )
+        if any(github_app):
+            if not all(github_app):
+                raise ValueError("GitHub App 연결 설정을 모두 지정해 주세요.")
+            callback = urlsplit(self.github_app_callback_url)
+            local_http = (self.app_env == "local" and callback.scheme == "http"
+                          and callback.hostname in {"localhost", "127.0.0.1"})
+            if ((callback.scheme != "https" and not local_http) or not callback.hostname
+                    or callback.username is not None or callback.path != "/github/callback"
+                    or callback.query or callback.fragment
+                    or not re.fullmatch(r"[a-z0-9-]+", self.github_app_slug)):
+                raise ValueError("GitHub App 콜백 주소 또는 앱 이름이 올바르지 않습니다.")
+            try:
+                Fernet(self.github_token_encryption_key)
+            except ValueError:
+                raise ValueError("GitHub 토큰 암호화 키가 올바르지 않습니다.") from None
         return self
 
     @property

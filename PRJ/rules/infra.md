@@ -68,7 +68,7 @@ cd .. && make up
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_AUDIENCE` | 실제 로그인·JWT 검증 |
 | `LOCAL_REPOSITORY_ROOT` | API·worker의 허용 저장소 루트 |
 | `STUDIO_REPOSITORY_HOST_ROOT` | 선택적 마운트의 호스트 절대 경로 |
-| `GITHUB_USER_TOKENS`, `GITHUB_LOCAL_TOKEN` | 서버 전용. JWT subject별 매핑 / local 검증용 |
+| `GITHUB_USER_TOKENS`, `GITHUB_LOCAL_TOKEN` | 서버 전용. H‑PlanIT 계정 ID별 매핑 / local 검증용 |
 | `LOCAL_SCREEN_PREVIEWS` | local HTTP 미리보기 매핑, config.py 제약 확인 |
 | `STUDIO_COMPOSE_PROJECT`, `STUDIO_DB_PORT`, `STUDIO_API_PORT`, `STUDIO_WEB_PORT` | Compose 프로젝트·포트 격리 |
 
@@ -83,7 +83,7 @@ STUDIO_REPOSITORY_HOST_ROOT=/절대경로/허용저장소모음 \
   docker compose -f compose.yaml -f infra/repositories.compose.yaml up --build -d
 ```
 
-저장소 루트는 앱 소스와 분리하고 읽기 전용으로 유지한다. `repositories.py`의 상한은 파일당 40,000 bytes, 360개, 총 2,400,000 bytes, 모델 발췌 32,000 bytes, 60초다.
+저장소 루트는 앱 소스와 분리하고 읽기 전용으로 유지한다. `repositories.py`의 상한은 파일당 40,000 bytes, 360개, 총 2,400,000 bytes, 모델 발췌 32,000 bytes다. 로컬 저장소 분석은 전체 60초로 제한한다. GitHub 백그라운드 분석은 개별 네트워크 요청 타임아웃을 적용한다.
 
 ## 격리 검증 사용 예시
 
@@ -116,3 +116,7 @@ sh scripts/e2e.sh
 ## 신뢰 프록시 경계 (2026-11-23)
 
 Compose의 web은 전용 `studio-proxy` 네트워크에만 참여하고 API는 해당 네트워크와 기존 backend 네트워크에 참여한다. nginx는 X-Forwarded-For/X-Real-IP/X-Forwarded-Proto를 클라이언트 값에 덧붙이지 않고 덮어쓴다. API의 `python -m app.proxy` 런처는 Docker DNS의 자신의 `studio-proxy-api` 별칭과 Linux `/proc/net/route`로 해당 네트워크의 실제 CIDR을 구해 Uvicorn에 지정한다. 이를 찾지 못하면 시작을 거부한다. `*` 신뢰나 고정 서브넷을 사용하지 않아 격리 Compose를 병렬 실행할 수 있다. 직접 호스트 API나 다른 backend 네트워크에서 주입한 전달 헤더는 신뢰하지 않는다. Compose 밖 실행은 기존 uvicorn 명령을 사용하고 배포 환경이 별도라면 실제 신뢰 프록시 경계를 명시한다.
+
+## GitHub 저장소 연결
+
+GitHub App 연결은 API·worker의 공통 환경변수 5개와 `008_github_connections.sql`이 필요하다. 웹 콜백 `/github/callback`은 OAuth 쿼리 로그와 Referrer 전송을 끈다. [GitHub 승인 설정](../README.md#업무-연결에서-github-승인)을 따른다.

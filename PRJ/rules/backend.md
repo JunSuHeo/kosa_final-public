@@ -122,3 +122,7 @@ live smoke는 호출 비용과 데이터를 발생시킨다. 실행 환경과 �
 비밀번호 입력은 브라우저 저장소에 남기지 않는다. 같은 페이지 생명주기에서 동일 입력의 재인증 재시도는 기존 operation ID를 사용한다. 입력이 달라졌거나 탭을 새로고침해 이전 입력 동일성을 확인할 수 없으면 새 작업 ID를 사용한다. superseded409는 기존 ID를 정리하고 다음 명시적인 재시도를 허용하며 자동으로 쓰기를 재전송하지 않는다.
 
 등록이 중단된 pending 계정은 관리자 명시 재시도에서 새 operation ID여도 동일 loginId/이름/역할이면 기존 계정·Auth UID로 완료할 수 있다. ready 계정의 중복 등록과 pending 계정의 메타데이터 변경은409다. 새 등록 작업이 만들어진 뒤 오래된 미완료 작업은 superseded409로 차단한다.
+
+## GitHub 저장소 연결
+
+`github_connection.py`에서 GitHub App 사용자 승인과 저장소 목록을 처리한다. state는 등록을 시작한 H‑PlanIT 계정에 묶이고 PKCE로 코드를 교환한다. 토큰은 `008_github_connections.sql` 테이블에 암호화하며, API와 worker는 저장소 소유자 기준으로 토큰을 조회하고 갱신한다. GitHub 분석 버전 `git-text.v2`는 전체 60초 제한 없이 commit, tree, blob을 읽고 파일 수·크기 상한과 GitHub 요청별 타임아웃을 적용한다. 같은 커밋의 기존 분석 버전은 보존한다.

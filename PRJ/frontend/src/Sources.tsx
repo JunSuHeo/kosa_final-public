@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GitBranch, Plus, X } from "lucide-react";
 import { api } from "./api";
+import { clearGitHubReturn, githubReturn, leaveForGitHub, type GitHubConnection, type GitHubRepository } from "./githubConnection";
 import type { CodeEvidence, Snapshot, Source, SourcePreview } from "./types";
 
 export const sourceStatus = (source: Source) => {
@@ -29,9 +30,64 @@ export function SourcePicker({
   refresh: () => Promise<void>;
   onError: (error: unknown) => void;
 }) {
-  const [kind, setKind] = useState<Source["kind"]>("local");
+  const [returnFlow] = useState(() => githubReturn);
+  const [kind, setKind] = useState<Source["kind"]>(returnFlow ? "github" : "local");
   const [working, setWorking] = useState(false);
-  const [registering, setRegistering] = useState(false);
+  const [registering, setRegistering] = useState(!!returnFlow);
+  const [repository, setRepository] = useState(returnFlow?.fields.repository || "");
+  const [branch, setBranch] = useState(returnFlow?.fields.ref || (returnFlow ? "main" : "HEAD"));
+  const [github, setGithub] = useState<GitHubConnection | null>(null);
+  const [repositories, setRepositories] = useState<GitHubRepository[]>([]);
+  const [githubWorking, setGitHubWorking] = useState(false);
+  const [githubError, setGitHubError] = useState("");
+  const [reloadGitHub, setReloadGitHub] = useState(0);
+  const formRef = useRef<HTMLFormElement>(null);
+  const completion = useRef<Promise<GitHubConnection> | null>(null);
+
+  useEffect(() => {
+    if (!registering || kind !== "github") return;
+    if (returnFlow) clearGitHubReturn();
+    let active = true;
+    setGitHubWorking(true);
+    setGitHubError("");
+    const approval = returnFlow?.approval;
+    if (approval && !completion.current) {
+      completion.current = api<GitHubConnection>("/api/sources/github/complete", approval);
+    }
+    const status = reloadGitHub === 0 && completion.current
+      ? completion.current
+      : api<GitHubConnection>("/api/sources/github");
+    void status.then(async (result) => {
+      if (!active) return;
+      setGithub(result);
+      if (returnFlow && !approval && reloadGitHub === 0) {
+        setGitHubError("GitHub 승인을 완료하지 않았습니다. 다시 연결할 수 있습니다.");
+      }
+      const list = result.connected
+        ? await api<GitHubRepository[]>("/api/sources/github/repositories")
+        : [];
+      if (active) setRepositories(list);
+    }).catch((error: unknown) => {
+      if (active) setGitHubError(error instanceof Error ? error.message : "GitHub에 연결할 수 없습니다.");
+    }).finally(() => {
+      if (active) setGitHubWorking(false);
+    });
+    return () => { active = false; };
+  }, [registering, kind, returnFlow, reloadGitHub]);
+
+  async function connectGitHub() {
+    const form = formRef.current;
+    if (!form) return;
+    setGitHubError("");
+    setGitHubWorking(true);
+    try {
+      const { url } = await api<{ url: string }>("/api/sources/github/start", {});
+      leaveForGitHub(url, form);
+    } catch (error) {
+      setGitHubError(error instanceof Error ? error.message : "GitHub에 연결할 수 없습니다.");
+      setGitHubWorking(false);
+    }
+  }
   async function run(action: () => Promise<void>) {
     setWorking(true);
     try {
@@ -77,7 +133,7 @@ export function SourcePicker({
           </div>
         </div>
       )}
-      <form id="source-registration" className="source-registration" hidden={!registering} onSubmit={(event) => {
+      <form ref={formRef} id="source-registration" className="source-registration" hidden={!registering} onSubmit={(event) => {
           event.preventDefault();
           const form = new FormData(event.currentTarget);
           run(async () => {
@@ -93,17 +149,66 @@ export function SourcePicker({
           });
         }}>
           <label>연결 유형
-            <select name="kind" value={kind} onChange={(event) => setKind(event.target.value as Source["kind"])}>
+            <select name="kind" value={kind} onChange={(event) => {
+              const next = event.target.value as Source["kind"];
+              setKind(next);
+              setRepository("");
+              setBranch(next === "local" ? "HEAD" : "main");
+            }}>
               <option value="local">로컬 저장소</option><option value="github">GitHub</option>
             </select>
           </label>
-          <label>이름 <input name="name" required maxLength={150} /></label>
-          <label>저장소 <input name="repository" required maxLength={300} placeholder={kind === "local" ? "허용 루트 아래의 상대 경로" : "https://github.com/owner/repository"} /></label>
-          <label>브랜치 <input key={kind} name="ref" required maxLength={250} defaultValue={kind === "local" ? "HEAD" : "main"} /></label>
-          <label>분석 우선 경로 <input name="analysisPaths" placeholder="예: frontend/src, tests" /></label>
-          <label>설명 <input name="description" maxLength={1000} /></label>
-          <p className="subtle">GitHub 비공개 저장소는 관리자에게 연결된 계정별 읽기 권한이 필요합니다.</p>
-          <button className="secondary" disabled={working}>등록하고 분석</button>
+          {kind === "github" && <>
+            <div className="source-actions">
+              {github?.connected && <span role="status">GitHub 연결됨 · {github.login}</span>}
+              {github?.enabled !== false && (
+                <button type="button" className="secondary" disabled={githubWorking}
+                  onClick={() => void connectGitHub()}>
+                  {github?.connected ? "GitHub 다시 연결" : "GitHub 연결"}
+                </button>
+              )}
+              {github?.connected && (
+                <button type="button" className="secondary" disabled={githubWorking}
+                  onClick={() => setReloadGitHub((current) => current + 1)}>저장소 목록 새로고침</button>
+              )}
+            </div>
+            {githubWorking && <p role="status">GitHub 권한을 확인하는 중입니다.</p>}
+            {githubError && <p role="alert">{githubError}</p>}
+            {github?.enabled === false && (
+              <p className="subtle">GitHub 연결을 사용하려면 관리자에게 GitHub App 설정을 요청해 주세요.</p>
+            )}
+            {github?.install_url && (
+              <a href={github.install_url} target="_blank" rel="noreferrer">GitHub App 설치·저장소 권한 설정</a>
+            )}
+            {github?.connected && !githubWorking && !githubError && !repositories.length && (
+              <p className="subtle">연결한 계정에서 선택할 저장소가 없습니다. GitHub App의 저장소 권한을 확인해 주세요.</p>
+            )}
+            {!!repositories.length && (
+              <label>연결한 GitHub 저장소
+                <select value={repositories.find((repo) => `https://github.com/${repo.name}` === repository)?.name || ""}
+                  onChange={(event) => {
+                    const repo = repositories.find((item) => item.name === event.target.value);
+                    if (repo) {
+                      setRepository(`https://github.com/${repo.name}`);
+                      setBranch(repo.branch);
+                    }
+                  }}>
+                  <option value="">저장소 선택</option>
+                  {repositories.map((repo) => (
+                    <option key={repo.name} value={repo.name}>{repo.name}{repo.private ? " · 비공개" : ""}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </>}
+          <label>이름 <input name="name" required maxLength={150} defaultValue={returnFlow?.fields.name} /></label>
+          <label>저장소 <input name="repository" required maxLength={300} value={repository}
+            onChange={(event) => setRepository(event.target.value)}
+            placeholder={kind === "local" ? "허용 루트 아래의 상대 경로" : "https://github.com/owner/repository"} /></label>
+          <label>브랜치 <input name="ref" required maxLength={250} value={branch} onChange={(event) => setBranch(event.target.value)} /></label>
+          <label>분석 우선 경로 <input name="analysisPaths" placeholder="예: frontend/src, tests" defaultValue={returnFlow?.fields.analysisPaths} /></label>
+          <label>설명 <input name="description" maxLength={1000} defaultValue={returnFlow?.fields.description} /></label>
+          <button className="secondary" disabled={working || (kind === "github" && githubWorking)}>등록하고 분석</button>
       </form>
     </section>
   );
