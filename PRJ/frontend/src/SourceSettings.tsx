@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, Check, LoaderCircle, Settings2 } from "lucide-react";
 import { api } from "./api";
 import { SourcePicker, Evidence } from "./Sources";
 import { Brand } from "./BusinessHome";
 import { WirePage } from "./Wireframes";
+import SourceAssignments from "./SourceAssignments";
 import type { DesignProfile, PublicationPreview, Source } from "./types";
 
 export default function SourceSettings({
@@ -11,12 +12,14 @@ export default function SourceSettings({
   navigation,
   onHome,
   onAssignments,
+  currentAccountId,
   onError,
 }: {
   accountMenu: ReactNode;
   navigation: ReactNode;
   onHome: () => void;
   onAssignments?: () => void;
+  currentAccountId: string;
   onError: (e: unknown) => void;
 }) {
   const [sources, setSources] = useState<Source[]>([]);
@@ -28,6 +31,8 @@ export default function SourceSettings({
   const [confirmed, setConfirmed] = useState<PublicationPreview | null>(null);
   const [working, setWorking] = useState(false);
   const [notice, setNotice] = useState("");
+  const [assignmentWorking, setAssignmentWorking] = useState(false);
+  const assignmentSaving = useRef(false);
   const selected = sources.find((s) => s.id === sourceId);
   const refresh = useCallback(
     async () =>
@@ -94,11 +99,11 @@ export default function SourceSettings({
   return (
     <div className="source-settings">
       <header className="business-header">
-        <div className="header-brand">
+        <fieldset className="header-brand source-settings-controls" disabled={assignmentWorking}>
           {navigation}
           <Brand />
-        </div>
-        <div className="business-header-actions">
+        </fieldset>
+        <fieldset className="business-header-actions source-settings-controls" disabled={assignmentWorking}>
           {onAssignments && (
             <button className="secondary" onClick={onAssignments}>
               업무 배정
@@ -108,7 +113,7 @@ export default function SourceSettings({
             <ArrowLeft size={16} /> 업무 선택으로 돌아가기
           </button>
           {accountMenu}
-        </div>
+        </fieldset>
       </header>
       <main className="settings-main">
         <div className="page-heading">
@@ -121,16 +126,19 @@ export default function SourceSettings({
             게시합니다.
           </p>
         </div>
-        <SourcePicker
-          sources={sources}
-          selected={selected}
-          onSelect={(id) => {
-            setSourceId(id);
-            window.history.replaceState({}, "", `/?view=settings&source=${id}`);
-          }}
-          refresh={refresh}
-          onError={onError}
-        />
+        <fieldset className="source-settings-controls" disabled={assignmentWorking}>
+          <SourcePicker
+            sources={sources}
+            selected={selected}
+            onSelect={(id) => {
+              if (assignmentSaving.current) return;
+              setSourceId(id);
+              window.history.replaceState({}, "", `/?view=settings&source=${id}`);
+            }}
+            refresh={refresh}
+            onError={onError}
+          />
+        </fieldset>
         {selected && !ready && (
           <div className="home-empty">
             <LoaderCircle size={22} className={analyzing ? "spin" : ""} />
@@ -363,6 +371,20 @@ export default function SourceSettings({
               )}
             </section>
           </>
+        )}
+        {onAssignments && selected?.can_manage && (
+          <SourceAssignments
+            key={selected.id}
+            sourceId={selected.id}
+            sourceName={selected.name}
+            published={!!selected.publication_id}
+            currentAccountId={currentAccountId}
+            onSavingChange={(saving) => {
+              assignmentSaving.current = saving;
+              setAssignmentWorking(saving);
+            }}
+            onError={onError}
+          />
         )}
       </main>
     </div>

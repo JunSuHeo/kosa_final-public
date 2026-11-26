@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -292,6 +292,33 @@ function ScreenThumbnail({
   );
 }
 
+function WireSheet({ zoom, children }: { zoom: number; children: ReactNode }) {
+  const content = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  useLayoutEffect(() => {
+    const page = content.current!;
+    const measure = () => {
+      const width = page.offsetWidth, height = page.offsetHeight;
+      setSize(previous => previous.width === width && previous.height === height
+        ? previous : { width, height });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(page);
+    measure();
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div
+      className="wire-sheet-fit"
+      style={{ width: size.width * zoom / 100, height: size.height * zoom / 100 }}
+    >
+      <div ref={content} className="wire-sheet" style={{ transform: `scale(${zoom / 100})` }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export default function Wireframes({
   snapshot,
   editing,
@@ -540,19 +567,8 @@ export default function Wireframes({
                   />
                 </section>
               ) : (
-                <div
-                  className="wire-single"
-                  style={{
-                    paddingBottom: Math.max(40, (zoom / 100 - 1) * 800 + 40),
-                  }}
-                >
-                  <div
-                    className="wire-sheet"
-                    style={{
-                      transform: `scale(${zoom / 100})`,
-                      transformOrigin: "top center",
-                    }}
-                  >
+                <div className="wire-single">
+                  <WireSheet zoom={zoom}>
                     <WirePage
                       screen={screen}
                       designProfile={snapshot.design_profile}
@@ -585,7 +601,7 @@ export default function Wireframes({
                       interactive={preview}
                       onNavigate={pick}
                     />
-                  </div>
+                  </WireSheet>
                 </div>
               )}
               <div className="wire-pagination">

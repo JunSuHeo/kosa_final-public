@@ -8,6 +8,10 @@ SY가 AI와 진행한 작업의 계획·판단 요약·변경·검증·인계를
 
 ## 작업 목록
 
+- [2026-11-26 산출물 중심 배치와 시안 중앙 정렬](2026-11-26-workspace-layout/README.md)
+
+- [2026-11-25 관리자 업무 연결 설정의 유저 배정](2026-11-25-source-user-assignments/README.md)
+
 - [2026-11-22 Supabase 계정 관리 작업 브랜치 정리](2026-11-22-supabase-account-branch/README.md)
 
 - [2026-11-23 인증 안정화와 현업 기획 흐름](2026-11-23-auth-business-flow/README.md)

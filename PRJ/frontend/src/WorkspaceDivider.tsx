@@ -1,24 +1,31 @@
 import { useRef, useState, type CSSProperties, type PointerEvent } from "react";
-const storageKey = "hplan-workspace-ratio.v1";
-const defaultRatio = 0.42;
-function initialRatio() {
+type Stage = "conversation" | "documents";
+const storageKeys = {
+  conversation: "hplan-workspace-ratio.v1",
+  documents: "hplan-workspace-ratio.documents.v1",
+};
+const defaultRatios = { conversation: 0.42, documents: 0.30 };
+function initialRatio(stage: Stage) {
   try {
-    const stored = Number(localStorage.getItem(storageKey));
-    return stored >= 0.25 && stored <= 0.65 ? stored : defaultRatio;
+    const stored = Number(localStorage.getItem(storageKeys[stage]));
+    return stored >= 0.25 && stored <= 0.65 ? stored : defaultRatios[stage];
   } catch {
-    return defaultRatio;
+    return defaultRatios[stage];
   }
 }
-export function useWorkspaceWidth() {
-  const [ratio, setRatio] = useState(initialRatio);
+export function useWorkspaceWidth(stage: Stage) {
+  const [ratios, setRatios] = useState(() => ({
+    conversation: initialRatio("conversation"),
+    documents: initialRatio("documents"),
+  }));
   const [resizing, setResizing] = useState(false);
-  const current = useRef(ratio);
+  const current = useRef(ratios);
   const change = (next: number, persist = false) => {
-    current.current = next;
-    setRatio(next);
+    current.current = { ...current.current, [stage]: next };
+    setRatios(current.current);
     if (persist) {
       try {
-        localStorage.setItem(storageKey, String(next));
+        localStorage.setItem(storageKeys[stage], String(next));
       } catch {
         /* Layout works without browser storage. */
       }
@@ -52,10 +59,10 @@ export function useWorkspaceWidth() {
   };
   const finish = () => {
     setResizing(false);
-    change(current.current, true);
+    change(current.current[stage], true);
   };
   return {
-    style: { "--conversation-ratio": ratio } as CSSProperties,
+    style: { "--conversation-ratio": ratios[stage] } as CSSProperties,
     resizing,
     divider: (
       <div
@@ -82,7 +89,7 @@ export function useWorkspaceWidth() {
         }}
         onLostPointerCapture={finish}
         onPointerCancel={finish}
-        onDoubleClick={() => change(defaultRatio, true)}
+        onDoubleClick={() => change(defaultRatios[stage], true)}
       />
     ),
   };

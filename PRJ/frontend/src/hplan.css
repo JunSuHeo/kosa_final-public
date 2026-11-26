@@ -401,6 +401,12 @@ textarea::placeholder {
 .source-registration {
   margin-top: 20px;
 }
+.source-settings-controls {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
 .settings-section {
   background: #fff;
   border: 1px solid var(--line);
@@ -1612,8 +1618,7 @@ textarea::placeholder {
   .workspace-body {
     position: relative;
   }
-  .inspector,
-  .wire-inspector {
+  .inspector {
     position: absolute;
     right: 0;
     top: 0;
@@ -1621,6 +1626,9 @@ textarea::placeholder {
     width: min(275px, 90%);
     z-index: 12;
     box-shadow: -10px 0 25px #1e3a5f15;
+  }
+  .wire-inspector {
+    width: min(275px, 90%);
   }
   .wire-gallery {
     grid-template-columns: 1fr;
@@ -1631,10 +1639,6 @@ textarea::placeholder {
   }
   .wire-single {
     padding: 25px 12px 70px;
-    justify-content: flex-start;
-  }
-  .wire-sheet {
-    transform-origin: top left !important;
   }
   .wire-view-title > strong {
     display: inline;
@@ -1731,10 +1735,18 @@ textarea::placeholder {
   color: #526278;
 }
 .wire-single {
-  justify-content: flex-start;
+  display: block;
+}
+.wire-sheet-fit {
+  position: relative;
+  margin: 0 auto;
 }
 .wire-sheet {
-  transform-origin: top left !important;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  transform-origin: top left;
 }
 
 .dialogue-question > textarea {
@@ -2332,7 +2344,8 @@ textarea::placeholder {
   margin-top: 24px;
   padding-top: 24px;
 }
-.account-editor .assignment-row {
+.account-editor .assignment-row,
+.source-assignments .assignment-row {
   display: flex;
   align-items: flex-start;
   gap: 10px;
@@ -2348,6 +2361,10 @@ textarea::placeholder {
 .assignment-row span {
   display: grid;
   gap: 4px;
+}
+.source-assignments .assignment-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .management-notice,
 .access-notice {

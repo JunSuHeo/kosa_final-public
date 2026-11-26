@@ -38,6 +38,9 @@ test("업무 연결 설정에서 소스 디자인·사용 범위를 확인해 �
     .getByLabel("설명", { exact: true })
     .fill("발주 요청·승인·처리 내역을 관리합니다.");
   await page.getByRole("button", { name: "등록하고 분석" }).click();
+  await expect(page.getByRole("region", { name: "유저 배정", exact: true })).toContainText(
+    "업무를 게시한 뒤 유저를 배정할 수 있습니다",
+  );
   await expect(
     page.getByRole("heading", { name: "화면 디자인", exact: true }),
   ).toBeVisible({ timeout: 20000 });
@@ -50,6 +53,10 @@ test("업무 연결 설정에서 소스 디자인·사용 범위를 확인해 �
     .click();
   await page.getByRole("button", { name: "확인하고 업무 게시" }).click();
   await expect(page.getByRole("status")).toContainText("업무를 게시했어요");
+  const assignments = page.getByRole("region", { name: "유저 배정", exact: true });
+  await assignments.getByLabel("user1 업무 배정", { exact: true }).check();
+  await assignments.getByRole("button", { name: "배정 저장", exact: true }).click();
+  await expect(assignments.getByRole("status")).toHaveText("업무 배정을 저장했습니다.");
   await page.screenshot({
     path: "test-results/hplan-settings.png",
     fullPage: true,

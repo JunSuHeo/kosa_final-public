@@ -120,7 +120,6 @@ export default function App() {
   const [panel, setPanel] = useState<Panel>("chat");
   const [reviewVisit, setReviewVisit] = useState(0);
   const [sideOpen, setSideOpen] = useState(true);
-  const workspaceWidth = useWorkspaceWidth();
   const [candidate, setCandidate] = useState(true);
   const [historical, setHistorical] = useState<Revision | null>(null);
   const historyRequest = useRef(0);
@@ -398,6 +397,7 @@ export default function App() {
   const persistedArtifact = [bundle?.proposal?.candidate, bundle?.revision.snapshot]
     .some((value) => value && visibleTabs.some(({ id }) => hasArtifact(value, id)));
   const conversationStage = !persistedArtifact && !edit;
+  const workspaceWidth = useWorkspaceWidth(conversationStage ? "conversation" : "documents");
   const confirmedWithPending = !!bundle?.proposal && !viewIsCandidate;
   const availablePanels = conversationStage ? panels.filter(item => item.id === "chat") : panels;
   const startEditing = () => {
@@ -799,6 +799,7 @@ export default function App() {
           />
         ) : page === "settings" && allowed("sources.manage") ? (
           <SourceSettings
+            currentAccountId={identity!.account.id}
             onAssignments={
               allowed("sources.assign")
                 ? () => openPage("assignments")
