@@ -79,3 +79,11 @@
 - 최신 main에서 feat/source-assignments-workspace-layout-main 브랜치를 생성하고 전체 작업 커밋 e244eef를 cherry-pick했다. 자동 병합된 안내 문서와 source-planning 테스트의 작업 변경을 확인했고 충돌은 없었다.
 - 최신 main 통합 상태에서 PRJ/frontend의 npm run build와 origin/main...HEAD 대상 git diff --check가 통과했다. origin/main이 작업 브랜치의 조상인 것도 확인했다.
 - 최초 요청 때 만든 feat/source-assignments-workspace-layout 브랜치는 로컬에 보존된다. 게시 대상은 feat/source-assignments-workspace-layout-main이다.
+
+## 실행 웹 갱신 (2026-11-26)
+
+- 사용자의 갱신 요청으로 feat/source-assignments-workspace-layout-main의 최신 main 통합 코드를 planning-studio-supabase 웹 5178에 빌드·적용했다. 기존 Compose 환경 파일과 compose.yaml, infra/supabase.compose.yaml, infra/dev.compose.yaml을 사용해 up --build -d --no-deps web을 실행했다.
+- 이미지 빌드와 웹 컨테이너 재생성이 완료됐다. 제공 자산은 index-CikoTvri.js 및 index-CZTp_XlA.css다.
+- 최신 Compose는 웹을 studio-proxy 네트워크에 배치하지만 기존 API는 default 네트워크만 사용해 최초 health 검사에서 502가 발생했다. 기존 API를 planning-studio-supabase_studio-proxy에 api 및 studio-proxy-api 별칭으로 연결해 복구했다. 이후 /health가 status=ok, auth_mode=supabase, ai_mode=mock으로 응답했다.
+- 5178의 실제 정적 빌드에서 API 응답을 fixture로 대체한 workspace-layout.spec.ts 전체 7개가 통과했다(18.6s, exit 0). 단계별 폭 저장·복원, 중앙 정렬, 확대·축소, 모바일 속성 패널, 넘침 스크롤을 검증했다. 실제 사용자 데이터와 외부 인증 흐름은 이번 브라우저 검사의 대상에서 제외했다.
+- 웹 갱신 후 API는 healthy, worker는 실행 상태임을 확인했다. 실행 웹 갱신 후속 항목을 완료했다. 검증 산출물은 /tmp/kosa-wire-centering-deployed-results에 보관한다.
