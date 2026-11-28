@@ -69,6 +69,17 @@ class ValidateConfigTests(unittest.TestCase):
     def test_valid_configuration(self):
         self.assertEqual(self.errors(), [])
 
+    def test_optional_publication_policies_accept_explicit_booleans(self):
+        self.config["pr_policy"].update(require_branch_protection=False, allow_pr_on_failure=True)
+        self.assertEqual(self.errors(), [])
+
+    def test_optional_publication_policies_reject_non_booleans(self):
+        for key in ("require_branch_protection", "allow_pr_on_failure"):
+            with self.subTest(key=key):
+                self.config["pr_policy"][key] = "false"
+                self.assert_error("expected boolean")
+                del self.config["pr_policy"][key]
+
     def test_second_project_needs_no_runtime_change(self):
         self.config["project_id"] = "second"
         self.config["project_root"] = "other"

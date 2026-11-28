@@ -40,9 +40,10 @@ class SimulatedGitHubCLI:
         if not self.authenticated:
             raise ExecutionError("authentication_failed", "Simulated GitHub authentication is unavailable.")
 
-    def check_repository(self, repository, branch, base_sha, cwd):
+    def check_repository(self, repository, branch, base_sha, cwd, *, require_branch_protection=True):
         self.calls.append({"operation": "repository_check", "repository": repository,
-                           "base_branch": branch, "base_sha": base_sha, "simulated": True})
+                           "base_branch": branch, "base_sha": base_sha,
+                           "require_branch_protection": require_branch_protection, "simulated": True})
 
     def find_pr(self, repository, branch, cwd):
         self.calls.append({"operation": "pr_lookup", "simulated": True})

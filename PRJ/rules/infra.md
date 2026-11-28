@@ -113,6 +113,10 @@ sh scripts/e2e.sh
 - 실행법·환경변수·포트 변경은 README.md, .env.example, 이 문서에 반영한다.
 - 실제 명령·결과·mock/live·미확인 사항을 PR에 기록한다.
 
+## Issue 워크플로 PR 게시 정책 (2026-11-28)
+
+`workflow/config/projects/prj.json`은 `pr_policy.require_branch_protection=false`, `allow_pr_on_failure=true`, `publishing.draft=false`로 보호 규칙 없이 테스트 실패·시간 초과·실행 불가에도 일반 PR을 게시한다. 실패 근거는 이슈 댓글·PR 본문·실행 결과에 유지한다. 저장소 identity·Push 권한·기준 SHA·코드 범위·검증 근거·Issue의 `/approve` 확인은 계속 적용한다. 보호 규칙이 없으면 GitHub가 병합 전 사람 리뷰와 검사 통과를 강제하지 않으며, 워크플로는 자동 병합하지 않는다. 생략된 새 정책의 기본값은 보호 규칙 필수·일반 PR 실패 예외 금지다. 상세 조건은 [게시 안내](../../workflow/runtime/PUBLISHING.md)를 따른다.
+
 ## 신뢰 프록시 경계 (2026-11-23)
 
 Compose의 web은 전용 `studio-proxy` 네트워크에만 참여하고 API는 해당 네트워크와 기존 backend 네트워크에 참여한다. nginx는 X-Forwarded-For/X-Real-IP/X-Forwarded-Proto를 클라이언트 값에 덧붙이지 않고 덮어쓴다. API의 `python -m app.proxy` 런처는 Docker DNS의 자신의 `studio-proxy-api` 별칭과 Linux `/proc/net/route`로 해당 네트워크의 실제 CIDR을 구해 Uvicorn에 지정한다. 이를 찾지 못하면 시작을 거부한다. `*` 신뢰나 고정 서브넷을 사용하지 않아 격리 Compose를 병렬 실행할 수 있다. 직접 호스트 API나 다른 backend 네트워크에서 주입한 전달 헤더는 신뢰하지 않는다. Compose 밖 실행은 기존 uvicorn 명령을 사용하고 배포 환경이 별도라면 실제 신뢰 프록시 경계를 명시한다.

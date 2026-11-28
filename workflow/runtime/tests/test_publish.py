@@ -69,7 +69,7 @@ class GitHub:
         if self.failure == "auth":
             raise ExecutionError("authentication_failed", "Authentication is unavailable.")
 
-    def check_repository(self, repo, branch, base, cwd):
+    def check_repository(self, repo, branch, base, cwd, *, require_branch_protection=True):
         self.calls.append("permissions")
 
     def find_pr(self, repo, branch, cwd):
@@ -208,6 +208,42 @@ class PublishTests(unittest.TestCase):
             report["errors"] = [{"status": "validation_failed", "message": message} for message in report["validation"]["errors"]]
         self.change_report(unjustified_skip)
         self.assertEqual(self.perform()["status"], "blocked")
+
+    def test_regular_failure_policy_preserves_failed_evidence_and_draft_setting(self):
+        self.config["pr_policy"]["allow_pr_on_failure"] = True
+        for draft, status in ((False, "failed"), (False, "timeout"), (False, "unavailable"), (True, "failed")):
+            with self.subTest(draft=draft, status=status):
+                self.config["publishing"]["draft"] = draft
+                self.write_config()
+                self.generate(test_executor=Tests(status), expected_status="validation_failed")
+                original = self.result_path.read_bytes()
+                result = self.perform()
+                self.assertEqual(result["status"], "prepared", result)
+                self.assertEqual(result["draft"], draft)
+                self.assertEqual(self.result_path.read_bytes(), original)
+                body = (self.result_path.parent / "publication/pr-body.md").read_text()
+                self.assertIn("independent tests did not pass", body)
+                self.assertIn("Final validation: failed", body)
+                if not draft:
+                    self.assertNotIn("Draft for human review", body)
+
+    def test_regular_failure_policy_rejects_missing_tests_non_test_errors_and_unjustified_skips(self):
+        from workflow.runtime import test_runner
+        self.config["pr_policy"]["allow_pr_on_failure"] = True
+        self.config["publishing"]["draft"] = False
+        self.write_config()
+        def unjustified_skip(report):
+            report["validation"]["tests"]["e2e"][0].update(status="not_run", reason="No applicable skip policy")
+            checks = report["validation"]["tests"]["unit"] + report["validation"]["tests"]["e2e"]
+            report["validation"]["errors"] = test_runner.judge(checks)[1]
+            report["errors"] = [{"status": "validation_failed", "message": message} for message in report["validation"]["errors"]]
+        for change in (lambda r: r["validation"]["tests"].update(e2e=[]),
+                       lambda r: r["validation"]["errors"].append("A test modified or deleted candidate input files."),
+                       lambda r: r["validation"].update(scope_status="failed"), unjustified_skip):
+            with self.subTest(change=change):
+                self.generate(test_executor=Tests("failed"), expected_status="validation_failed")
+                self.change_report(change)
+                self.assertEqual(self.perform()["status"], "blocked")
 
     def test_missing_test_evidence_blocks(self):
         self.change_report(lambda r: r["validation"]["tests"].update(e2e=[]))
@@ -463,6 +499,46 @@ class AdapterPolicyTests(unittest.TestCase):
         self.assertIn("--body-file", args)
         self.assertIn("--draft", args)
         self.assertNotIn("--dry-run", args)
+
+    def test_protection_can_be_disabled_without_a_protection_api_request(self):
+        gh = github_adapter.GitHubCLI()
+        repository = {"full_name": "example/sample", "permissions": {"push": True}}
+        branch = {"commit": {"sha": "a" * 40}, "protected": False}
+        with patch.object(gh, "call", side_effect=[json.dumps(v) for v in (repository, branch)]) as call:
+            gh.check_repository("example/sample", "main", "a" * 40, Path.cwd(), require_branch_protection=False)
+        self.assertEqual(call.call_count, 2)
+        self.assertEqual(call.call_args.args[0][1], "repos/example/sample/branches/main")
+
+    def test_disabled_protection_still_requires_repository_identity_push_and_base_sha(self):
+        gh = github_adapter.GitHubCLI()
+        for repository, branch, expected in (
+                ({"full_name": "other/sample", "permissions": {"push": True}}, {}, "permission_denied"),
+                ({"full_name": "example/sample", "permissions": {"push": False}}, {}, "permission_denied"),
+                ({"full_name": "example/sample", "permissions": {"push": True}},
+                 {"commit": {"sha": "b" * 40}, "protected": False}, "base_mismatch")):
+            with self.subTest(expected=expected), patch.object(
+                    gh, "call", side_effect=[json.dumps(repository), json.dumps(branch)]):
+                with self.assertRaises(ExecutionError) as error:
+                    gh.check_repository("example/sample", "main", "a" * 40, Path.cwd(), require_branch_protection=False)
+                self.assertEqual(error.exception.status, expected)
+
+    def test_required_protection_api_failure_is_not_ignored(self):
+        gh = github_adapter.GitHubCLI()
+        repository = {"full_name": "example/sample", "permissions": {"push": True}}
+        branch = {"commit": {"sha": "a" * 40}, "protected": False}
+        failure = ExecutionError("github_failed", "Protection lookup failed.")
+        failure.http_status = 404
+        with patch.object(gh, "call", side_effect=[json.dumps(repository), json.dumps(branch), failure]):
+            with self.assertRaises(ExecutionError) as error:
+                gh.check_repository("example/sample", "main", "a" * 40, Path.cwd())
+        self.assertEqual(error.exception.operation, "get_branch_protection")
+        self.assertEqual(error.exception.http_status, 404)
+
+    def test_regular_pr_command_omits_draft(self):
+        gh = github_adapter.GitHubCLI()
+        with patch.object(gh, "call") as call:
+            gh.create_pr("example/sample", "main", "ai/sample/id", "title", Path("/private/body.md"), False, Path.cwd())
+        self.assertNotIn("--draft", call.call_args.args[0])
 
 
 if __name__ == "__main__":
