@@ -87,7 +87,7 @@ Snapshot은 `{title, body}`의 정렬된 JSON에 SHA-256을 적용한다. 없는
 | Secret `AI_WORKSPACE_API_KEY` | 기존 Codex 설정의 `ai_workspace` 제공자가 사용하는 인증 키. 분석·실행 단계에만 제공하며, Codex가 실행하는 셸 명령에서는 제외한다. `~/.codex/config.toml`의 제공자 설정은 유지하고 키 값은 설정 JSON·로그·댓글에 기록하지 않는다. |
 | Secret `WORKFLOW_PUBLISH_TOKEN` | 해당 저장소로 제한한 GitHub App 또는 fine-grained 토큰. Contents read/write, Pull requests read/write와 repository metadata 접근 권한이 필요하다. `require_branch_protection=true`이면 protection 조회용 Administration read도 필요하다. 자동 병합 권한/우회를 설정하지 않는다. |
 | Actions `GITHUB_TOKEN` | workflow의 `contents: read`, `issues: write`. Issue API와 상태 댓글에만 사용한다. 게시 토큰은 실행 단계에서만 제공한다. |
-| Runner labels | `[self-hosted, macOS, ARM64, workflow-isolated]`. Codex 실행과 POSIX 게시 잠금을 지원한다. 활성 검사는 macOS `sandbox-exec`로 격리하며, 격리 도구가 없거나 점검에 실패하면 host 실행 없이 차단한다. |
+| Runner labels | `[self-hosted, macOS, ARM64, workflow-isolated]`. Codex 실행과 POSIX 게시 잠금을 지원한다. PRJ 백엔드는 macOS runner에서 직접 실행하고 계산기 데모 등 일반 검사는 sandbox-exec로 격리한다. |
 | Backend 검사 도구 | 시스템 PATH의 `uv`, Python 3.12 이상과 PostgreSQL 서버·클라이언트 도구가 필요하다. macOS Homebrew의 versioned PostgreSQL 경로도 지원한다. `prj.json`의 백엔드는 `required: true`, `run_if: always`이며 Actions가 승인 후 기준 checkout에서 오프라인 캐시를 준비한다. E2E는 기존 명시적 미실행 정책을 유지한다. |
 | Runner 격리 | Issue 작업 전용의 일회성 격리 runner를 사용하고, Codex 로그인 외 민감한 파일이 HOME 등에 남지 않도록 운영한다. 기존 어댑터의 읽기 경계 한계를 아래 참고한다. |
 | Branch protection | `require_branch_protection=true`(생략 시 기본값)이면 최소 한 명의 사람 리뷰, 관리자 적용, 리뷰 bypass 없음을 API로 확인한다. PRJ는 false로 조회를 생략한다. 보호 규칙이 없으면 GitHub가 병합 전 리뷰·검사 통과를 강제하지 않는다. Repository 설정을 코드가 변경하지 않는다. |
@@ -96,9 +96,9 @@ Snapshot은 `{title, body}`의 정렬된 JSON에 SHA-256을 적용한다. 없는
 
 Codex 인증 제공자는 runner의 기존 사용자 설정을 유지한다. `ai_workspace` 제공자의 `env_key="AI_WORKSPACE_API_KEY"` 인증에는 같은 이름의 Actions Secret이 필요하며, ChatGPT 로그인만으로는 이 제공자를 인증할 수 없다. Secret은 Codex 프로세스에만 추가하고 셸 환경 정책으로 모델의 셸 명령에서 제외한다. 제품 API key나 새 모델 기본값을 자동으로 만들지 않는다. Issue/GitHub 토큰은 gh subprocess 환경에만 전달하고 Codex에는 전달하지 않는다. 게시 토큰이 없다면 승인 후 실행 단계가 시작되기 전에 실패한다.
 
-러너 라벨의 ARM64와 Python 프로세스의 아키텍처는 다를 수 있다. `python3 -c 'import sys, platform; print(sys.platform, platform.machine())'`이 `darwin x86_64`를 출력해도 지원하는 macOS 환경이며, 동일한 Codex sandbox와 macOS `sandbox-exec` 검사 경로를 사용한다. 러너 라벨이나 검사 격리 설정을 바꿀 필요는 없다.
+러너 라벨의 ARM64와 Python 프로세스의 아키텍처는 다를 수 있다. `python3 -c 'import sys, platform; print(sys.platform, platform.machine())'`이 `darwin x86_64`를 출력해도 지원하는 macOS 환경이다. PRJ 백엔드는 두 아키텍처 모두 직접 실행하며 일반 검사는 sandbox-exec를 사용한다.
 
-macOS 백엔드는 일회성 scratch의 Unix 소켓으로만 `studio_test`에 연결한다. 공유 메모리는 mmap으로 설정하고 PostgreSQL의 System V semaphore 작업을 허용한다. 전용 러너에는 업무용 PostgreSQL 등 다른 서비스를 함께 운영하지 않는다. TCP와 다른 Unix 소켓, host HOME 접근은 계속 차단하며 캐시는 읽기 전용이다. 준비한 캐시와 가상환경은 원본 checkout 밖에 있고 Actions 종료 시 정리한다. 설치되지 않은 도구·캐시 준비·격리 점검은 실패를 유지하며 검사를 생략한 성공으로 처리하지 않는다.
+macOS 백엔드는 sandbox-exec와 격리 점검 없이 신뢰된 launcher를 직접 실행한다. 일회성 scratch에 DB·Unix 소켓·HOME·venv를 만들고 mmap 기반 `studio_test`에 연결한다. DB는 TCP를 수신하지 않으며 종료 시 정리한다. 캐시는 scratch로 복사해 오프라인 설치에 사용하고 인증 환경변수는 상속하지 않는다. OS 수준의 호스트 파일·다른 서비스·네트워크 차단은 적용하지 않는다. 준비한 캐시와 가상환경은 원본 checkout 밖에 있고 Actions 종료 시 정리한다. 설치되지 않은 도구·캐시·DB 준비 실패는 unavailable로 기록하며 pytest 실패·시간 초과는 보존한다.
 
 ## 검증 결과
 

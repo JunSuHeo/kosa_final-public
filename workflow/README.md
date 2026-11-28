@@ -21,7 +21,7 @@ Issue 이벤트를 처리하려면 비공개 저장소의 기본 브랜치에 `.
 
 - Repository Variables: `WORKFLOW_ISSUES_ENABLED=true`, `WORKFLOW_BASE_BRANCH`, `WORKFLOW_CONFIG_PATH`
 - Repository Secrets: `WORKFLOW_STATE_KEY`, `WORKFLOW_PUBLISH_TOKEN`
-- `self-hosted`, `macOS`, `ARM64`, `workflow-isolated` labels를 가진 runner와 Codex CLI, gh, Git, Python 및 프로젝트 테스트 도구. macOS 검사 실행에는 시스템 `sandbox-exec`가 필요하며, 사용 불가 또는 격리 점검 실패 시 host 실행 없이 차단합니다.
+- `self-hosted`, `macOS`, `ARM64`, `workflow-isolated` labels를 가진 runner와 Codex CLI, gh, Git, Python 및 프로젝트 테스트 도구. PRJ 백엔드는 macOS runner에서 직접 실행합니다. 계산기 데모 등 일반 검사는 시스템 `sandbox-exec`가 필요하며 격리 점검 실패 시 실행을 차단합니다.
 - workflow 기본 `GITHUB_TOKEN`에 `contents: read`, `issues: write`; 게시용 토큰에는 저장소 Push/PR 생성 권한. 보호 규칙을 요구하는 설정에서는 branch protection 조회 권한도 필요
 - 실제 Collaborator 권한 API 조회와 프로젝트 정책에 따른 보호 Branch
 

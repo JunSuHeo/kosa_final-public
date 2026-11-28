@@ -272,52 +272,56 @@ class ValidationTests(unittest.TestCase):
 
     def test_macos_backend_check_uses_native_launcher_and_private_scratch(self):
         executor = test_runner.IsolatedTestProcess()
-        executor.checked, executor.executable = True, "/fake/sandbox-exec"
         cache = Path(self.temp.name) / "uv-cache"
         cache.mkdir()
         (cache / "CACHEDIR.TAG").touch()
         def execute(command, timeout, *, cwd, env):
-            self.assertEqual(command[:2], ["/fake/sandbox-exec", "-f"])
+            self.assertEqual(command[0], "/bin/bash")
+            self.assertEqual(len(command), 2)
+            self.assertEqual(timeout, 2)
             launcher = Path(command[-1])
             self.assertEqual(launcher.read_bytes(), Path(test_runner.__file__).with_name("prj_backend_check.sh").read_bytes())
             self.assertEqual(env["WORKFLOW_PRJ_UV_CACHE"], str(cache.resolve()))
             scratch = Path(env["WORKFLOW_PRJ_SCRATCH"])
             self.assertTrue(scratch.is_dir())
-            self.assertTrue(scratch.is_relative_to(Path("/tmp").resolve()))
-            profile = Path(command[2]).read_text()
-            self.assertIn('(local unix-socket (subpath ', profile)
-            self.assertIn('(remote unix-socket (subpath ', profile)
-            self.assertIn(str(scratch / "pg-socket"), profile)
-            self.assertNotIn('(allow network*)', profile)
-            self.assertIn('"com.apple.system.opendirectoryd.libinfo"', profile)
-            self.assertIn(f'(allow file-read* (subpath "{cache.resolve()}"))', profile)
-            self.assertNotIn(f'(allow file-write* (subpath "{cache.resolve()}"))', profile)
+            self.assertTrue(scratch.is_relative_to(Path(self.temp.name).resolve()))
+            self.assertTrue(Path(env["HOME"]).is_dir())
+            self.assertEqual(env["TMPDIR"], str(scratch))
+            self.assertFalse(launcher.with_name("workflow-test.sb").exists())
             self.assertNotIn("GH_TOKEN", env)
             self.assertNotIn("AI_WORKSPACE_API_KEY", env)
             self.assertEqual(cwd, self.candidate / "sample/tests")
             return {"status": "passed", "return_code": 0, "stdout": "", "stderr": ""}
+        factory = tempfile.TemporaryDirectory
         with patch("workflow.runtime.test_runner.sys.platform", "darwin"), \
                 patch.dict(os.environ, {"WORKFLOW_PRJ_UV_CACHE": str(cache), "GH_TOKEN": "synthetic", "AI_WORKSPACE_API_KEY": "synthetic"}), \
-                patch.object(executor, "_macos_isolation_ready", return_value=True) as probe, \
+                patch.object(test_runner.shutil, "which") as lookup, \
+                patch.object(executor, "_macos_isolation_ready") as probe, \
+                patch.object(test_runner.tempfile, "TemporaryDirectory", side_effect=lambda **kwargs: factory(prefix=kwargs["prefix"], dir=self.temp.name)), \
                 patch.object(test_runner, "_process", side_effect=execute):
             result = executor.run(self.candidate, "sample/tests", {"program": "prj-backend-check", "args": []}, 2)
         self.assertEqual(result["status"], "passed")
-        probe.assert_called_once_with(prj_cache=cache.resolve())
+        probe.assert_not_called()
+        lookup.assert_not_called()
+        self.assertEqual(result["environment"], "macos-native")
+        self.assertFalse(any(Path(self.temp.name).glob("wpg-*")))
 
-    def test_macos_backend_policy_probe_failure_prevents_test_execution(self):
+    def test_macos_backend_check_ignores_a_previous_sandbox_failure(self):
         executor = test_runner.IsolatedTestProcess()
-        executor.checked, executor.executable = True, "/fake/sandbox-exec"
+        executor.checked, executor.error = True, "macOS sandbox initialization failed."
         cache = Path(self.temp.name) / "uv-cache"
         cache.mkdir()
         (cache / "CACHEDIR.TAG").touch()
+        factory = tempfile.TemporaryDirectory
         with patch("workflow.runtime.test_runner.sys.platform", "darwin"), \
                 patch.dict(os.environ, {"WORKFLOW_PRJ_UV_CACHE": str(cache)}), \
-                patch.object(executor, "_macos_isolation_ready", return_value=False), \
-                patch.object(test_runner, "_process") as process:
+                patch.object(executor, "_macos_isolation_ready") as probe, \
+                patch.object(test_runner.tempfile, "TemporaryDirectory", side_effect=lambda **kwargs: factory(prefix=kwargs["prefix"], dir=self.temp.name)), \
+                patch.object(test_runner, "_process", return_value={"status": "passed", "return_code": 0, "stdout": "", "stderr": ""}) as process:
             result = executor.run(self.candidate, "sample/tests", {"program": "prj-backend-check", "args": []}, 2)
-        self.assertEqual(result["status"], "unavailable")
-
-        process.assert_not_called()
+        self.assertEqual(result["status"], "passed")
+        process.assert_called_once()
+        probe.assert_not_called()
 
     def test_active_prj_config_requires_the_backend_check_on_every_execution(self):
         repo = Path(__file__).resolve().parents[3]
@@ -327,15 +331,63 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(check["run_if"], "always")
         self.assertEqual(check["on_failure"], "block")
 
-    def test_macos_backend_setup_failure_is_unavailable(self):
+    def test_macos_general_check_still_requires_sandbox(self):
+        with patch.object(test_runner.sys, "platform", "darwin"), \
+                patch.object(test_runner.shutil, "which", return_value=None), \
+                patch.object(test_runner, "_process") as process:
+            result = test_runner.IsolatedTestProcess().run(
+                self.candidate, "sample/tests", {"program": "python3", "args": []}, 2)
+        self.assertEqual(result["status"], "unavailable")
+        process.assert_not_called()
+
+    def test_macos_general_check_still_uses_sandbox_profile(self):
         executor = test_runner.IsolatedTestProcess()
         executor.checked, executor.executable = True, "/fake/sandbox-exec"
+        factory = tempfile.TemporaryDirectory
+        def execute(command, timeout, *, cwd, env):
+            self.assertEqual(command[:2], ["/fake/sandbox-exec", "-f"])
+            profile = Path(command[2]).read_text()
+            self.assertIn("(deny network*)", profile)
+            self.assertIn("file-map-executable", profile)
+            self.assertIn("(deny file-read*", profile)
+            self.assertNotIn("WORKFLOW_PRJ_UV_CACHE", env)
+            return {"status": "passed", "return_code": 0, "stdout": "", "stderr": ""}
+        with patch.object(test_runner.sys, "platform", "darwin"), \
+                patch.object(test_runner.shutil, "which", return_value="/fake/python3"), \
+                patch.object(test_runner.tempfile, "TemporaryDirectory", side_effect=lambda **kwargs: factory(prefix=kwargs["prefix"], dir=self.temp.name)), \
+                patch.object(test_runner, "_process", side_effect=execute):
+            result = executor.run(self.candidate, "sample/tests", {"program": "python3", "args": []}, 2)
+        self.assertEqual(result["status"], "passed")
+
+    def test_macos_backend_failure_and_timeout_keep_the_actual_result(self):
         cache = Path(self.temp.name) / "uv-cache"
         cache.mkdir()
         (cache / "CACHEDIR.TAG").touch()
+        factory = tempfile.TemporaryDirectory
+        for status, code in (("failed", 1), ("timeout", -9)):
+            with self.subTest(status=status), \
+                    patch.object(test_runner.sys, "platform", "darwin"), \
+                    patch.dict(os.environ, {"WORKFLOW_PRJ_UV_CACHE": str(cache)}), \
+                    patch.object(test_runner.tempfile, "TemporaryDirectory", side_effect=lambda **kwargs: factory(prefix=kwargs["prefix"], dir=self.temp.name)), \
+                    patch.object(test_runner, "_process", return_value={
+                        "status": status, "return_code": code, "stdout": "check output",
+                        "stderr": "", "reason": "check stopped"}):
+                result = test_runner.IsolatedTestProcess().run(
+                    self.candidate, "sample/tests", {"program": "prj-backend-check", "args": []}, 2)
+            self.assertEqual(result["status"], status)
+            self.assertEqual(result["return_code"], code)
+            self.assertEqual(result["stdout"], "check output")
+            self.assertFalse(any(Path(self.temp.name).glob("wpg-*")))
+
+    def test_macos_backend_setup_failure_is_unavailable(self):
+        executor = test_runner.IsolatedTestProcess()
+        cache = Path(self.temp.name) / "uv-cache"
+        cache.mkdir()
+        (cache / "CACHEDIR.TAG").touch()
+        factory = tempfile.TemporaryDirectory
         with patch("workflow.runtime.test_runner.sys.platform", "darwin"), \
                 patch.dict(os.environ, {"WORKFLOW_PRJ_UV_CACHE": str(cache)}), \
-                patch.object(executor, "_macos_isolation_ready", return_value=True), \
+                patch.object(test_runner.tempfile, "TemporaryDirectory", side_effect=lambda **kwargs: factory(prefix=kwargs["prefix"], dir=self.temp.name)), \
                 patch.object(test_runner, "_process", return_value={"status": "failed", "return_code": 78, "stdout": "", "stderr": "setup failed"}):
             result = executor.run(self.candidate, "sample/tests", {"program": "prj-backend-check", "args": []}, 2)
         self.assertEqual(result["status"], "unavailable")

@@ -1,8 +1,9 @@
 """Independent test execution on a disposable candidate copy (stdlib only).
 
-Linux Bubblewrap or macOS seatbelt isolation is required for real execution.
-No host fallback is provided: missing/unsupported isolation is unavailable,
-never a successful test. Configuration comes from the trusted controller.
+Linux uses Bubblewrap; macOS uses Seatbelt except for prj-backend-check,
+which runs directly on the runner with a temporary PostgreSQL cluster.
+Missing/unsupported required isolation is unavailable, never a successful
+test. Configuration comes from the trusted controller.
 """
 
 from __future__ import annotations
@@ -15,7 +16,6 @@ from pathlib import Path
 import re
 import shutil
 import signal
-import socket
 import subprocess
 import sys
 import tempfile
@@ -109,7 +109,7 @@ def _process(command: list[str], timeout: float, *, cwd: Path | None = None,
 
 
 class IsolatedTestProcess:
-    """No shell, credentials, host home, original checkout or host networking."""
+    """OS-isolated checks, with native macOS PRJ checks and no inherited credentials."""
     def __init__(self):
         self.executable = None
         self.error = None
@@ -121,7 +121,7 @@ class IsolatedTestProcess:
         value = str(path.resolve())
         return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
-    def _macos_command(self, root: Path, cwd: str, argv: list[str], scratch: Path, *, prj_cache: Path | None = None):
+    def _macos_command(self, root: Path, cwd: str, argv: list[str], scratch: Path):
         scratch = scratch.resolve()
         home = scratch / "home"
         temporary = scratch / "tmp"
@@ -150,36 +150,18 @@ class IsolatedTestProcess:
         rules.append(f"(allow file-write* (subpath {self._profile_path(root)}))")
         rules.append(f"(allow file-write* (subpath {self._profile_path(scratch)}))")
         rules.append(f"(deny file-read* (subpath {self._profile_path(host_home)}))")
-        if prj_cache is None:
-            rules.append("(deny network*)")
-        else:
-            # Default-deny still blocks IP networking and every other Unix socket.
-            socket_path = self._profile_path(temporary / "pg-socket")
-            rules.extend([
-                f"(allow file-read* (subpath {self._profile_path(prj_cache)}))",
-                "(allow system-socket (socket-domain AF_UNIX))",
-                f"(allow network-bind (local unix-socket (subpath {socket_path})))",
-                f"(allow network-outbound (remote unix-socket (subpath {socket_path})))",
-                f"(allow network-inbound (local unix-socket (subpath {socket_path})))",
-                # PostgreSQL on Darwin uses System V semaphores, not shared memory.
-                "(allow ipc-sysv-sem)",
-                '(allow mach-lookup (global-name "com.apple.system.opendirectoryd.libinfo"))',
-            ])
-            launcher = Path(__file__).resolve().with_name("prj_backend_check.sh")
-            shutil.copyfile(launcher, scratch / launcher.name)
+        rules.append("(deny network*)")
         profile_path.write_text("\n".join(rules) + "\n", encoding="utf-8")
         profile_path.chmod(0o600)
         environment = {"PATH": SYSTEM_PATH, "HOME": str(home), "TMPDIR": str(temporary),
                        "LANG": "C.UTF-8", "PYTHONDONTWRITEBYTECODE": "1"}
-        if prj_cache is not None:
-            environment.update(WORKFLOW_PRJ_UV_CACHE=str(prj_cache), WORKFLOW_PRJ_SCRATCH=str(temporary))
         if Path(argv[0]).name == "uv":
             environment.update(UV_PROJECT_ENVIRONMENT=str(temporary / "uv-venv"),
                                UV_CACHE_DIR=str(temporary / "uv-cache"))
         workdir = root if cwd == "." else workspace.resolve(cwd, root)
         return [self.executable, "-f", str(profile_path), *argv], environment, workdir
 
-    def _macos_isolation_ready(self, *, prj_cache: Path | None = None) -> bool:
+    def _macos_isolation_ready(self) -> bool:
         self._isolation_failure = None
         python = shutil.which("python3", path=SYSTEM_PATH)
         host_home = Path.home().resolve()
@@ -217,64 +199,17 @@ class IsolatedTestProcess:
             "else:\n"
             "    raise SystemExit(32)\n"
         )
-        if prj_cache is not None:
-            probe += (
-                "stage('user_lookup')\n"
-                "import pwd\n"
-                "pwd.getpwuid(os.getuid())\n"
-                "stage('cache_read')\n"
-                "tag = os.path.join(sys.argv[4], 'CACHEDIR.TAG')\n"
-                "with open(tag, 'rb') as stream: stream.read(1)\n"
-                "stage('cache_write_block')\n"
-                "try:\n"
-                "    with open(tag, 'wb'): pass\n"
-                "except PermissionError:\n"
-                "    pass\n"
-                "else:\n"
-                "    raise SystemExit(33)\n"
-                "stage('postgresql_socket')\n"
-                "directory = os.path.join(temporary, 'pg-socket')\n"
-                "os.mkdir(directory)\n"
-                "path = os.path.join(directory, 'probe')\n"
-                "with socket.socket(socket.AF_UNIX) as server:\n"
-                "    server.bind(path)\n"
-                "    server.listen(1)\n"
-                "    with socket.socket(socket.AF_UNIX) as client: client.connect(path)\n"
-                "    connection, _ = server.accept()\n"
-                "    connection.close()\n"
-                "stage('external_socket_block')\n"
-                "try:\n"
-                "    with socket.socket(socket.AF_UNIX) as client: client.connect(sys.argv[5])\n"
-                "except PermissionError:\n"
-                "    pass\n"
-                "else:\n"
-                "    raise SystemExit(34)\n"
-            )
         stage = "initialization"
         try:
-            with tempfile.TemporaryDirectory(prefix="workflow-sandbox-probe-" if prj_cache is None else "wpg-",
-                                             dir="/private/tmp") as temporary:
+            with tempfile.TemporaryDirectory(prefix="workflow-sandbox-probe-", dir="/private/tmp") as temporary:
                 base = Path(temporary).resolve()
                 scratch = base / "sandbox"
                 scratch.mkdir(mode=0o700)
                 root = base / "workspace"
                 root.mkdir(mode=0o700)
                 argv = [python, "-c", probe, str(root), str(scratch / "tmp"), str(host_home)]
-                outside_socket = None
-                try:
-                    if prj_cache is not None:
-                        stage = "external_socket_setup"
-                        outside_path = base / "outside-socket"
-                        outside_socket = socket.socket(socket.AF_UNIX)
-                        outside_socket.bind(str(outside_path))
-                        outside_socket.listen(1)
-                        argv.extend([str(prj_cache), str(outside_path)])
-                    stage = "initialization"
-                    command, environment, workdir = self._macos_command(root, ".", argv, scratch, prj_cache=prj_cache)
-                    result = _process(command, 10, cwd=workdir, env=environment)
-                finally:
-                    if outside_socket is not None:
-                        outside_socket.close()
+                command, environment, workdir = self._macos_command(root, ".", argv, scratch)
+                result = _process(command, 10, cwd=workdir, env=environment)
         except (OSError, ValueError) as exc:
             result.update(status="unavailable", reason="The macOS isolation probe could not be prepared or cleaned up.")
             result["stderr"] += workspace.redact(f"\n{type(exc).__name__}: {exc}")
@@ -321,8 +256,22 @@ class IsolatedTestProcess:
                             "--ro-bind", str(prj_cache), "/workflow/uv-cache"])
         return [*command, "--", *argv]
 
+    def _macos_prj_command(self, root: Path, cwd: str, scratch: Path, cache: Path):
+        home, temporary = scratch / "home", scratch / "tmp"
+        home.mkdir(mode=0o700)
+        temporary.mkdir(mode=0o700)
+        launcher = scratch / "prj_backend_check.sh"
+        shutil.copyfile(Path(__file__).resolve().with_name(launcher.name), launcher)
+        environment = {"PATH": SYSTEM_PATH, "HOME": str(home), "TMPDIR": str(temporary),
+                       "LANG": "C.UTF-8", "PYTHONDONTWRITEBYTECODE": "1",
+                       "WORKFLOW_PRJ_UV_CACHE": str(cache), "WORKFLOW_PRJ_SCRATCH": str(temporary)}
+        workdir = root if cwd == "." else workspace.resolve(cwd, root)
+        return ["/bin/bash", str(launcher)], environment, workdir
+
     def run(self, root: Path, cwd: str, command: dict[str, Any], timeout: float) -> dict[str, Any]:
-        if not self.checked:
+        prj_check = command["program"] == "prj-backend-check"
+        native_prj = sys.platform == "darwin" and prj_check
+        if not self.checked and not native_prj:
             self.checked = True
             if sys.platform == "linux":
                 self.executable = shutil.which("bwrap", path=SYSTEM_PATH)
@@ -339,25 +288,18 @@ class IsolatedTestProcess:
                     self.error = "Bubblewrap namespace isolation could not be initialized."
             elif sys.platform == "darwin" and not self._macos_isolation_ready():
                 self.error = "macOS sandbox isolation could not be initialized or failed its access checks."
-        if self.error:
+        if self.error and not native_prj:
             if self._isolation_failure is not None:
                 return dict(self._isolation_failure)
             return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
                     "stdout": "", "stderr": "", "reason": self.error}
-        prj_check = command["program"] == "prj-backend-check"
         if prj_check:
             cache = Path(os.environ.get("WORKFLOW_PRJ_UV_CACHE", ""))
             if not cache.is_absolute() or not (cache / "CACHEDIR.TAG").is_file():
                 return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
                         "stdout": "", "stderr": "", "reason": "WORKFLOW_PRJ_UV_CACHE must point to a prepared offline uv cache."}
             cache = cache.resolve()
-            if sys.platform == "darwin":
-                if not self._macos_isolation_ready(prj_cache=cache):
-                    if self._isolation_failure is not None:
-                        return dict(self._isolation_failure)
-                    return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
-                            "stdout": "", "stderr": "", "reason": "macOS PostgreSQL socket or cache isolation failed its access checks."}
-            else:
+            if not native_prj:
                 sandbox_command = self._command(root, cwd, ["/bin/bash", "/workflow/prj_backend_check.sh"], prj_cache=cache)
         else:
             executable = shutil.which(command["program"], path=SYSTEM_PATH)
@@ -370,16 +312,18 @@ class IsolatedTestProcess:
             with tempfile.TemporaryDirectory(prefix="wpg-" if prj_check else "workflow-test-sandbox-",
                                              dir="/private/tmp") as temporary:
                 scratch = Path(temporary).resolve()
-                if prj_check:
-                    test_argv = ["/bin/bash", str(scratch.resolve() / "prj_backend_check.sh")]
-                sandbox_command, environment, workdir = self._macos_command(
-                    root, cwd, test_argv, scratch, prj_cache=cache if prj_check else None)
+                if native_prj:
+                    sandbox_command, environment, workdir = self._macos_prj_command(root, cwd, scratch, cache)
+                else:
+                    sandbox_command, environment, workdir = self._macos_command(root, cwd, test_argv, scratch)
                 result = _process(sandbox_command, timeout, cwd=workdir, env=environment)
         else:
             if not prj_check:
                 sandbox_command = self._command(root, cwd, test_argv)
             result = _process(sandbox_command, timeout)
-        if result["stderr"].startswith(("bwrap:", "sandbox-exec:")):
+        if native_prj:
+            result["environment"] = "macos-native"
+        if not native_prj and result["stderr"].startswith(("bwrap:", "sandbox-exec:")):
             result.update(status="unavailable", reason="The isolated runtime or executable could not be initialized.")
         elif prj_check and result["status"] == "failed" and result["return_code"] == 78:
             result.update(status="unavailable", reason="Offline dependencies or isolated studio_test PostgreSQL could not be prepared.")
@@ -428,7 +372,7 @@ def allow_failure_publication(config: dict[str, Any], validation: dict[str, Any]
 def validate_workspace(candidate: Path, config: dict[str, Any], before: dict[str, Any],
                        config_relative: str, *, executor=None, stop_on_failure=False) -> dict[str, Any]:
     """Verify candidate boundaries then run Unit/E2E checks using frozen policy."""
-    environment = {"linux": "linux-bubblewrap", "darwin": "macos-sandbox-exec"}.get(sys.platform, "unsupported")
+    environment = {"linux": "linux-bubblewrap", "darwin": "macos"}.get(sys.platform, "unsupported")
     validation = {"status": "running", "started_at": _now(), "ended_at": None,
                   "scope_status": "not_run", "tests": {"unit": [], "e2e": []}, "errors": [],
                   "environment": environment, "candidate_sha256": None}

@@ -85,7 +85,7 @@ jobs:
           export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
           backend_cwd="$(python3 -c 'import json, sys; c=json.load(open(sys.argv[1], encoding="utf-8")); print(next((t["cwd"] for group in c["tests"].values() for t in group if t["command"]["program"] == "prj-backend-check" and t.get("run_if", "always") != "never"), ""))' "$WORKFLOW_CONFIG_PATH")"
           [[ -n "$backend_cwd" ]] || exit 0
-          command -v uv >/dev/null || { echo '::error::Install uv on the isolated system PATH.'; exit 1; }
+          command -v uv >/dev/null || { echo '::error::Install uv on the runner system PATH.'; exit 1; }
           python3 -c 'import sys; assert sys.version_info >= (3, 12), "Backend checks require Python 3.12 or later."'
           dependency_root="$(mktemp -d /tmp/workflow-prj-deps.XXXXXX)"
           echo "directory=$dependency_root" >> "$GITHUB_OUTPUT"
@@ -185,7 +185,7 @@ jobs:
               validation_failed: ['프로젝트 검증을 완료하지 못했습니다.', '프로젝트의 Unit/E2E 설정과 실행 경로를 확인하세요.'],
               test_failed: ['게시를 막는 Unit 또는 E2E 검사가 실패했습니다.', '프로젝트에 설정된 검사를 같은 환경에서 실행해 실패한 조건을 수정하세요.'],
               test_timeout: ['게시를 막는 검사가 제한 시간 안에 끝나지 않았습니다.', '검사에서 사용하는 서비스 상태와 해당 검사의 `timeout_seconds`를 확인하세요.'],
-              test_unavailable: ['게시를 막는 검사를 실행할 수 없었습니다.', '러너의 Bubblewrap 또는 macOS sandbox-exec 격리 기능, 검사 실행 경로, 의존성 및 필요한 서비스를 확인하세요.'],
+              test_unavailable: ['게시를 막는 검사를 실행할 수 없었습니다.', 'PRJ macOS 백엔드는 직접 실행합니다. 러너의 uv·Python·PostgreSQL 도구와 준비된 캐시를 확인하세요. 일반 검사는 Bubblewrap 또는 macOS sandbox-exec 격리 기능도 확인하세요.'],
               test_not_run: ['필수 검사가 실행되지 않았습니다.', '프로젝트 검사 설정의 `run_if` 조건과 앞서 실패한 검사가 있는지 확인하세요.'],
               commit_identity_missing: ['자동 커밋의 작성자 이름 또는 이메일이 없습니다.', '프로젝트 JSON의 `publishing.commit_author`에 봇 이름과 이메일을 설정하세요.'],
               protection_missing: ['대상 브랜치에서 필요한 보호 규칙을 확인하지 못했습니다.', 'Settings → Branches에서 클래식 보호 규칙에 PR 승인 1명 이상, 관리자에게도 적용, 리뷰 우회 없음이 설정되어 있는지 확인하세요.'],

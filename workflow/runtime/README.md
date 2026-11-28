@@ -63,11 +63,11 @@ CLI 종료 코드 `0`은 전체 흐름 성공, `1`은 실행·검증·게시 실
 
 `test_runner.py`는 Codex와 별개 프로세스로 테스트를 실행한다. 실행 전 후보의 허용 경로와 설정 구조·필수 경로를 다시 확인하고 후보 전체의 내용 해시를 기록한다. 후보는 새로운 임시 검증 폴더로 복사하며 테스트는 이 복사본에서만 수행한다. 원본 사용자 변경은 Codex 실행 직전의 스냅샷에 포함되므로 Codex 변경으로 오인하지 않는다. Git 메타데이터가 없는 스냅샷에서는 Git diff 대신 SHA-256·실행 비트의 전후 비교로 추가·수정·삭제를 구분한다.
 
-Linux/WSL에서는 Bubblewrap(`bwrap`), macOS x86_64/ARM64에서는 Seatbelt 기반 `sandbox-exec`로 테스트를 격리한다. macOS sandbox preflight는 후보 snapshot과 private temp 쓰기, host home 차단, network bind 차단을 확인한다. `sandbox-exec`는 Apple이 deprecated 처리했으므로 도구가 없거나 capability 점검에 실패하면 `unavailable`로 기록하고 host에서 실행하지 않는다. 설치·인증·권한 상승은 수행하지 않는다.
+Linux/WSL에서는 Bubblewrap으로 테스트를 격리한다. macOS x86_64/ARM64의 `prj-backend-check`는 GitHub runner에서 직접 실행하며 sandbox-exec 조회·profile·격리 점검을 사용하지 않는다. macOS의 계산기 데모 등 일반 검사는 기존 Seatbelt 기반 sandbox-exec와 격리 점검을 사용하고, 필요한 격리 도구나 점검이 실패하면 `unavailable`로 기록한다.
 
 독립 검증은 엔진이 만든 임시 복사본의 루트를 실제 경로로 정규화한 뒤 테스트 cwd와 포함 관계를 비교한다. macOS의 검증 복사본·격리 점검·테스트 scratch는 HOME 차단 규칙과 겹치지 않도록 `/private/tmp` 아래에 생성하며 호스트의 `TMPDIR`를 사용하지 않는다. macOS의 `/var` → `/private/var`, `/tmp` → `/private/tmp` 별칭을 같은 경로로 처리하며, 후보 내부의 심볼릭 링크·허용 경로 밖 변경은 계속 차단한다. `validation_failed`와 `path_violation`이 함께 표시되면 원본 `result.json`의 `changed_files`, `validation.scope_status`, `validation.errors`, 검사 실행 여부를 확인한다. 이 코드는 임시 복사본과 파일 링크의 경계 오류에도 사용되므로 표시만으로 PRJ 밖 코드 변경을 의미하지 않는다.
 
-Linux 검증은 시스템 런타임(`/usr`, `/bin`, `/lib`, `/lib64`, `/etc/alternatives`, `/etc/ld.so.cache`)만 읽기 전용으로 제공한다. 테스트 복사본만 `/workspace`에 쓰기 가능하게 마운트하고 HOME·TMPDIR를 임시 경로로 둔 뒤 환경 변수를 비운다. PID·network namespace와 capability 제한을 적용한다. macOS에서는 시스템 runtime 경로, 검증 snapshot, private HOME/TMPDIR만 허용하는 Seatbelt profile을 적용하고 host home과 network 접근을 차단한다. 두 환경 모두 원본 checkout, Codex 인증 파일, host 서비스에 접근하지 않는다.
+Linux 검증은 시스템 런타임(`/usr`, `/bin`, `/lib`, `/lib64`, `/etc/alternatives`, `/etc/ld.so.cache`)만 읽기 전용으로 제공한다. 테스트 복사본만 `/workspace`에 쓰기 가능하게 마운트하고 HOME·TMPDIR를 임시 경로로 둔 뒤 환경 변수를 비운다. PID·network namespace와 capability 제한을 적용한다. macOS의 일반 검사는 시스템 runtime 경로, 검증 snapshot, private HOME/TMPDIR만 허용하는 Seatbelt profile을 적용하고 host home과 network를 차단한다. macOS PRJ 백엔드는 후보 복사본에서 직접 실행하며 OS 수준의 호스트 파일·네트워크 접근 차단은 적용하지 않는다. 실행별 HOME·TMPDIR를 지정하고 인증 환경변수는 상속하지 않는다.
 
 macOS는 파일 읽기와 실행 가능한 메모리 매핑을 별도로 검사한다. 기존 읽기 허용 경로와 검증 snapshot·scratch에 `file-map-executable`을 함께 허용해 Python 실행 파일, framework/dylib 및 오프라인 설치된 확장 모듈을 로드한다. 전체 파일시스템이나 host HOME의 읽기·쓰기 권한은 추가하지 않는다.
 
@@ -77,7 +77,7 @@ macOS는 파일 읽기와 실행 가능한 메모리 매핑을 별도로 검사�
 
 Actions는 승인 확인 후 신뢰된 기준 checkout의 잠금 파일로 별도 `/tmp/workflow-prj-deps.*` 위치에 의존성 캐시를 준비한다. 이 단계의 `uv sync`는 비밀값 없는 환경에서 `--frozen --no-build --no-python-downloads`로 실행하며, 후보의 코드나 설치 스크립트를 실행하지 않는다. 완료된 캐시만 `WORKFLOW_PRJ_UV_CACHE`로 검증기에 전달하고 실행 종료 시 삭제한다. 캐시 준비 단계의 실패 후에도 코드 실행과 검증으로 이어지며, 검증기는 준비되지 않은 캐시를 `unavailable`로 기록한다. 실제 검사는 해당 캐시에서 `--offline --frozen --no-build --no-python-downloads`로 설치하고, 후보가 새 의존성을 요구하면 검사 준비 실패로 기록한다. 테스트 실패 게시 정책에 따라 게시 여부를 판정한다.
 
-Linux는 기존 Bubblewrap의 읽기 전용 캐시 마운트를 유지한다. macOS는 신뢰된 실행 스크립트만 private scratch로 복사하고 캐시에 읽기 권한만 준다. 짧은 `/private/tmp/wpg-*` 경로에 DB·소켓·가상환경을 만들어 Unix 소켓의 104바이트 제한을 피한다. PostgreSQL의 System V semaphore와 기본 시스템 사용자 조회를 허용하고 공유 메모리는 mmap 파일로 제한한다. 네트워크는 해당 scratch의 PostgreSQL Unix 소켓에만 허용하며 TCP, 다른 Unix 소켓, host HOME은 차단한다. 별도 capability 점검에서 사용자 조회, 소켓 왕복, 캐시 읽기·쓰기 차단, 외부 Unix 소켓·TCP·HOME 차단을 확인한 뒤 실행한다. 점검 실패나 의존성·DB 준비 실패는 `unavailable`이며 host 실행으로 대체하지 않는다.
+Linux는 기존 Bubblewrap의 읽기 전용 캐시 마운트를 유지한다. macOS는 신뢰된 launcher를 private scratch로 복사하고 `/bin/bash`로 직접 실행한다. 짧은 `/private/tmp/wpg-*` 경로에 DB·소켓·가상환경을 만들어 Unix 소켓의 104바이트 제한을 피한다. launcher는 캐시를 scratch로 복사해 오프라인 frozen 설치를 수행하고 mmap 기반 임시 `studio_test` PostgreSQL을 사용한다. DB는 TCP 수신 없이 scratch의 Unix 소켓으로 연결하고 종료 시 정리한다. 의존성·DB 준비 실패는 `unavailable`이며, pytest 실패·시간 초과는 실제 결과대로 보고한다. macOS 검증의 `environment`는 `macos`이며 직접 실행된 백엔드 결과의 `environment`는 `macos-native`다.
 
 실제 백엔드 통합 검증은 일반 discover와 분리한다. 신뢰된 기준 잠금 파일로 준비한 캐시와 위 도구가 있는 환경에서 저장소 루트의 아래 명령을 실행한다. 임시 DB만 생성하며 모델을 호출하지 않는다.
 
@@ -88,7 +88,7 @@ WORKFLOW_PRJ_TESTS=1 WORKFLOW_PRJ_UV_CACHE=/absolute/prepared/uv-cache \
 
 테스트 프로세스의 종료 코드, 소요 시간, stdout·stderr를 수집한다. 시간 초과·완료 시 남은 하위 프로세스도 정리한다. 각 출력은 메모리에서 256 KiB로 제한하고 비밀정보를 가린 뒤 결과에 저장한다. 한도를 초과한 스트림은 전체 생략하고 증거 수집 불가로 `unavailable` 처리한다. 원문 로그를 디스크에 따로 저장하지 않는다.
 
-macOS 격리 점검이 실패하면 검사 결과는 `unavailable`이며 `isolation_stage`에 마지막 점검 단계를 기록한다. 초기화, `workspace_write`, `scratch_write`, `host_home_block`, `network_block`, 사용자 조회, 캐시 읽기·쓰기 차단, PostgreSQL 소켓·외부 소켓 차단을 구분한다. 점검 프로세스의 종료 코드·소요 시간·정제된 stdout/stderr를 보존하며, 이때의 종료 코드는 백엔드 테스트가 아닌 격리 점검의 결과다. `reason`에도 실제 테스트가 시작되지 않았음을 명시한다. 실패 결과와 단계는 이슈 댓글에 전달한다. 격리 점검은 기존대로 코딩 후 검증 단계에서 수행하며, 실패 후 일반 PR 허용 정책을 변경하지 않는다.
+macOS 일반 검사의 격리 점검이 실패하면 검사 결과는 `unavailable`이며 `isolation_stage`에 마지막 점검 단계를 기록한다. 초기화, `workspace_write`, `scratch_write`, `host_home_block`, `network_block`을 구분한다. 점검 프로세스의 종료 코드·소요 시간·정제된 stdout/stderr를 보존하며 이때의 종료 코드는 격리 점검의 결과다. `reason`에도 실제 테스트가 시작되지 않았음을 명시한다. 직접 실행하는 macOS PRJ 백엔드는 이 점검을 거치지 않는다. 실패 후 일반 PR 허용 정책은 유지한다.
 
 Python 본문 진입 직후 `python_imports`를 먼저 기록한 뒤 `os`·`socket`을 import한다. `initialization` 상태에서 종료하면 이 표시에도 도달하지 못한 것이며, `python_imports`는 Python 본문 진입 후 import 단계에서 중단된 경우다. 음수 종료 코드는 `reason`에 `SIGABRT` 등 신호 이름으로 표시한다. 신호 이름만으로 어떤 파일이나 권한이 거부됐는지 확정하지 않는다.
 
@@ -129,7 +129,7 @@ Python 본문 진입 직후 `python_imports`를 먼저 기록한 뒤 `os`·`sock
 
 Issue 분석·실행·독립 검증에서 소스·컨텍스트·파일명을 정규식으로 검사해 `sensitive_content`로 차단하는 동작은 제거했다. 인증 코드와 테스트 fixture가 변경되어도 파일별 예외 목록을 갱신할 필요가 없다. 프롬프트·로그·테스트 실패 댓글의 값 가리기는 `redact()`로 유지하며, `.env`·인증 파일 제외와 경로·링크·크기 검증도 적용한다. 원본 snapshot과 생성 후보의 내용은 마스킹하지 않으므로 실제 인증값은 해당 파일에 저장하지 않는다. Issue 입력·계획·추가 결정사항 및 설정·게시 메타데이터의 별도 검증은 계속 적용한다.
 
-수집 제한은 최대 10,000개 파일, 파일당 10 MiB, 전체 100 MiB이고 컨텍스트 문서는 파일당 512 KiB다. 준비 단계와 결과 단계에서 제한을 확인한다. 파일시스템의 동시 변경이나 OS sandbox의 결함까지 검증기가 막을 수 있는 것은 아니다. Codex 변경 생성 단계의 읽기 권한 전체를 프로젝트 경로로 제한하는 별도 OS 격리는 아직 구현하지 않았다. 독립 테스트 단계에는 앞서 설명한 OS별 Bubblewrap/Seatbelt 격리를 적용한다. 생성 단계까지 강한 읽기·프로세스 격리가 필요한 환경은 추가 외부 격리를 준비해야 한다.
+수집 제한은 최대 10,000개 파일, 파일당 10 MiB, 전체 100 MiB이고 컨텍스트 문서는 파일당 512 KiB다. 준비 단계와 결과 단계에서 제한을 확인한다. 파일시스템의 동시 변경이나 OS sandbox의 결함까지 검증기가 막을 수 있는 것은 아니다. Codex 변경 생성 단계의 읽기 권한 전체를 프로젝트 경로로 제한하는 별도 OS 격리는 아직 구현하지 않았다. 독립 테스트는 Linux Bubblewrap·macOS 일반 검사 Seatbelt·macOS PRJ 백엔드 직접 실행 경로를 사용한다. 강한 호스트 경계가 필요한 환경은 별도 runner 격리를 준비해야 한다.
 
 ## 실행 결과
 
