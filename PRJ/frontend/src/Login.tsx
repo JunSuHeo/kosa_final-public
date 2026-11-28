@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   Eye,
@@ -17,6 +17,7 @@ export default function Login({
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
   const [visible, setVisible] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
@@ -24,6 +25,18 @@ export default function Login({
   useEffect(() => {
     if (error && !busy) passwordInput.current?.focus();
   }, [error, busy]);
+
+  function updateCapsLock(event: KeyboardEvent<HTMLInputElement>) {
+    setCapsLock(event.getModifierState("CapsLock"));
+  }
+
+  const passwordDescription = [
+    error && "login-error",
+    capsLock && "login-caps-lock",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <main className="login-screen hplan-login">
       <div className="login-shell">
@@ -90,8 +103,11 @@ export default function Login({
               value={password}
               disabled={busy}
               aria-invalid={!!error}
-              aria-describedby={error ? "login-error" : undefined}
+              aria-describedby={passwordDescription || undefined}
               placeholder="비밀번호를 입력해 주세요"
+              onKeyDown={updateCapsLock}
+              onKeyUp={updateCapsLock}
+              onBlur={() => setCapsLock(false)}
               onChange={(event) => {
                 setPassword(event.target.value);
                 setError("");
@@ -107,6 +123,9 @@ export default function Login({
             >
               {visible ? <EyeOff size={19} /> : <Eye size={19} />}
             </button>
+          </div>
+          <div id="login-caps-lock" role="status">
+            {capsLock && <p>Caps Lock이 켜져 있습니다</p>}
           </div>
           {(error || notice) && (
             <p id="login-error" className="login-error" role="alert">
