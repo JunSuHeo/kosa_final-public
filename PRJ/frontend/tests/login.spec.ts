@@ -1,3 +1,4 @@
+import { test as browserTest } from "@playwright/test";
 import { expect, test } from "./server-fixture";
 import { login } from "./business-helpers";
 import { headers } from "./server-fixture";
@@ -45,6 +46,46 @@ test("로그인 전에는 계정과 업무 데이터를 표시하지 않고 빈 
   expect(privateCalls).toEqual([]);
 });
 
+browserTest("비밀번호 입력 중 Caps Lock 상태를 안내한다", async ({ page }) => {
+  await page.goto("/");
+  const id = page.getByLabel("아이디", { exact: true });
+  const pw = page.getByLabel("비밀번호", { exact: true });
+  const status = page
+    .getByRole("form", { name: "로그인", exact: true })
+    .getByRole("status");
+  const message = "Caps Lock이 켜져 있습니다.";
+  const capsOn = { key: "A", modifierCapsLock: true };
+
+  await pw.focus();
+  await expect(status).toBeEmpty();
+  await expect(pw).toHaveAccessibleDescription("");
+  await pw.dispatchEvent("keydown", capsOn);
+  await expect(status).toBeVisible();
+  await expect(status).toHaveText(message);
+  await expect(pw).toHaveAccessibleDescription(message);
+
+  await pw.dispatchEvent("keyup", { key: "CapsLock", modifierCapsLock: false });
+  await expect(pw).toBeFocused();
+  await expect(status).toBeEmpty();
+  await expect(pw).toHaveAccessibleDescription("");
+  await pw.dispatchEvent("keydown", capsOn);
+  await expect(status).toHaveText(message);
+  await id.focus();
+  await expect(status).toBeEmpty();
+  await pw.focus();
+  await expect(status).toBeEmpty();
+  await pw.dispatchEvent("keyup", capsOn);
+  await expect(status).toHaveText(message);
+
+  await page.getByRole("button", { name: "비밀번호 보기", exact: true }).click();
+  await expect(pw).toHaveAttribute("type", "text");
+  await pw.focus();
+  await expect(status).toBeEmpty();
+  await pw.dispatchEvent("keydown", capsOn);
+  await expect(status).toHaveText(message);
+  await expect(pw).toHaveAccessibleDescription(message);
+});
+
 test("오입력은 ID를 유지하고 비밀번호를 지우며 표시 전환·Enter 로그인을 지원한다", async ({
   page,
 }) => {
@@ -57,10 +98,12 @@ test("오입력은 ID를 유지하고 비밀번호를 지우며 표시 전환·E
     .getByRole("button", { name: "비밀번호 보기", exact: true })
     .click();
   await expect(pw).toHaveAttribute("type", "text");
+  await expect(pw).toHaveValue(password);
   await page
     .getByRole("button", { name: "비밀번호 숨기기", exact: true })
     .click();
   await expect(pw).toHaveAttribute("type", "password");
+  await expect(pw).toHaveValue(password);
   await pw.press("Enter");
   await expect(page.getByRole("alert")).toContainText(
     "ID 또는 비밀번호를 확인해 주세요",
@@ -68,6 +111,8 @@ test("오입력은 ID를 유지하고 비밀번호를 지우며 표시 전환·E
   await expect(id).toHaveValue("wrong");
   await expect(pw).toHaveValue("");
   await expect(pw).toBeFocused();
+  await pw.dispatchEvent("keydown", { key: "A", modifierCapsLock: true });
+  await expect(pw).toHaveAttribute("aria-describedby", "login-error login-caps-lock");
   await id.fill(" admin ");
   await pw.fill(password + " ");
   await pw.press("Enter");

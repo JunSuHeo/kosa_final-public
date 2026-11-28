@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import {
   ArrowRight,
   Eye,
@@ -17,10 +18,20 @@ export default function Login({
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
   const [visible, setVisible] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
   const passwordInput = useRef<HTMLInputElement>(null);
+  const updateCapsLock = (event: KeyboardEvent<HTMLInputElement>) => {
+    setCapsLock(event.getModifierState("CapsLock"));
+  };
+  const passwordDescription = [
+    error && "login-error",
+    capsLock && "login-caps-lock",
+  ]
+    .filter(Boolean)
+    .join(" ");
   useEffect(() => {
     if (error && !busy) passwordInput.current?.focus();
   }, [error, busy]);
@@ -35,6 +46,7 @@ export default function Login({
             if (submitting.current) return;
             submitting.current = true;
             setBusy(true);
+            setCapsLock(false);
             setError("");
             try {
               await onLogin(id.trim(), password);
@@ -90,8 +102,11 @@ export default function Login({
               value={password}
               disabled={busy}
               aria-invalid={!!error}
-              aria-describedby={error ? "login-error" : undefined}
+              aria-describedby={passwordDescription || undefined}
               placeholder="비밀번호를 입력해 주세요"
+              onKeyDown={updateCapsLock}
+              onKeyUp={updateCapsLock}
+              onBlur={() => setCapsLock(false)}
               onChange={(event) => {
                 setPassword(event.target.value);
                 setError("");
@@ -107,6 +122,9 @@ export default function Login({
             >
               {visible ? <EyeOff size={19} /> : <Eye size={19} />}
             </button>
+          </div>
+          <div id="login-caps-lock" className="subtle" role="status">
+            {capsLock ? "Caps Lock이 켜져 있습니다." : ""}
           </div>
           {(error || notice) && (
             <p id="login-error" className="login-error" role="alert">
