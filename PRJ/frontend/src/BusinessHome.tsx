@@ -65,7 +65,7 @@ export default function BusinessHome({
   canRead: boolean;
   projects: Project[];
   health: Health;
-  onOpen: (id: string) => void;
+  onOpen: (id: string, confirmed: boolean) => void;
   onStart: (source: Source, intent: PlanningIntent) => void;
   onSettings: () => void;
   onError: (e: unknown) => void;
@@ -197,7 +197,13 @@ export default function BusinessHome({
             <div className="home-empty">
               <FolderOpen size={28} />
               <h3>연결된 업무가 없어요</h3>
-              <p>IT 담당자에게 기획할 업무의 연결을 요청해 주세요.</p>
+              {canManage || canAssign ? (
+                <button className="secondary" onClick={onSettings}>
+                  {canManage ? "업무 연결 설정 열기" : "업무 배정 열기"}
+                </button>
+              ) : (
+                <p>사내 IT 담당자에게 H-PlanIT 로그인 아이디와 배정할 업무 이름을 보내 업무 배정을 요청해 주세요.</p>
+              )}
             </div>
           )}
         </section>
@@ -230,6 +236,7 @@ export default function BusinessHome({
           ) : shown.length ? (
             <div className="project-grid">
               {shown.map((project) => {
+                const status = project.progress_status || (project.current_version ? "confirmed" : "conversation");
                 const progress = {
                   conversation: ["대화 중", "대화 이어가기"],
                   awaiting_answers: ["답변 기다리는 중", "질문에 답하기"],
@@ -237,12 +244,12 @@ export default function BusinessHome({
                   review_ready: ["초안 준비됨", "초안 확인하기"],
                   failed: ["작업 중단됨", "다시 시도하기"],
                   confirmed: ["현업 확인 완료", "확인본 보기"],
-                }[project.progress_status || (project.current_version ? "confirmed" : "conversation")];
+                }[status];
                 return (
                 <button
                   className="project-card"
                   key={project.id}
-                  onClick={() => onOpen(project.id)}
+                  onClick={() => onOpen(project.id, status === "confirmed")}
                 >
                   <div className="project-card-top">
                     <FileText size={21} />
@@ -268,7 +275,9 @@ export default function BusinessHome({
               <p>
                 {query
                   ? "검색한 기획이 없어요."
-                  : "아직 작성한 기획이 없어요. 업무를 선택해 시작해 보세요."}
+                  : sources.some((source) => canCreate && sourceAvailable(source, health))
+                    ? "아직 작성한 기획이 없어요. 업무를 선택해 시작해 보세요."
+                    : "아직 작성한 기획이 없어요."}
               </p>
             </div>
           )}

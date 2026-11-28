@@ -188,10 +188,17 @@ def add_job(c, p, inp):
             "business.v2" if p["start_mode"] == "conversation" or inp.kind in {"discuss", "repair"} else "studio.v1",
         ),
     ).fetchone()
-    c.execute(
-        "INSERT INTO studio_messages(project_id,role,content) VALUES (%s,'user',%s)",
-        (p["id"], inp.request),
+    latest_user_message = next((message["content"] for message in history if message["role"] == "user"), None)
+    reuses_message = (
+        p["start_mode"] == "conversation"
+        and inp.kind in {"generate", "revise"}
+        and inp.request == latest_user_message
     )
+    if not reuses_message:
+        c.execute(
+            "INSERT INTO studio_messages(project_id,role,content) VALUES (%s,'user',%s)",
+            (p["id"], inp.request),
+        )
     return job
 
 

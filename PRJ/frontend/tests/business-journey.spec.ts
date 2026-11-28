@@ -74,3 +74,52 @@ test("모바일에서 입력·초안 생성이 화면 안에 있고 수정안은
   await expect(comparison).toContainText("이전 업무");
   await expect(comparison).toContainText("이번 업무");
 });
+
+test("모바일에서 초안 검토와 확인본 재열기가 올바른 화면으로 이어진다", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await begin(page);
+  const question = page.getByLabel("업무 확인 질문").first();
+  await question.getByRole("button", { name: "담당자가 요청하고 팀장이 승인해요" }).click();
+  await question.getByRole("button", { name: "답변 보내기" }).click();
+  await expect(page.getByRole("heading", { name: "예외가 발생하면 어떻게 처리할까요?" })).toBeVisible();
+  await draft(page);
+  await expect(page.locator(".message.user").filter({ hasText: "답변: 담당자가 요청하고 팀장이 승인해요" })).toHaveCount(1);
+  await page.locator(".review-chat-card").click();
+  await expect(page.locator(".decision-footer")).toContainText(/확인 사항 [1-9]\d*개/);
+  await page.getByRole("button", { name: "내용 보기" }).nth(2).click();
+  await page.getByRole("tab", { name: "화면 시안" }).click();
+  await expect(page.getByRole("button", { name: "검토로 돌아가기" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("tab", { name: "업무 흐름" })).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("button", { name: "확인 안내로 돌아가기" }).click();
+  await page.getByRole("button", { name: "내용 보기" }).nth(3).click();
+  await expect.poll(async () => page.locator(".wire-sheet").evaluate((sheet) => {
+    const bounds = sheet.getBoundingClientRect();
+    const canvas = sheet.closest(".wire-canvas")!.getBoundingClientRect();
+    return bounds.right <= canvas.right && bounds.top < 400;
+  })).toBe(true);
+  await page.getByRole("button", { name: "검토로 돌아가기" }).click();
+  await page.getByRole("checkbox", { name: "위 확인 사항과 가정을 살펴봤어요" }).check();
+  await page.getByRole("button", { name: "현업 확인본 저장", exact: true }).click();
+  await expect(page.getByRole("complementary").getByText("현업 확인본 v1 · 읽기 전용")).toBeVisible();
+  await page.getByRole("button", { name: "업무 선택", exact: true }).click();
+  await page.getByRole("button", { name: /확인본 보기/ }).click();
+  await expect(page.getByRole("tab", { name: "기획 내용" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "기획 내용" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("button", { name: "현업 확인본 v1", exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("tab", { name: "기획 내용" })).toBeVisible();
+});
+
+test("업무 배정 전 홈에서 요청에 필요한 정보를 안내한다", async ({ page, browser }) => {
+  await expect(page.getByRole("heading", { name: "연결된 업무가 없어요" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "업무 연결 설정 열기" })).toBeVisible();
+  const member = await browser.newPage();
+  try {
+    await login(member, page.url(), "user1");
+    await expect(member.getByText(/배정할 업무 이름/)).toBeVisible();
+    await expect(member.getByText(/업무를 선택해 시작해 보세요/)).toHaveCount(0);
+  } finally {
+    await member.close();
+  }
+});

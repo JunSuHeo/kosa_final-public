@@ -10,3 +10,5 @@ JS가 AI와 진행한 작업의 계획·판단 요약·변경·검증·인계를
 
 - [업무 연결에서 GitHub 인증](2026-11-25-github-source-connection/README.md)
 - [기획실 진행 표시 갱신 수정](2026-11-28-studio-progress-polling/README.md)
+
+- [Studio 현업 사용성 개선](2026-11-28-studio-usability/README.md)

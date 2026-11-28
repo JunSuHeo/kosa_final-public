@@ -126,3 +126,5 @@ live smoke는 호출 비용과 데이터를 발생시킨다. 실행 환경과 �
 ## GitHub 저장소 연결
 
 `github_connection.py`에서 GitHub App 사용자 승인과 저장소 목록을 처리한다. state는 등록을 시작한 H‑PlanIT 계정에 묶이고 PKCE로 코드를 교환한다. 토큰은 `008_github_connections.sql` 테이블에 암호화하며, API와 worker는 저장소 소유자 기준으로 토큰을 조회하고 갱신한다. GitHub 분석 버전 `git-text.v2`는 전체 60초 제한 없이 commit, tree, blob을 읽고 파일 수·크기 상한과 GitHub 요청별 타임아웃을 적용한다. 같은 커밋의 기존 분석 버전은 보존한다.
+
+현업 대화 프로젝트에서 초안 또는 수정안 생성 요청이 최근 사용자 메시지와 같으면 그 메시지를 다시 저장하지 않는다. 생성 작업은 기존 요청과 대화 이력을 읽어 실행한다.

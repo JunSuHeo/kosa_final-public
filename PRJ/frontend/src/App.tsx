@@ -86,6 +86,14 @@ const panels: { id: Panel; label: string; icon: typeof FileText }[] = [
 ];
 const projectFromURL = () =>
   new URLSearchParams(window.location.search).get("project");
+const projectRoute = () => {
+  const query = new URLSearchParams(window.location.search);
+  const requestedTab = query.get("tab");
+  const tab = requestedTab === "implementation"
+    ? requestedTab
+    : tabs.find(({ id }) => id === requestedTab)?.id;
+  return { tab, review: query.get("review") === "1", confirmed: query.get("confirmed") === "1" };
+};
 const pageFromURL = () =>
   new URLSearchParams(window.location.search).get("view") || "home";
 function Logo({ compact = false }: { compact?: boolean }) {
@@ -111,13 +119,13 @@ export default function App() {
   const [adminNavOpen, setAdminNavOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [page, setPage] = useState(pageFromURL);
-  const [mobileView, setMobileView] = useState<"chat" | "artifacts">("chat");
+  const [mobileView, setMobileView] = useState<"chat" | "artifacts">(() => projectRoute().tab ? "artifacts" : "chat");
   const [projectId, setProjectId] = useState<string | null>(projectFromURL);
   const idRef = useRef(projectId);
   idRef.current = projectId;
   const [bundle, setBundle] = useState<Bundle | null>(null);
-  const [tab, setTab] = useState<Tab>("prd");
-  const [panel, setPanel] = useState<Panel>("chat");
+  const [tab, setTab] = useState<Tab>(() => projectRoute().tab ?? "prd");
+  const [panel, setPanel] = useState<Panel>(() => projectRoute().review ? "review" : "chat");
   const [reviewVisit, setReviewVisit] = useState(0);
   const [sideOpen, setSideOpen] = useState(true);
   const workspaceWidth = useWorkspaceWidth();
@@ -185,7 +193,7 @@ export default function App() {
     setBundle(result);
     setTitle(result.project.title);
     if (result.proposal?.id && result.proposal.id !== proposalRef.current) {
-      setCandidate(true);
+      setCandidate(!projectRoute().confirmed || proposalRef.current !== null);
       setHistorical(null);
       proposalRef.current = result.proposal.id;
     }
@@ -214,7 +222,7 @@ export default function App() {
     setHistorical(null);
     setEdit(null);
     setSelected(null);
-    setCandidate(true);
+    setCandidate(!projectRoute().confirmed);
     restoredProject.current = null;
     enteredProject.current = null;
     setStaleEdit(false);
@@ -244,7 +252,7 @@ export default function App() {
     if (!bundle || bundle.project.id !== projectId || !editorKey || enteredProject.current === editorKey) return;
     enteredProject.current = editorKey;
     const active = bundle.job && busyStatuses.includes(bundle.job.status);
-    if (bundle.proposal && !active && bundle.job?.status !== "failed" && !readTabDraft(editorKey, null)) {
+    if (!projectRoute().confirmed && bundle.proposal && !active && bundle.job?.status !== "failed" && !readTabDraft(editorKey, null)) {
       setPanel("review");
       setSideOpen(true);
       setCandidate(true);
@@ -284,21 +292,28 @@ export default function App() {
       idRef.current = projectFromURL();
       setProjectId(projectFromURL());
       setPage(pageFromURL());
-      setTab("prd");
-      setPanel("chat");
-      setMobileView("chat");
+      const route = projectRoute();
+      setTab(route.tab ?? "prd");
+      setPanel(route.review ? "review" : "chat");
+      setMobileView(route.tab ? "artifacts" : "chat");
+      if (!edit) {
+        setCandidate(!route.confirmed);
+        setHistorical(null);
+      }
+      setSelected(null);
+      setExportMenu(false);
       setSideOpen(true);
     };
     window.addEventListener("popstate", back);
     return () => window.removeEventListener("popstate", back);
-  }, []);
-  const navigate = (id: string | null, origin?: Project) => {
+  }, [edit]);
+  const navigate = (id: string | null, origin?: Project, confirmed = false, replace = false) => {
     const source = origin?.source_id;
-    window.history.pushState(
+    window.history[replace ? "replaceState" : "pushState"](
       {},
       "",
       id
-        ? `/?project=${id}`
+        ? `/?project=${id}${confirmed ? "&confirmed=1&tab=prd" : ""}`
         : source
           ? `/?source=${source}&from=${origin.id}`
           : "/",
@@ -306,7 +321,7 @@ export default function App() {
     idRef.current = id;
     setProjectId(id);
     setPage("home");
-    setMobileView("chat");
+    setMobileView(confirmed ? "artifacts" : "chat");
     setTab("prd");
     setPanel("chat");
     setSideOpen(true);
@@ -377,7 +392,7 @@ export default function App() {
       await refreshProjects().catch(handleError);
       const current = new URLSearchParams(location.search);
       if (accountRef.current === owner && !idRef.current && current.get("view") === "intake" && current.get("source") === source.id)
-        navigate(p.id);
+        navigate(p.id, undefined, false, true);
     }));
   const update = (fn: (s: Snapshot) => void) =>
     setEdit((previous) => {
@@ -388,7 +403,21 @@ export default function App() {
         writeTabDraft(editorKey, { ...editBasis.current, snapshot: next });
       return next;
     });
-  const changeTab = (next: Tab) => {
+  const setArtifactRoute = (next: Tab | null, review: boolean, confirmed = false, replace = false) => {
+    if (!projectId) return;
+    const url = new URL(window.location.href);
+    if (next) url.searchParams.set("tab", next);
+    else url.searchParams.delete("tab");
+    if (review) url.searchParams.set("review", "1");
+    else url.searchParams.delete("review");
+    if (confirmed) url.searchParams.set("confirmed", "1");
+    else url.searchParams.delete("confirmed");
+    if (url.href !== window.location.href) {
+      window.history[replace ? "replaceState" : "pushState"]({}, "", url);
+    }
+  };
+  const changeTab = (next: Tab, confirmed = !candidate) => {
+    setArtifactRoute(next, panel === "review", confirmed);
     setTab(next);
     setSelected(null);
     setExportMenu(false);
@@ -443,6 +472,7 @@ export default function App() {
     setHistorical(null);
     setCandidate(!!bundle?.proposal);
     setSelected(null);
+    setArtifactRoute(null, true, false, panel !== "review");
     setTab("prd");
     showReviewGuide();
   };
@@ -454,7 +484,8 @@ export default function App() {
     setCandidate(true);
     const firstAvailable = visibleTabs.find(({ id }) => hasArtifact(draft, id));
     if (!hasArtifact(draft, tab) && firstAvailable)
-      changeTab(firstAvailable.id);
+      changeTab(firstAvailable.id, false);
+    else if (projectRoute().tab) setArtifactRoute(tab, panel === "review");
     if (!firstAvailable) openReview();
   };
   const viewReviewDocument = (next: Tab, id?: string) => {
@@ -462,6 +493,7 @@ export default function App() {
     historyRequest.current++;
     setHistorical(null);
     setCandidate(!!bundle?.proposal);
+    setArtifactRoute(next, true);
     setTab(next);
     setSelected(id || null);
     setMobileView("artifacts");
@@ -843,7 +875,7 @@ export default function App() {
             canRead={allowed("plans.read")}
             projects={projects}
             health={health}
-            onOpen={navigate}
+            onOpen={(id, confirmed) => navigate(id, undefined, confirmed)}
             onStart={(source, intent) => openPage("intake", source, intent)}
             onSettings={() =>
               openPage(allowed("sources.manage") ? "settings" : "assignments")
@@ -864,6 +896,7 @@ export default function App() {
           className="studio"
           data-stage={conversationStage ? "conversation" : "documents"}
           data-mobile-view={mobileView}
+          data-wire-review={panel === "review" && tab === "wireframes" && !edit && !isPast}
           data-resizing={workspaceWidth.resizing}
           style={workspaceWidth.style}
         >
@@ -1297,7 +1330,8 @@ export default function App() {
                   </button>
                 )}
                 <button className="text-button" onClick={openReview}>
-                  확인 안내로 돌아가기
+                  <span className="review-return-desktop">확인 안내로 돌아가기</span>
+                  <span className="review-return-mobile">검토로 돌아가기</span>
                 </button>
               </div>
             )}
@@ -1310,6 +1344,7 @@ export default function App() {
                     historyRequest.current++;
                     setHistorical(null);
                     setCandidate(false);
+                    if (projectRoute().tab) setArtifactRoute(tab, panel === "review", true);
                   }}
                 >
                   {bundle.project.current_version
