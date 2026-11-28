@@ -1,4 +1,4 @@
-"""Human approval gate around the existing workflow (stdlib only).
+"""Issue plan approval gate around the existing workflow (stdlib only).
 
 The caller is trusted Actions code checked out from the configured base branch.
 Remote journal authentication requires a separate HMAC key and a trusted bot.
@@ -130,6 +130,10 @@ def snapshot(issue):
     return evidence.digest({"title": issue["title"], "body": issue.get("body") or ""})
 
 
+def auto_labeled(issue):
+    return any(label.get("name") == "ai-auto" for label in issue.get("labels", []))
+
+
 def issue_data(issue, repository):
     number = issue["number"]
     if (type(number) is not int or number <= 0 or "pull_request" in issue
@@ -192,7 +196,10 @@ def plan_markdown(state):
     heading = "실행 승인 대기" if ready else "추가 확인 필요"
     # Previously published Markdown must still match its signed receipt.
     if syntax == PLAN_COMMAND_SYNTAX:
-        if ready:
+        if ready and state.get("auto_approve"):
+            heading = "자동 실행 승인"
+            guidance = "`ai-auto` 라벨이 있어 추가 확인 사항이 없는 계획을 자동 승인하고 실행합니다."
+        elif ready:
             guidance = ("새 댓글에 `/approve` 입력 시 코딩 에이전트가 실행됩니다. "
                         "계획을 수정하려면 `/plan <수정사항>`, 거부하려면 `/reject`만 작성해 주세요.")
         else:
@@ -380,6 +387,8 @@ class IssueController:
                 return self.state
             pending = "awaiting_approval" if self.state["plan_ready"] else "awaiting_plan"
             self.state.update(plan=plan, analyzed_at=run._now(), status=pending)
+            if auto_labeled(current):
+                self.state["auto_approve"] = True
             body = plan_markdown(self.state)
             receipt = self.github.create_comment(number, body)
             if not self._bot_comment(receipt, number) or receipt.get("body") != body:
@@ -448,14 +457,27 @@ class IssueController:
                 return self.analyze(current)
         return self.state
 
-    def execute(self, event, publish_mode, engine_options):
+    def verify_approval(self, event):
         approval = self.state["approval"]
+        if approval.get("mode") == "auto":
+            if (not auto_labeled(self.github.issue(self.state["issue_number"]))
+                    or approval.get("login") != "ai-auto"
+                    or approval.get("comment_id") != self.state["plan_comment_id"]
+                    or approval.get("body_hash") != self.state["plan_comment_hash"]):
+                raise ExecutionError("approval_invalidated", "Automatic approval no longer matches the Issue label or plan.")
+            return
         actual = self.command(event)
-        if (self.state["status"] != "approved" or approval.get("command", "/approve") != "/approve"
+        if (approval.get("command", "/approve") != "/approve"
                 or actual["body"].strip() != "/approve"
                 or evidence.digest(actual["body"]) != approval.get("body_hash", evidence.digest("/approve"))
                 or actual["id"] != approval["comment_id"] or actual["user"]["login"] != approval["login"]):
             raise ExecutionError("approval_invalidated", "Approval does not match the saved execution ticket.")
+
+    def execute(self, event, publish_mode, engine_options):
+        approval = self.state["approval"]
+        if self.state["status"] != "approved":
+            raise ExecutionError("approval_invalidated", "Only an approved execution ticket can run.")
+        self.verify_approval(event)
         self.verify_plan()
         context = {**self.state["issue"], "approved_plan": self.state["plan"],
                    "plan_id": self.state["plan_id"], "snapshot_hash": self.state["snapshot_hash"],
@@ -475,8 +497,8 @@ class IssueController:
                 raise ExecutionError("approval_invalidated", "Project policy changed after approval.")
             try:
                 self.verify_plan()
-                # Recheck permissions and the actual comment before coding/publication.
-                self.command(event)
+                # Recheck the automatic label or human command before coding/publication.
+                self.verify_approval(event)
             except Exception as exc:
                 raise ExecutionError("approval_invalidated", "Issue, plan or approval can no longer be verified.") from exc
             if name in ("validation", "publication"):
@@ -518,6 +540,31 @@ class IssueController:
 
     def handle(self, event_name, event, *, publish_mode="simulate", defer_execution=False,
                execute_plan=None, **engine_options):
+        self.approval_issued = False
+        state = self._handle(event_name, event, publish_mode=publish_mode, defer_execution=defer_execution,
+                             execute_plan=execute_plan, **engine_options)
+        if execute_plan is not None or state.get("status") != "awaiting_approval":
+            return state
+        if event_name == "issue_comment" and (not state.get("decision_comments")
+                or state["decision_comments"][-1]["id"] != event["comment"]["id"]):
+            return state
+        if not auto_labeled(self.github.issue(state["issue_number"])):
+            return state
+        try:
+            self.verify_plan()
+            self.state["approval"] = {"mode": "auto", "login": "ai-auto", "at": run._now(),
+                                      "comment_id": state["plan_comment_id"], "body_hash": state["plan_comment_hash"]}
+            self.verify_approval(event)
+            self.persist("approved", "`ai-auto` 라벨과 준비된 계획을 확인해 실행을 자동 승인했습니다.")
+            self.approval_issued = True
+            if defer_execution:
+                return self.state
+            return self.execute(event, publish_mode, engine_options)
+        except Exception:
+            return self.invalidate("자동 실행 승인 검증에 실패했습니다. 현재 Issue 라벨과 계획을 확인해 주세요.")
+
+    def _handle(self, event_name, event, *, publish_mode="simulate", defer_execution=False,
+                execute_plan=None, **engine_options):
         self.failed_this_run = False
         if (event_name not in ("issues", "issue_comment")
                 or event["repository"]["full_name"].casefold() != self.repository.casefold()
@@ -528,15 +575,16 @@ class IssueController:
             raise ExecutionError("input_error", "Invalid Issue number")
         self.state = self.load(number)
         if execute_plan is not None:
-            if (event_name != "issue_comment" or not self.state or self.state["plan_id"] != execute_plan
-                    or self.state["status"] != "approved"):
+            if (not self.state or self.state["plan_id"] != execute_plan or self.state["status"] != "approved"
+                    or (event_name != "issue_comment" and self.state["approval"].get("mode") != "auto")):
                 return {"status": "ignored"}
             try:
                 return self.execute(event, publish_mode, engine_options)
             except ExecutionError:
                 return self.invalidate("승인 티켓을 다시 검증하지 못했습니다. 새 계획을 확인하고 다시 승인해 주세요.")
         if event_name == "issues":
-            if event["action"] not in ("opened", "edited"):
+            if (event["action"] not in ("opened", "edited", "labeled")
+                    or (event["action"] == "labeled" and event.get("label", {}).get("name") not in ("ai-plan", "ai-auto"))):
                 return {"status": "ignored"}
             current = self.github.issue(number)
             if self.state and self.state["status"] in ("executing", "validating", "publishing"):
@@ -590,6 +638,7 @@ class IssueController:
         self.state["approval"] = {"login": login, "at": run._now(), "comment_id": comment_id,
                                   "body_hash": body_hash, "command": command}
         self.persist("approved")
+        self.approval_issued = True
         if defer_execution:
             return self.state
         try:
@@ -639,8 +688,7 @@ def main(argv=None):
             stage = "process issue event and signed state"
             state = controller.handle(event_name, event, publish_mode=args.publish_mode,
                                       defer_execution=args.defer_execution, execute_plan=args.execute_plan)
-        if (args.defer_execution and command == ("/approve", "") and state.get("status") == "approved"
-                and state.get("approval", {}).get("comment_id") == event.get("comment", {}).get("id")):
+        if args.defer_execution and controller.approval_issued and state.get("status") == "approved":
             with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
                 handle.write("plan_id=" + state["plan_id"] + "\n")
         summary = {"status": state["status"], "plan_id": state.get("plan_id")}
