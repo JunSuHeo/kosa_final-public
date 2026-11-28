@@ -52,4 +52,6 @@
 - PR 게시 전 같은 runner/launcher 단위검사 42건을 다시 실행했다. 41건 통과, 변경 전에도 재현된 기존 임시경로 검사 1건 실패이며 종료 코드 1이다. 실패와 macOS mock·실제 macOS 미실행을 PR 본문에 명시한다.
 - studio-pr-check를 적용했다. 변경 범위는 workflow 검사 실행기·회귀 검사·안내이며 PRJ 서비스 코드·UI·API·DB 계약은 바꾸지 않아 제품 build/E2E·서비스 DB 검사는 실행하지 않는다.
 - 공용 PR 양식 .github/PULL_REQUEST_TEMPLATE.md는 이 checkout에 없어 변경 내용·검증·미확인 항목으로 PR 본문을 작성한다.
-- PR 게시 상태: 준비 중.
+- PR 게시 상태: 완료. 구현 커밋 99383ea를 별도 브랜치로 push하고 [PR #35](https://github.com/JunSuHeo/kosa_final-public/pull/35)를 생성했다.
+- GitHub CLI로 일반 PR(isDraft=false), OPEN 상태, main 대상, fix/macos-native-backend-check head와 구현 SHA를 확인했다. 변경 파일은 이번 작업의 13개 파일이며 이전 ai-auto 변경이나 공용 스킬 실행 비트 변경은 포함하지 않았다.
+- PR 본문에 41건 통과·기존 1건 실패, 변경 전 실패 재현, macOS 분기/launcher mock, 실제 macOS 실행 미확인을 기록했다.
