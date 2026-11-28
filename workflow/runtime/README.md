@@ -65,7 +65,7 @@ CLI 종료 코드 `0`은 전체 흐름 성공, `1`은 실행·검증·게시 실
 
 Linux/WSL에서는 Bubblewrap(`bwrap`), macOS x86_64/ARM64에서는 Seatbelt 기반 `sandbox-exec`로 테스트를 격리한다. macOS sandbox preflight는 후보 snapshot과 private temp 쓰기, host home 차단, network bind 차단을 확인한다. `sandbox-exec`는 Apple이 deprecated 처리했으므로 도구가 없거나 capability 점검에 실패하면 `unavailable`로 기록하고 host에서 실행하지 않는다. 설치·인증·권한 상승은 수행하지 않는다.
 
-독립 검증은 엔진이 만든 임시 복사본의 루트를 실제 경로로 정규화한 뒤 테스트 cwd와 포함 관계를 비교한다. macOS의 `/var` → `/private/var`, `/tmp` → `/private/tmp` 별칭을 같은 경로로 처리하며, 후보 내부의 심볼릭 링크·허용 경로 밖 변경은 계속 차단한다. `validation_failed`와 `path_violation`이 함께 표시되면 원본 `result.json`의 `changed_files`, `validation.scope_status`, `validation.errors`, 검사 실행 여부를 확인한다. 이 코드는 임시 복사본과 파일 링크의 경계 오류에도 사용되므로 표시만으로 PRJ 밖 코드 변경을 의미하지 않는다.
+독립 검증은 엔진이 만든 임시 복사본의 루트를 실제 경로로 정규화한 뒤 테스트 cwd와 포함 관계를 비교한다. macOS의 검증 복사본·격리 점검·테스트 scratch는 HOME 차단 규칙과 겹치지 않도록 `/private/tmp` 아래에 생성하며 호스트의 `TMPDIR`를 사용하지 않는다. macOS의 `/var` → `/private/var`, `/tmp` → `/private/tmp` 별칭을 같은 경로로 처리하며, 후보 내부의 심볼릭 링크·허용 경로 밖 변경은 계속 차단한다. `validation_failed`와 `path_violation`이 함께 표시되면 원본 `result.json`의 `changed_files`, `validation.scope_status`, `validation.errors`, 검사 실행 여부를 확인한다. 이 코드는 임시 복사본과 파일 링크의 경계 오류에도 사용되므로 표시만으로 PRJ 밖 코드 변경을 의미하지 않는다.
 
 Linux 검증은 시스템 런타임(`/usr`, `/bin`, `/lib`, `/lib64`, `/etc/alternatives`, `/etc/ld.so.cache`)만 읽기 전용으로 제공한다. 테스트 복사본만 `/workspace`에 쓰기 가능하게 마운트하고 HOME·TMPDIR를 임시 경로로 둔 뒤 환경 변수를 비운다. PID·network namespace와 capability 제한을 적용한다. macOS에서는 시스템 runtime 경로, 검증 snapshot, private HOME/TMPDIR만 허용하는 Seatbelt profile을 적용하고 host home과 network 접근을 차단한다. 두 환경 모두 원본 checkout, Codex 인증 파일, host 서비스에 접근하지 않는다.
 
@@ -85,6 +85,8 @@ WORKFLOW_PRJ_TESTS=1 WORKFLOW_PRJ_UV_CACHE=/absolute/prepared/uv-cache \
 ```
 
 테스트 프로세스의 종료 코드, 소요 시간, stdout·stderr를 수집한다. 시간 초과·완료 시 남은 하위 프로세스도 정리한다. 각 출력은 메모리에서 256 KiB로 제한하고 비밀정보를 가린 뒤 결과에 저장한다. 한도를 초과한 스트림은 전체 생략하고 증거 수집 불가로 `unavailable` 처리한다. 원문 로그를 디스크에 따로 저장하지 않는다.
+
+macOS 격리 점검이 실패하면 검사 결과는 `unavailable`이며 `isolation_stage`에 마지막 점검 단계를 기록한다. 초기화, `workspace_write`, `scratch_write`, `host_home_block`, `network_block`, 사용자 조회, 캐시 읽기·쓰기 차단, PostgreSQL 소켓·외부 소켓 차단을 구분한다. 점검 프로세스의 종료 코드·소요 시간·정제된 stdout/stderr를 보존하며, 이때의 종료 코드는 백엔드 테스트가 아닌 격리 점검의 결과다. `reason`에도 실제 테스트가 시작되지 않았음을 명시한다. 실패 결과와 단계는 이슈 댓글에 전달한다. 격리 점검은 기존대로 코딩 후 검증 단계에서 수행하며, 실패 후 일반 PR 허용 정책을 변경하지 않는다.
 
 종료 코드 0을 성공 근거로 사용하되 `Ran 0 tests`, `no tests ran/collected/found` 보고는 실패로 처리한다. 임의 테스트 도구의 실제 테스트 수를 모두 판별할 수 있는 것은 아니다. 테스트가 삭제·완화되었는지, 의미 있는 시나리오를 검증하는지는 사람의 diff 검토가 필요하다. 실행 중 입력 파일이 변경·삭제되거나 후보 내용이 외부에서 바뀌면 결과를 무효화한다. 검사 스크립트가 일시적으로 검사를 우회한 뒤 복구하는 행위까지 해시 비교로 탐지할 수는 없다.
 
