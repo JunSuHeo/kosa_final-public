@@ -1,6 +1,6 @@
 # GitHub Actions self-hosted runner 설정
 
-Issue workflow는 저장소에 등록한 macOS ARM64 self-hosted runner를 대상으로 하며, `[self-hosted, macOS, ARM64, workflow-isolated]` 라벨을 사용합니다. GitHub가 앞의 세 기본 라벨을 추가하고 `workflow-isolated`는 사용자가 지정합니다. Codex 실행과 게시 runtime은 macOS ARM64를 지원합니다. 검사 격리는 macOS `sandbox-exec`를 사용하며, 도구가 없거나 격리 점검에 실패하면 host에서 실행하지 않고 차단합니다.
+Issue workflow는 저장소에 등록한 macOS ARM64 self-hosted runner를 대상으로 하며, `[self-hosted, macOS, ARM64, workflow-isolated]` 라벨을 사용합니다. GitHub가 앞의 세 기본 라벨을 추가하고 `workflow-isolated`는 사용자가 지정합니다. Codex 실행과 게시 runtime은 macOS ARM64를 지원합니다. PRJ 백엔드는 sandbox-exec와 격리 점검 없이 runner에서 직접 실행합니다. 계산기 데모 등 일반 검사는 기존 sandbox-exec로 격리하고 필요한 도구나 점검이 실패하면 실행을 차단합니다.
 
 ## 1. Runner 등록
 
@@ -35,18 +35,18 @@ workflow-isolated
 
 ## 2. 호스트 도구 설치
 
-실행할 프로젝트 설정에 맞는 도구를 runner의 `PATH`에 설치합니다. Linux에서는 Bubblewrap, macOS에서는 시스템 `sandbox-exec`로 검사 프로세스를 격리합니다. `sandbox-exec`는 Apple이 deprecated 처리했으므로 macOS 업데이트에서 사라지거나 정책 실행에 실패하면 검증이 fail-closed로 중단됩니다. POSIX `fcntl.flock`은 Linux와 macOS에서 모두 사용합니다.
+실행할 프로젝트 설정에 맞는 도구를 runner의 `PATH`에 설치합니다. Linux 검사는 Bubblewrap, macOS 일반 검사는 시스템 sandbox-exec로 격리합니다. sandbox-exec는 Apple이 deprecated 처리했으며 필요한 검사에서 사용 불가 또는 정책 실패이면 unavailable로 기록합니다. macOS PRJ 백엔드는 이 도구를 사용하지 않습니다. POSIX `fcntl.flock`은 Linux와 macOS에서 모두 사용합니다.
 
 | 도구 | 용도 |
 | --- | --- |
 | Python 3.12 이상 | Workflow 런타임과 Python 테스트 |
 | Git, GitHub CLI `gh` | checkout 상태·저장소 권한 확인과 게시 |
-| Bubblewrap `bwrap` 또는 macOS `sandbox-exec` | 후보 코드의 격리 테스트. macOS 도구는 deprecated이며 실행 전 격리 capability를 확인합니다. |
+| Bubblewrap `bwrap` 또는 macOS `sandbox-exec` | Linux 검사와 macOS 일반 검사의 격리. macOS PRJ 백엔드는 직접 실행합니다. |
 | Codex CLI | Issue 분석과 승인된 작업 실행. 선택한 프로젝트 JSON에 적힌 버전과 일치해야 합니다. |
-| `uv` | PRJ PostgreSQL 백엔드 검사를 활성화할 때만 필요 |
-| PostgreSQL 서버 및 클라이언트 바이너리 | `backend-postgresql` 검사를 다시 활성화할 때만 필요. `initdb`, `pg_ctl`, `createdb` 필요 |
+| `uv` | 활성화된 PRJ PostgreSQL 백엔드의 의존성 캐시 준비·오프라인 설치 |
+| PostgreSQL 서버 및 클라이언트 바이너리 | 활성화된 `backend-postgresql`의 임시 DB 생성. `initdb`, `pg_ctl`, `createdb` 필요 |
 
-현재 `sandbox.json`의 calculator 테스트는 Python 표준 라이브러리만 사용합니다. 프로젝트 설정에서 테스트나 브라우저 E2E를 추가·활성화하면 그에 필요한 도구와 서비스도 준비해야 합니다. 실행 전 격리 capability 점검은 Linux Bubblewrap 또는 macOS `sandbox-exec`에서 수행하고, 통과하지 못하면 workflow는 host에서 테스트를 대신 실행하지 않고 실패 처리합니다.
+현재 `sandbox.json`의 calculator 테스트는 Python 표준 라이브러리만 사용합니다. 프로젝트 설정에서 테스트나 브라우저 E2E를 추가·활성화하면 그에 필요한 도구와 서비스도 준비해야 합니다. Linux 검사와 macOS 일반 검사는 실행 전 격리 capability를 확인하며 실패 시 실행을 차단합니다. macOS PRJ 백엔드는 이 점검을 거치지 않습니다.
 
 ## 3. Codex CLI 인증
 
@@ -71,11 +71,11 @@ Issue workflow가 실행되려면 기본 브랜치에 workflow와 런타임 코�
 
 Issue 등록 시 먼저 분석 계획을 댓글로 올립니다. 저장소 `Write` 권한이 있는 사람이 `/approve`를 댓글로 남겨야 코드 생성·검증 단계로 진행합니다. PR 유형과 테스트 실패 게시 여부는 프로젝트 정책을 따르며, PRJ는 보호 규칙 없이 실패 결과를 기록한 뒤 일반 PR을 만듭니다. 정책의 기본값과 권한 전제는 [게시 안내](../runtime/PUBLISHING.md)를 확인하세요. 실행 상태와 오류는 GitHub의 **Actions** 탭과 해당 Issue 댓글에서 확인합니다.
 
-## 5. PRJ 테스트 제한
+## 5. PRJ 백엔드 검사
 
-현재 `prj.json`은 PostgreSQL 백엔드 검사에 `run_if: never`를 지정해 Actions 검증에서 제외합니다. 브라우저 E2E도 비활성 상태입니다. 따라서 통과한 프로젝트 검사가 없으면 runtime의 fail-closed 정책에 따라 검증과 게시가 차단됩니다. 게시를 다시 활성화하기 전에 DB 비의존 검사를 설정해야 합니다.
+현재 `prj.json`의 PostgreSQL 백엔드는 `required: true`, `run_if: always`입니다. 브라우저 E2E는 명시적으로 미실행합니다. 실패·시간 초과·실행 불가는 이슈 댓글과 검증 결과에 남기고 PRJ의 실패 후 일반 PR 게시 정책을 적용합니다.
 
-`backend-postgresql` 검사는 현재 Linux 전용입니다. 다시 활성화하려면 Linux runner와 Bubblewrap을 사용하도록 workflow/runtime 설정도 함께 전환하고, Python 3.12 이상, `uv`, `PRJ/backend/uv.lock`에서 준비한 오프라인 캐시, PostgreSQL 서버 및 클라이언트 바이너리를 준비해야 합니다. 검사는 임시 `studio_test` PostgreSQL을 샌드박스 내부 Unix 소켓으로 실행하며, 호스트 DB나 외부 DB 접속은 사용하지 않습니다.
+`backend-postgresql`은 Linux와 macOS를 지원합니다. macOS에서는 신뢰된 launcher를 `/bin/bash`로 직접 실행하며 sandbox-exec와 격리 점검은 호출하지 않습니다. Python 3.12 이상, `uv`, 기준 `PRJ/backend/uv.lock`에서 준비한 오프라인 캐시, PostgreSQL 서버 및 클라이언트 바이너리가 필요합니다. 검사는 짧은 `/private/tmp/wpg-*` scratch에 임시 `studio_test` PostgreSQL과 가상환경을 만들고 DB의 TCP 수신을 비활성화합니다. 실행별 HOME·TMPDIR를 지정하고 인증 환경변수는 상속하지 않습니다. macOS 직접 실행에는 OS 수준의 호스트 파일·네트워크 차단이 적용되지 않습니다.
 
 ## 6. 보안 운영
 

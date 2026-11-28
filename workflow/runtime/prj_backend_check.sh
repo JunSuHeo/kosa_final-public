@@ -1,5 +1,5 @@
 #!/bin/bash
-# Runs only inside the independent test sandbox.
+# Uses a private test workspace and PostgreSQL cluster; macOS runs natively.
 set -euo pipefail
 
 setup_failed() {

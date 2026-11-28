@@ -4,7 +4,7 @@
 
 ## 먼저 대상 프로젝트를 확인하세요
 
-프로젝트 설정은 두 가지입니다. [PRJ 설정](../config/projects/prj.json)은 `project_root`와 `allowed_paths`를 `PRJ/`로 제한하고, [sandbox 설정](../config/projects/sandbox.json)은 `sandbox/`로 제한합니다. GitHub Issue 작업은 Repository Variable `WORKFLOW_CONFIG_PATH`에 지정한 설정 하나만 사용합니다. PRJ PostgreSQL 백엔드 검사는 현재 비활성화되어 있습니다. 다시 활성화하려면 [러너 준비 요건](github_runner.md)에 따라 Python 패키지 다운로드와 PostgreSQL 바이너리를 준비하세요.
+프로젝트 설정은 두 가지입니다. [PRJ 설정](../config/projects/prj.json)은 `project_root`와 `allowed_paths`를 `PRJ/`로 제한하고, [sandbox 설정](../config/projects/sandbox.json)은 `sandbox/`로 제한합니다. GitHub Issue 작업은 Repository Variable `WORKFLOW_CONFIG_PATH`에 지정한 설정 하나만 사용합니다. PRJ PostgreSQL 백엔드는 필수 검사이며 macOS runner에서 직접 실행합니다. [러너 준비 요건](github_runner.md)에 따라 Python 패키지 다운로드와 PostgreSQL 바이너리를 준비하세요.
 
 ## 1. Workflow 반영과 Actions 정책
 
@@ -62,11 +62,11 @@ self-hosted, macOS, ARM64, workflow-isolated
 
 - macOS ARM64, Python 3.12 이상, Git, GitHub CLI `gh`
 - 프로젝트 설정 `execution.codex.version`과 일치하는 Codex CLI, 기존 Codex 로그인과 설정 모델 사용 권한
-- 검사 격리에 필요한 시스템 `sandbox-exec` (deprecated 도구이며 capability 점검 실패 시 실행 차단)
+- 계산기 데모 등 일반 검사 격리에 필요한 시스템 `sandbox-exec` (PRJ macOS 백엔드 검사에는 사용하지 않음)
 - test 설정에서 선언한 명령·패키지·서비스
 - 실행 결과를 임시 보관할 수 있는 runner 디스크 공간
 
-Codex 실행과 게시는 macOS ARM64에서 동작합니다. 활성 검사는 시스템 `sandbox-exec`로 격리되며, macOS 업데이트로 도구가 사라졌거나 격리 capability 확인이 실패하면 host에서 대신 실행하지 않고 차단합니다. 현재 PRJ의 PostgreSQL 검사는 비활성화되어 있습니다.
+Codex 실행과 게시는 macOS ARM64에서 동작합니다. PRJ PostgreSQL 백엔드는 필수 검사이며 macOS runner에서 sandbox-exec와 격리 점검 없이 직접 실행합니다. 임시 `studio_test` DB와 오프라인 의존성을 사용합니다. 계산기 데모 등 일반 검사는 sandbox-exec로 격리하며 필요한 도구나 점검이 실패하면 실행을 차단합니다.
 
 Issue 본문은 외부 사용자가 제출하는 입력이므로 개인 개발 PC나 중요 자격 증명이 있는 상시 runner를 등록하지 마세요. 일회성 ephemeral VM/container와 최소 권한 계정을 사용하고 작업 후 폐기합니다. Codex 로그인 정보 외 GitHub 개인 인증, 다른 프로젝트 파일, 클라우드 자격 증명을 남기지 마세요. 이 workflow는 `gh`와 Codex CLI의 실제 설치·인증·모델 접근을 대신 설치하거나 준비하지 않습니다.
 

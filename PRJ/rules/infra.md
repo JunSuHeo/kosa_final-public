@@ -93,11 +93,11 @@ Backend 테스트는 별도 tmpfs `studio_test`를 사용한다.
 docker compose --profile test run --build --rm test
 ```
 
-Issue 승인 워크플로의 백엔드 검사는 `../workflow/config/projects/prj.json`에서 `required: true`, `run_if: always`다. Linux는 Bubblewrap, macOS는 `sandbox-exec`로 별도 scratch의 `studio_test`를 실행한다. 시스템 PATH의 `uv`, Python 3.12 이상 및 PostgreSQL 서버 도구가 필요하며, Actions가 기준 checkout의 잠금 파일로 준비한 캐시를 오프라인 검사에 제공한다. macOS는 해당 scratch의 Unix 소켓과 PostgreSQL semaphore만 추가 허용하고 외부 TCP·다른 Unix 소켓·host HOME은 차단한다. 캐시는 읽기 전용이고 준비·격리 실패는 검사 실패로 남긴다. 실행과 opt-in 검증은 [워크플로 안내](../../workflow/runtime/README.md#독립-테스트-설정과-실행)를 따른다.
+Issue 승인 워크플로의 백엔드 검사는 `../workflow/config/projects/prj.json`에서 `required: true`, `run_if: always`다. Linux는 Bubblewrap을 사용하고 macOS는 GitHub runner에서 launcher를 `/bin/bash`로 직접 실행한다. macOS 백엔드는 sandbox-exec와 격리 점검을 사용하지 않는다. 두 경로 모두 별도 scratch의 `studio_test`를 사용한다. 시스템 PATH의 `uv`, Python 3.12 이상 및 PostgreSQL 서버 도구가 필요하며 Actions가 기준 checkout의 잠금 파일로 준비한 캐시를 오프라인 검사에 제공한다. launcher는 TCP 수신 없이 scratch의 Unix 소켓으로 DB에 연결하고 종료 시 정리한다. macOS 직접 실행은 OS 수준의 호스트 파일·네트워크 차단을 적용하지 않으며 인증 환경변수는 상속하지 않는다. 준비 실패·pytest 실패·시간 초과는 실제 결과대로 남긴다. 실행과 opt-in 검증은 [워크플로 안내](../../workflow/runtime/README.md#독립-테스트-설정과-실행)를 따른다.
 
-macOS의 검증 복사본·격리 점검·테스트 scratch는 `/private/tmp` 아래에 생성하고 실제 경로로 정규화한다. 격리 점검 실패의 단계(`isolation_stage`)와 점검 종료 코드·정제된 출력은 실행 결과와 이슈 댓글에 남긴다. 점검은 코딩 후에 수행하며 PRJ의 테스트 실패·실행 불가 후 일반 PR 게시 정책은 유지한다.
+macOS의 검증 복사본과 테스트 scratch는 `/private/tmp` 아래에 생성하고 실제 경로로 정규화한다. PRJ 백엔드는 직접 실행하며 검사 결과의 `environment`는 `macos-native`다. 계산기 데모 등 macOS 일반 검사의 격리 점검 실패는 `isolation_stage`와 점검 종료 코드·정제된 출력으로 남긴다. PRJ의 테스트 실패·실행 불가 후 일반 PR 게시 정책은 유지한다.
 
-macOS 실행 로더에 필요한 `file-map-executable`은 기존 읽기 허용 경로와 검증 복사본·scratch에만 추가 허용한다. Python 본문 진입은 `python_imports`로 표시하고 음수 점검 종료 코드는 `SIGABRT` 같은 신호 이름으로 사유에 기록한다.
+macOS 일반 검사에 적용하는 sandbox profile의 `file-map-executable`은 기존 읽기 허용 경로와 검증 복사본·scratch에만 허용한다. 해당 격리 점검의 Python 본문 진입은 `python_imports`로 표시하고 음수 점검 종료 코드는 `SIGABRT` 같은 신호 이름으로 사유에 기록한다.
 
 UI·API·worker 통합 검증은 다음을 사용한다.
 
