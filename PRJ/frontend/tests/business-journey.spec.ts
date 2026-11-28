@@ -3,6 +3,33 @@ import { begin, businessSource, confirm, draft, login, readBundle } from "./busi
 
 test.beforeEach(async ({ page }) => { await login(page); });
 
+test("관리자 업무 홈 상단에 데스크톱과 모바일 모두 업무 연결 설정 버튼이 없다", async ({ page }) => {
+  const header = page.locator(".business-home .business-header");
+  const settings = header.getByRole("button", {
+    name: "업무 연결 설정",
+    exact: true,
+    includeHidden: true,
+  });
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(header).toBeVisible();
+    await expect(settings).toHaveCount(0);
+  }
+});
+
+test("업무 홈의 관리자 햄버거 메뉴에서 업무 연결 설정을 연다", async ({ page }) => {
+  await page
+    .getByRole("button", { name: "관리자 메뉴 열기", exact: true })
+    .click();
+  await page
+    .getByRole("navigation", { name: "관리자 메뉴", exact: true })
+    .getByRole("button", { name: "업무 연결 설정", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "업무 연결 설정", exact: true }),
+  ).toBeVisible();
+});
+
 test("업무 한 번 선택으로 대화를 열고 첫 설명과 선택 유형을 새로고침 후 복원한다", async ({ page }) => {
   const source = await businessSource(page.request);
   await page.goto("/");
