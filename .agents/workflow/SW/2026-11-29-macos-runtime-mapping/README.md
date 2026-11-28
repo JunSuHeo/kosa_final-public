@@ -25,7 +25,7 @@
 - [x] 기존 허용 런타임 경로와 검증 복사본·scratch에만 `file-map-executable`을 추가한다.
 - [x] `os`·`socket` import 전에 Python 진입을 표시하고 격리 프로세스 종료 신호 이름을 사유에 기록한다.
 - [x] 안내·문법·diff를 정적으로 확인한다.
-- [ ] 수정 PR을 전달한다.
+- [x] 수정 PR을 전달한다.
 - 사용자 요청에 따라 자동 테스트 추가·실행은 계속 제외한다. Mac 명령 실행을 사용자에게 요청하지 않는다.
 - 샌드박스 해제, 광범위한 IPC 허용, 코딩 전 격리 검사, 서비스 DB·환경·모델 변경은 범위에 추가하지 않는다.
 
@@ -40,4 +40,5 @@
 - WSL/Python에서 변경된 실행기와 내장 기본/PG 점검 문자열을 AST/compile로 문법 확인했다. 종료 코드 0이며 코드는 실행하지 않았다.
 - `git diff --check`가 종료 코드 0으로 통과했다. 소스 diff에서 파일·네트워크 차단과 기존 코딩 후 검증·실패 후 일반 PR 정책이 유지됨을 확인했다.
 - 사용자 요청에 따라 자동 테스트 추가·실행은 제외했다. 실제 Mac에서의 `SIGABRT` 해소와 백엔드 테스트 통과는 미확인이다.
-- 기존 PR 전달 요청에 따라 수정 PR을 전달한다. 결과 링크는 게시 후 기록한다.
+- 구현 커밋 `871f9fa`를 푸시하고 [PR #32](https://github.com/JunSuHeo/kosa_final-public/pull/32)를 생성했다. `fix/macos-sandbox-runtime-mapping` → `main`, 일반 PR (`isDraft=false`), 생성 후 `OPEN` 상태와 구현 HEAD를 GitHub CLI로 확인했다.
+- PR 본문에 실제 Actions·Apple 근거, 수정 범위, 정적 확인과 실제 macOS 검증 미실행을 기록했다.
