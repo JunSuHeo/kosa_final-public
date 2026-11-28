@@ -516,19 +516,22 @@ class BoundaryTests(unittest.TestCase):
                     self.assertEqual(controller.repository, github.repository)
         self.assertEqual(github.mock_calls, [])
 
-    def test_analysis_reports_sensitive_source_before_the_model_reads_it(self):
+    def test_analysis_accepts_new_password_fixture_and_masks_inherited_value(self):
         fixture = test_run.EngineTests(methodName="test_task_parsing")
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
         fixture.write()
         (fixture.root / "sample/src/secret.ts").write_text('const password = "synthetic-private-value";\n')
         adapter = Mock()
+        adapter.analyze.return_value = copy.deepcopy(PLAN)
         analyzer = subject.PlanAnalyzer(adapter)
-        with self.assertRaises(ExecutionError) as failure:
-            analyzer.analyze(MemoryGitHub().current, fixture.config, fixture.path, fixture.root)
-        self.assertEqual(subject.error_diagnostic(failure.exception), {"reason": "sensitive_content"})
-        self.assertNotIn("synthetic-private-value", str(failure.exception))
-        adapter.analyze.assert_not_called()
+        with patch.dict(os.environ, {"WORKFLOW_TEST_TOKEN": "synthetic-private-value"}):
+            plan = analyzer.analyze(MemoryGitHub().current, fixture.config, fixture.path, fixture.root)
+        self.assertEqual(plan, PLAN)
+        self.assertTrue(subject.valid_plan(plan, fixture.config, fixture.root))
+        prompt = adapter.analyze.call_args.args[0]
+        self.assertIn("sample/src/secret.ts", prompt)
+        self.assertNotIn("synthetic-private-value", prompt)
 
     def test_analysis_reads_real_structure_and_disallows_file_changes(self):
         fixture = test_run.EngineTests(methodName="test_task_parsing")

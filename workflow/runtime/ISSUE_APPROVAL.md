@@ -121,7 +121,7 @@ python3 -B -m unittest discover -s workflow/runtime/tests -p 'test_*.py'
 
 `reason: codex_provider_auth_missing`는 CLI가 `AI_WORKSPACE_API_KEY` 환경변수 누락으로 종료한 경우다. 저장소 Settings → Secrets and variables → Actions에서 같은 이름의 Secret을 등록하고 수정된 워크플로가 기준 브랜치에 병합된 뒤 실패한 분석을 재실행한다. 인증 값·원본 stderr는 공개하지 않는다. Secret이 있어도 만료·접근 권한·모델 지원 여부는 실제 제공자에서 별도 확인되므로, 설정 검사 성공을 모델 호출 성공으로 해석하지 않는다.
 
-소스의 민감정보 검사는 `workspace.py`의 파일별 허용 목록에서 검토된 표현만 예외로 처리한다. 계정 소스의 토큰 변수 참조와 비밀번호 파일 입력, 계정 테스트의 고정된 모의 데이터도 해당 파일과 정확한 표현이 일치할 때만 허용한다. 다른 값·다른 파일에는 이 예외를 적용하지 않으며, 환경변수에 등록된 비밀값은 허용 목록보다 먼저 검사한다. 문서·이슈·로그의 값 가리기 규칙은 동일하게 유지한다.
+소스·컨텍스트·파일명에서 정규식으로 민감정보를 추정해 `sensitive_content`로 차단하는 검사는 제거했다. 인증 코드와 새로운 테스트 fixture는 파일별 허용 목록 없이 분석·실행·검증한다. 프롬프트·로그·테스트 실패 댓글의 값 가리기, `.env`·인증 파일 제외, 경로·링크·크기 검증은 유지한다. snapshot과 생성 후보에는 원본 내용이 보존되므로 실제 인증값은 해당 파일에 저장하지 않는다. Issue 입력·계획·추가 결정사항과 설정·게시 메타데이터의 별도 검증은 계속 적용한다. 과거 `analysis_failed / sensitive_content`는 수정된 런타임을 기준 브랜치에 반영한 뒤 같은 opened/edited 이벤트를 재실행해 새 계획을 작성한다.
 
 Actions 로그에서 `publishing_failed`가 나오면 `publication`의 `operation`, `reason`, 가능한 경우 `http_status`를 확인한다. `prepare_git_commit`의 `commit_identity_missing`은 GitHub API를 호출하기 전에 커밋 작성자가 누락된 경우다. `get_branch_protection`의 `403`은 게시 토큰의 `Administration: Read` 권한을, `404`는 토큰의 저장소 접근과 `Settings → Branches`의 classic branch protection 설정을 확인한다. Rulesets만 설정한 경우 기존 게시 엔진의 classic protection 조회를 충족하지 않는다. `attempted: false`는 Push나 PR 생성을 시도하기 전에 차단되었음을 뜻한다.
 

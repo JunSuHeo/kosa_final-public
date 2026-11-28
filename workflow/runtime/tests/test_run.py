@@ -267,11 +267,14 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["final_status"], "completed")
         self.assertFalse((Path(result["workspace_path"]) / "sample/src/.env").exists())
 
-    def test_generated_sensitive_content_is_discarded(self):
+    def test_generated_password_fixture_is_collected_and_validated(self):
         self.fake.action = lambda destination: (destination / "sample/src/main.py").write_text("password=synthetic-private-value", encoding="utf-8")
         result = self.execute()
-        self.assertEqual(result["final_status"], "sensitive_content")
-        self.assertIsNone(result["workspace_path"])
+        self.assertEqual(result["final_status"], "completed", result["errors"])
+        self.assertEqual(result["validation_status"], "passed")
+        self.assertEqual(result["changed_files"], ["sample/src/main.py"])
+        self.assertEqual((Path(result["workspace_path"]) / "sample/src/main.py").read_text(),
+                         "password=synthetic-private-value")
         self.assertNotIn("synthetic-private-value", json.dumps(result))
 
     def test_normal_source_declarations_and_references_allow_changes(self):
@@ -283,70 +286,32 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["final_status"], "completed", result["errors"])
         self.assertIn("sample/src/auth.ts", result["changed_files"])
 
-    def test_known_fixture_does_not_allow_a_different_literal(self):
+    def test_inventory_accepts_authentication_code_and_fixtures_in_any_file(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            source = root / "PRJ/backend/tests/test_auth_and_recovery.py"
-            source.parent.mkdir(parents=True)
-            source.write_text('settings = Settings(llm_api_key="secret-do-not-print")\n')
-            self.assertIn(source.relative_to(root).as_posix(), workspace.inventory(root))
-            source.write_text('settings = Settings(llm_api_key="secret-do-not-print synthetic-extra")\n')
-            with self.assertRaises(ExecutionError) as failure:
-                workspace.inventory(root)
-            self.assertEqual(failure.exception.status, "sensitive_content")
+            for relative, text in (
+                ("sample/auth.ts", "operationInputs.set(key, { id, password: body.password });"),
+                ("sample/tests/login.py", 'login(password="new-local-fixture")'),
+                ("sample/password=fixture.txt", "local test fixture"),
+            ):
+                with self.subTest(path=relative):
+                    source = root / relative
+                    source.parent.mkdir(parents=True, exist_ok=True)
+                    source.write_text(text, encoding="utf-8")
+                    before = workspace.inventory(root)
+                    self.assertIn(relative, before)
+                    source.write_text(text + "\n# changed", encoding="utf-8")
+                    self.assertNotEqual(before[relative], workspace.inventory(root)[relative])
 
-    def test_reviewed_account_expressions_and_fixtures_are_allowed_only_in_their_files(self):
-        examples = {
-            "PRJ/frontend/src/accounts/server.ts": 'access_token: result.access_token,',
-            "PRJ/backend/app/manage.py": "secret = password(args.password_file)\npassword=secret),\npassword=secret,",
-            "PRJ/frontend/tests/supabase-accounts.spec.ts": 'access_token: "signed-test-boundary"',
-            "PRJ/backend/tests/test_accounts.py": 'password="initial-password!"',
-        }
-        for path, text in examples.items():
-            with self.subTest(path=path):
-                self.assertFalse(workspace._has_sensitive_source(text, path))
-                self.assertTrue(workspace._has_sensitive_source(text, "other/" + Path(path).name))
-                self.assertTrue(workspace._has_sensitive_source(text + '\npassword="synthetic-private-value"', path))
-
-    def test_account_fixture_exemptions_reject_changed_values_and_inherited_secrets(self):
-        for path, original in (("PRJ/frontend/tests/supabase-accounts.spec.ts", 'access_token: "signed-test-boundary"'),
-                               ("PRJ/backend/tests/test_accounts.py", 'password="initial-password!"')):
-            with self.subTest(path=path):
-                changed = original[:-1] + ' synthetic-extra"'
-                self.assertTrue(workspace._has_sensitive_source(changed, path))
-                self.assertTrue(workspace._has_sensitive_source(original.replace('"', "'"), path))
-                value = original.split('"')[1]
-                with patch.dict(os.environ, {"WORKFLOW_TEST_TOKEN": value}):
-                    self.assertTrue(workspace._has_sensitive_source(original, path))
-
-    def test_reviewed_authentication_expressions_are_scoped_to_their_files(self):
-        examples = {
-            "PRJ/frontend/src/accounts/server.ts": "operationInputs.set(key, { id, password: body.password });",
-            "PRJ/frontend/tests/supabase-accounts.spec.ts":
-                'actualPassword = input.password;\nconst password = reload ? "first-password!" : "second-password!";',
-        }
-        for path, text in examples.items():
-            with self.subTest(path=path):
-                self.assertFalse(workspace._has_sensitive_source(text, path))
-                self.assertTrue(workspace._has_sensitive_source(text, "other/" + Path(path).name))
-                self.assertTrue(workspace._has_sensitive_source(text + '\npassword="synthetic-private-value"', path))
-
-    def test_reviewed_authentication_fixtures_reject_changed_values_and_inherited_secrets(self):
-        examples = (
-            ("PRJ/frontend/tests/server-fixture.ts", 'password: "a123456789!"', "a123456789!"),
-            ("PRJ/frontend/tests/server-fixture.ts", 'Authorization: "Bearer e2e-service-role"', "e2e-service-role"),
-            ("PRJ/frontend/tests/app-journey-regressions.spec.ts", 'access_token: "fixture"', "fixture"),
-            ("PRJ/frontend/tests/app-drafts.spec.ts", 'access_token: "fixture"', "fixture"),
-            ("PRJ/backend/tests/test_accounts.py", "login(password='reset-password!')", "reset-password!"),
-        )
-        for path, text, value in examples:
-            with self.subTest(path=path, value=value):
-                self.assertFalse(workspace._has_sensitive_source(text, path))
-                self.assertTrue(workspace._has_sensitive_source(text, "other/" + Path(path).name))
-                for replacement in ("synthetic-private-value", value + " synthetic-extra"):
-                    self.assertTrue(workspace._has_sensitive_source(text.replace(value, replacement), path))
-                with patch.dict(os.environ, {"WORKFLOW_TEST_TOKEN": value}):
-                    self.assertTrue(workspace._has_sensitive_source(text, path))
+    def test_context_with_password_fixture_allows_execution_and_masks_inherited_value(self):
+        document = self.root / "sample/docs/design.md"
+        document.write_text('# Login fixture\npassword="synthetic-private-value"\n', encoding="utf-8")
+        with patch.dict(os.environ, {"WORKFLOW_TEST_TOKEN": "synthetic-private-value"}):
+            result = self.execute()
+        self.assertEqual(result["final_status"], "completed", result["errors"])
+        self.assertIn("Login fixture", self.fake.prompt)
+        self.assertNotIn("synthetic-private-value", self.fake.prompt)
+        self.assertNotIn("synthetic-private-value", json.dumps(result))
 
     def test_task_redaction(self):
         with patch.dict(os.environ, {"WORKFLOW_TEST_TOKEN": "synthetic-private-value"}):
@@ -394,6 +359,19 @@ class EngineTests(unittest.TestCase):
             code = run.main(["--config", str(self.path), "--task", "Task", "--repo-root", str(self.root), "--results-dir", str(self.results)])
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(output.getvalue())["final_status"], "codex_missing")
+
+    def test_cli_masks_inherited_value_in_filename_and_preserves_private_evidence(self):
+        relative = "sample/src/password=synthetic-private-value.txt"
+        self.fake.action = lambda destination: (destination / relative).write_text("fixture", encoding="utf-8")
+        with patch.dict(os.environ, {"WORKFLOW_TEST_TOKEN": "synthetic-private-value"}):
+            report = self.execute()
+            with patch("workflow.runtime.orchestrator.execute_workflow", return_value=report), contextlib.redirect_stdout(io.StringIO()) as output:
+                code = run.main(["--config", str(self.path), "--task", "Task"])
+        self.assertEqual(code, 0)
+        self.assertNotIn("synthetic-private-value", output.getvalue())
+        self.assertIn("[REDACTED]", json.loads(output.getvalue())["changed_files"][0])
+        self.assertEqual(report["changed_files"], [relative])
+        self.assertEqual(json.loads(Path(report["result_path"]).read_text())["changed_files"], [relative])
 
 
 if __name__ == "__main__":
