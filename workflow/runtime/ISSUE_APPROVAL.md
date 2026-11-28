@@ -1,6 +1,6 @@
 # GitHub Issue 승인 실행: 구현 및 운영 안내
 
-Issue 등록은 읽기 전용 요구사항 분석과 계획 댓글 작성까지만 수행한다. 저장소 Write 이상의 권한을 가진 사람은 `/plan <결정사항 또는 수정사항>`으로 계획을 바꾸고, 별도의 `/approve` 댓글로 준비된 계획을 승인할 수 있다. 검증된 `/approve`를 받으면 기존 코드 생성·독립 검증·PR 게시 엔진을 호출한다. `/reject`는 거부 이력을 저장하고 종료한다. PR 리뷰와 병합은 사람이 수행한다.
+`ai-plan` 또는 `ai-auto` 라벨이 있는 Issue를 등록하거나 해당 라벨을 추가하면 읽기 전용 요구사항 분석과 계획 댓글 작성을 시작한다. `ai-auto`만 있어도 동작하며, 추가 질문이 없는 준비된 계획은 자동 실행 승인한다. 질문이 있으면 `/plan <결정사항>` 답변을 기다리고 질문이 해결된 새 계획도 자동 승인한다. `ai-plan`만 있으면 저장소 Write 이상의 권한을 가진 사람의 별도 `/approve` 댓글을 기다린다. 검증된 승인 티켓으로 기존 코드 생성·독립 검증·PR 게시 엔진을 호출한다. `/reject`는 거부 이력을 저장하고 종료한다. PR 리뷰와 병합은 사람이 수행한다.
 
 ## 기존 구현 분석 및 재사용
 
@@ -17,9 +17,9 @@ Issue 등록은 읽기 전용 요구사항 분석과 계획 댓글 작성까지�
 | `github_adapter.GitHubCLI` | 기존 gh CLI 경계, 제한된 환경, 고정된 오류 메시지와 PR 게시 인증을 재사용했다. Issue 전용 subclass와 게시 전용 토큰 선택을 추가했다. |
 | 기존 Actions / 테스트 | 루트 `.github/workflows/`가 없었다. 기존 unittest Mock·로컬 Git·모의 게시 fixture를 확장했다. |
 
-제품 `PRJ/`와 `workflow/specs/` 요구사항·아키텍처 문서는 수정하지 않았다. 수동 `run`/`publish` CLI 인자와 기본 모드를 유지한다.
+수동 `run`/`publish` CLI 인자와 기본 모드를 유지한다. Issue의 자동 실행 승인은 제품 `PRJ/`의 proposal 승인과 별개의 개발 워크플로 기능이다.
 
-`prj.json`과 `sandbox.json`의 `publishing.branch_template`은 `feature/ai/{date}/{approver}/{issue_title}`이다. 실행 시작일의 한국 시간 날짜, 실제 승인자의 GitHub login, 승인된 Issue 제목으로 브랜치명을 생성한다. 제목의 공백·Git에서 허용하지 않는 문자는 정리하며 한글은 유지한다. 수동 CLI 요청은 `manual_branch_template=ai/{project_id}/{run_id}`를 사용한다. Schema와 Validator도 이 두 규칙을 지원하도록 확장했으며 경로·검증·승인 정책은 유지한다. 상세 규칙은 `PUBLISHING.md`를 참고한다.
+`prj.json`과 `sandbox.json`의 `publishing.branch_template`은 `feature/ai/{date}/{approver}/{issue_title}`이다. 실행 시작일의 한국 시간 날짜, 수동 승인자의 GitHub login 또는 자동 승인의 `ai-auto`, 승인된 Issue 제목으로 브랜치명을 생성한다. 제목의 공백·Git에서 허용하지 않는 문자는 정리하며 한글은 유지한다. 수동 CLI 요청은 `manual_branch_template=ai/{project_id}/{run_id}`를 사용한다. Schema와 Validator도 이 두 규칙을 지원하도록 확장했으며 경로·검증·PR 리뷰 정책은 유지한다. 상세 규칙은 `PUBLISHING.md`를 참고한다.
 
 ## 파일별 변경
 
@@ -43,15 +43,18 @@ Issue 등록은 읽기 전용 요구사항 분석과 계획 댓글 작성까지�
 
 1. `issues.opened`: API로 현재 open Issue 정보를 수집한다. 목적·요약·영역·파일·단계·테스트·위험·질문을 JSON으로 분석하고 Markdown 계획과 메타데이터를 댓글로 게시한다. 분석은 격리된 파일 복사본에서 Codex `--sandbox read-only`로 실행하며 파일 변경을 검사한다. 준비된 계획은 `awaiting_approval`로 저장한다. 사용자 결정이 필요한 항목은 첫 계획에서 함께 묻고, `awaiting_plan`으로 저장한다. 댓글에는 AI가 질문에 맞춰 생성한 `/plan` 답변 예시를 포함한다.
 2. `issues.edited`: 제목/본문 snapshot이 같으면 중복으로 처리한다. 달라졌으면 기존 계획·승인을 무효화하고 최신 Issue로 다시 분석한다. 실행이 중단되어 `executing` 등의 상태가 남아 있으면 자동으로 재실행하지 않는다.
-3. `issue_comment.created`: PR 댓글은 제외한다. 두 대기 상태에서 `/plan` 뒤에 결정사항 또는 수정사항을 적어 계획을 고칠 수 있다. 기존 Issue, 계획, 댓글과 작성자의 권한을 검증한 뒤 결정사항을 누적 반영한 계획을 게시한다. 위임되거나 생략된 항목은 저장소 관례와 기존 동작을 참고해 기본값을 정하고 계획에 기록한다. 안전하고 합리적인 기본값이 없는 필수 결정만 다시 묻는다. 계획이 준비되면 `awaiting_approval`에서 대기한다. 앞뒤 공백과 줄바꿈을 제외한 댓글 전체가 `/approve`이고 현재 계획이 검증된 경우에만 계획 UUID를 Actions output에 전달한다. `/reject`는 두 대기 상태에서 단독 명령으로 처리한다.
-4. Actions 실행 단계: 새 Python 프로세스가 서명된 댓글 상태를 복구한다. 같은 실제 댓글, 승인자, 계획 ID, API 권한, 현재 snapshot 및 계획 댓글 내용을 다시 검증한 후 실행한다. 기본 Python API 모드는 `simulate`이며, 제공된 Actions 실행 단계는 설정된 게시 토큰을 사용해 `real` 모드를 선택한다.
-5. 코드 실행 직전, 독립 검증 직전, 게시 진입, 로컬 게시 준비 후, Push 직전, PR 생성 직전에도 Issue·계획·권한·서명된 현재 상태를 확인한다. 설정 파일 해시도 코드 실행 단계의 고정 설정과 비교한다. 검증 실패는 후속 코드 실행 또는 게시를 막는다.
+   `issues.labeled`: `ai-plan` 또는 `ai-auto` 추가를 처리한다. 기존 준비된 계획에 `ai-auto`가 추가되면 재분석 없이 검증 후 자동 승인한다. 처음 대상 라벨이 붙으면 분석을 시작한다. 다른 라벨 추가 이벤트는 무시한다.
+3. `issue_comment.created`: PR 댓글은 제외한다. 두 대기 상태에서 `/plan` 뒤에 결정사항 또는 수정사항을 적어 계획을 고칠 수 있다. 기존 Issue, 계획, 댓글과 작성자의 권한을 검증한 뒤 결정사항을 누적 반영한 계획을 게시한다. 위임되거나 생략된 항목은 저장소 관례와 기존 동작을 참고해 기본값을 정하고 계획에 기록한다. 안전하고 합리적인 기본값이 없는 필수 결정만 다시 묻는다. 계획이 준비되면 `ai-auto`는 자동 승인하고, `ai-plan`만 있으면 `awaiting_approval`에서 대기한다. 수동 승인은 앞뒤 공백과 줄바꿈을 제외한 댓글 전체가 `/approve`이고 현재 계획이 검증된 경우에만 계획 UUID를 Actions output에 전달한다. `/reject`는 두 대기 상태에서 단독 명령으로 처리한다.
+4. Actions 실행 단계: 새 Python 프로세스가 서명된 댓글 상태를 복구한다. 수동 승인에서는 같은 실제 댓글, 승인자와 API 권한을 확인하고, 자동 승인에서는 현재 Issue의 `ai-auto` 라벨과 봇 계획 댓글 ID·본문 해시를 확인한다. 두 방식 모두 계획 ID, 현재 snapshot 및 계획 댓글 내용을 다시 검증한 후 실행한다. 새 승인 티켓을 만든 intake 실행만 계획 UUID를 Actions output에 전달한다. Issue 이벤트와 질문 해결 `/plan` 이벤트에서도 자동 승인 티켓을 전달하며, 같은 이벤트 재처리는 새 티켓을 발급하지 않는다. 기본 Python API 모드는 `simulate`이며, 제공된 Actions 실행 단계는 설정된 게시 토큰을 사용해 `real` 모드를 선택한다.
+5. 코드 실행 직전, 독립 검증 직전, 게시 진입, 로컬 게시 준비 후, Push 직전, PR 생성 직전에도 Issue·계획·승인 근거·서명된 현재 상태를 확인한다. 설정 파일 해시도 코드 실행 단계의 고정 설정과 비교한다. 검증 실패는 후속 코드 실행 또는 게시를 막는다.
 
 `IssueController`와 선택적 callback은 신뢰한 제어 코드의 내부 API다. 임의의 외부 사용자에게 직접 노출하는 서비스 API가 아니다. CLI는 GitHub Actions 환경, 저장소 context 및 실제 GitHub 댓글을 확인한다. Issue 본문과 계획은 JSON 작업 데이터로 전달하고 기존 허용 경로와 독립 검증 정책을 유지한다. GitHub 토큰과 HMAC key를 worker 환경이나 prompt에 전달하지 않는다.
 
 ## 상태 및 중복 실행 방지
 
-기본 흐름은 `received → analyzing → awaiting_approval → approved → executing → validating → publishing → completed`다. `received`와 `analyzing`은 내부 이력에만 기록하고 GitHub 댓글을 남기지 않는다. 추가 질문이 있으면 분석 뒤 `awaiting_plan`으로 이동한다. `/plan`으로 재분석해 준비된 계획을 게시하면 `awaiting_approval`에서 새 `/approve`를 기다린다. 이전 버전에서 게시한 대기 중 계획도 `/plan`으로 이어갈 수 있다. 거부는 `rejected`, 실패는 `analysis_failed`, `approval_invalidated`, `execution_failed`, `validation_failed`, `publishing_failed`로 구분한다.
+기본 흐름은 `received → analyzing → awaiting_approval → approved → executing → validating → publishing → completed`다. `received`와 `analyzing`은 내부 이력에만 기록하고 GitHub 댓글을 남기지 않는다. 추가 질문이 있으면 분석 뒤 `awaiting_plan`으로 이동한다. `ai-plan`만 있으면 `/plan`으로 재분석해 준비된 계획을 게시한 뒤 `awaiting_approval`에서 새 `/approve`를 기다린다. 이전 버전에서 게시한 대기 중 계획도 `/plan`으로 이어갈 수 있다. 거부는 `rejected`, 실패는 `analysis_failed`, `approval_invalidated`, `execution_failed`, `validation_failed`, `publishing_failed`로 구분한다.
+
+`ai-auto`에서는 준비된 계획을 `awaiting_approval`로 기록한 직후 자동 승인해 `approved`로 이동한다. 자동 승인 티켓은 `mode=auto`, `login=ai-auto`, 승인 시각, 봇 계획 댓글 ID·본문 해시를 서명된 journal에 기록한다. 실행·검증·게시 경계마다 현재 라벨과 계획을 재검증하며, 라벨 제거는 이후 경계를 차단한다. 이미 발생한 코드 생성이나 원격 게시를 되돌리는 동작은 아니다. 질문이 남거나 계획 필수 항목이 비어 있으면 자동 승인하지 않는다.
 
 PRJ의 `pr_policy.allow_pr_on_failure=true`, `publishing.draft=false` 정책에서는 테스트 실패·시간 초과·실행 불가 후에도 `publishing`으로 넘어가 일반 PR을 생성한다. 이때 PR 게시 전에 상태 댓글에 실패 검사 ID·명령·상태·종료 코드·사유·stdout·stderr를 표시한다. 비밀값과 HTML·멘션 문법을 가리고 출력은 6,000자로 제한한다. 실패한 검증 근거는 유지한다. 완료 댓글에도 실패한 검증과 실제 PR 유형을 명시하고, 실제 게시가 확인되면 PR 링크를 포함한다. 기존 `allow_draft_on_failure=true`만 있는 프로젝트는 실패 후 Draft를 강제한다. 서명된 실행 상태의 `validation_status`로 검증 성공 여부를 확인한다.
 
@@ -61,11 +64,13 @@ PRJ의 `pr_policy.allow_pr_on_failure=true`, `publishing.draft=false` 정책에�
 
 같은 내용의 Issue 이벤트는 다시 분석하지 않는다. 현재 계획보다 먼저 생성된 결정 또는 승인 댓글과 이미 처리한 댓글 ID는 새 명령으로 인정하지 않는다. 실행은 검증된 승인 티켓으로 시작하며, 실행 중·완료·거부 상태의 새 명령은 무시한다. Actions의 저장소/Issue concurrency와 POSIX `flock`을 함께 사용한다. GitHub concurrency는 여러 pending run을 전부 보존하는 메시지 queue가 아니므로 대량 이벤트 중 일부가 교체될 수 있다. 처리된 이벤트는 API에서 최신 Issue와 상태를 다시 읽고, 계획 없는 승인으로 실행하지 않는다.
 
-예외는 `analysis_failed` 상태다. 환경 복구 후 같은 opened/edited 이벤트를 재실행하면 새 계획 ID로 분석을 다시 시작하며, 기존 `/plan` 결정사항과 실제 댓글 근거를 유지한다. 재분석 후에는 별도 `/approve`를 기다린다. 실행 중이거나 완료된 작업은 이 예외에 포함하지 않는다.
+예외는 `analysis_failed` 상태다. 환경 복구 후 같은 opened/edited/labeled 이벤트를 재실행하면 새 계획 ID로 분석을 다시 시작하며, 기존 `/plan` 결정사항과 실제 댓글 근거를 유지한다. 재분석 후 현재 라벨에 따라 자동 승인하거나 별도 `/approve`를 기다린다. 실행 중이거나 완료된 작업은 이 예외에 포함하지 않는다.
 
 ## 승인 권한과 snapshot
 
 실제 `GET /repos/{owner}/{repo}/issues/comments/{id}` 결과의 전체 본문·사용자·시각·Issue URL을 이벤트와 비교한다. 수정된 댓글, Bot, 다른 Issue 댓글 및 sender 불일치는 차단한다. 작성자 권한은 `GET /repos/{owner}/{repo}/collaborators/{login}/permission`에서 조회하고 `admin`, `maintain`, `write`만 허용한다. Issue 작성자에게 추가 권한을 부여하지 않으며 API 실패나 알 수 없는 permission은 승인하지 않는다. 추가 결정사항은 댓글 ID와 원문 해시를 서명된 상태에 기록하고, 실행 전에도 변경 여부를 확인한다.
+
+위 댓글 권한 검사는 수동 명령에 적용한다. 자동 승인의 권한 근거는 GitHub API에서 확인한 `ai-auto` 라벨과 신뢰한 제어 코드가 서명한 승인 티켓이다. Issue 제목·본문의 `ai-auto` 문자열은 라벨로 인정하지 않는다. 자동 승인은 사람 또는 봇의 `/approve` 댓글을 만들지 않는다. 운영자는 이 라벨을 붙일 수 있는 GitHub 권한을 관리해야 한다.
 
 Snapshot은 `{title, body}`의 정렬된 JSON에 SHA-256을 적용한다. 없는 본문은 빈 문자열로 처리한다. 승인 시 API로 다시 읽은 snapshot이 계획과 다르면 승인하지 않고 새 계획을 작성한다. 분석 중 내용이 변하면 최신 내용으로 한 번 다시 분석하고, 계속 바뀌면 승인 무효화 상태로 종료한다. 제목이나 본문을 명확히 수정하면 새 edited 이벤트로 재분석할 수 있다.
 

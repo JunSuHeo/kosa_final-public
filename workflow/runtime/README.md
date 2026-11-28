@@ -2,7 +2,7 @@
 
 Python 3.12 이상과 표준 라이브러리를 사용한다. 현재 Codex 어댑터의 실제 실행 대상은 Linux와 WSL이다. 일반 Unit Test는 Codex 설치나 인증 없이 실행할 수 있다.
 
-수동 CLI와 GitHub Issue는 같은 생성·검증·게시 엔진을 사용하는 작업 입력 방식이다. Issue 입력은 읽기 전용 분석과 계획 댓글을 먼저 작성한다. `/plan <결정사항 또는 수정사항>`을 받으면 이를 반영한 계획을 게시한다. 준비된 계획은 `awaiting_approval` 상태에서 권한 있는 사람의 별도 `/approve` 댓글을 검증해 실행한다. Issue 이벤트, 서명된 영속 상태, 운영 Secrets 및 테스트 결과는 [ISSUE_APPROVAL.md](ISSUE_APPROVAL.md)를 참고한다. `run` CLI의 기본 모드는 GitHub 게시 모의 실행이며, Commit과 Branch는 외부의 별도 Git 저장소에만 준비한다. 원본 checkout·index·Branch는 변경하지 않는다. 실제 Push·PR 생성은 명시적 `--publish-mode real`에서만 가능하다. 별도 `publish` CLI도 유지하며, 기본은 로컬 준비, `--simulate`는 모의 게시, `--execute`는 실제 게시다. PR 검토와 병합은 사람이 수행한다. 자세한 게시 조건은 [PUBLISHING.md](PUBLISHING.md)를 참고한다.
+수동 CLI와 GitHub Issue는 같은 생성·검증·게시 엔진을 사용하는 작업 입력 방식이다. Issue 입력은 `ai-plan` 또는 `ai-auto` 라벨로 시작하며 읽기 전용 분석과 계획 댓글을 먼저 작성한다. `/plan <결정사항 또는 수정사항>`을 받으면 이를 반영한 계획을 게시한다. `ai-auto`가 현재 Issue에 있고 질문이 없는 준비된 계획이면 자동 승인 티켓을 저장해 실행한다. `ai-plan`만 있으면 `awaiting_approval` 상태에서 권한 있는 사람의 별도 `/approve` 댓글을 검증해 실행한다. Issue 이벤트, 서명된 영속 상태, 운영 Secrets 및 테스트 결과는 [ISSUE_APPROVAL.md](ISSUE_APPROVAL.md)를 참고한다. `run` CLI의 기본 모드는 GitHub 게시 모의 실행이며, Commit과 Branch는 외부의 별도 Git 저장소에만 준비한다. 원본 checkout·index·Branch는 변경하지 않는다. 실제 Push·PR 생성은 명시적 `--publish-mode real`에서만 가능하다. 별도 `publish` CLI도 유지하며, 기본은 로컬 준비, `--simulate`는 모의 게시, `--execute`는 실제 게시다. PR 검토와 병합은 사람이 수행한다. 자세한 게시 조건은 [PUBLISHING.md](PUBLISHING.md)를 참고한다.
 
 ## 실행 흐름
 

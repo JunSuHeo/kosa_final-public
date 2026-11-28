@@ -130,6 +130,138 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(context["approved_plan"], PLAN)
         self.assertEqual(state["approval"]["comment_id"], event["comment"]["id"])
 
+    def test_ai_auto_alone_defers_and_recovers_signed_approval_without_a_human_comment(self):
+        self.github.current["labels"] = [{"name": "ai-auto"}]
+        event = {"action": "opened", "repository": {"full_name": "example/sample"},
+                 "issue": self.github.issue(1)}
+        state = self.controller.handle("issues", event, defer_execution=True)
+        self.assertEqual(state["status"], "approved")
+        self.assertEqual(state["approval"]["mode"], "auto")
+        self.assertEqual(state["approval"]["login"], "ai-auto")
+        self.engine.assert_not_called()
+        controller = self.new_controller()
+        state = controller.handle("issues", event, execute_plan=state["plan_id"])
+        self.assertEqual(state["status"], "completed", state)
+        self.assertEqual(self.engine.call_args.kwargs["issue_context"]["approver"], "ai-auto")
+        self.assertEqual(controller.handle("issues", event, execute_plan=state["plan_id"])["status"], "ignored")
+        self.engine.assert_called_once()
+
+    def test_adding_ai_auto_approves_existing_ready_plan_without_reanalysis(self):
+        previous = self.opened()
+        self.github.current["labels"] = [{"name": "ai-plan"}, {"name": "ai-auto"}]
+        event = {"action": "labeled", "label": {"name": "ai-auto"},
+                 "repository": {"full_name": "example/sample"}, "issue": self.github.issue(1)}
+        state = self.controller.handle("issues", event)
+        self.assertEqual(state["status"], "completed", state)
+        self.assertEqual(state["plan_id"], previous["plan_id"])
+        self.analyzer.analyze.assert_called_once()
+        self.controller.handle("issues", event)
+        self.engine.assert_called_once()
+
+    def test_ai_auto_waits_for_questions_then_approves_the_resolved_plan(self):
+        self.github.current["labels"] = [{"name": "ai-auto"}]
+        self.analyzer.analyze.return_value.update(questions=["Which operation?"],
+                                                 requires_clarification=True, plan_reply_example="Use multiplication")
+        state = self.opened()
+        self.assertEqual(state["status"], "awaiting_plan")
+        self.assertIsNone(state["approval"])
+        self.engine.assert_not_called()
+        state = self.controller.handle("issue_comment", self.github.event("/plan Use the existing CLI"))
+        self.assertEqual(state["status"], "awaiting_plan")
+        self.engine.assert_not_called()
+        self.analyzer.analyze.return_value = copy.deepcopy(PLAN)
+        state = self.controller.handle("issue_comment", self.github.event("/plan Use multiplication"))
+        self.assertEqual(state["status"], "completed", state)
+        self.assertEqual(state["approval"]["mode"], "auto")
+        self.assertEqual(state["issue"]["additional_decisions"], ["Use the existing CLI", "Use multiplication"])
+
+    def test_ai_auto_never_approves_incomplete_or_invalid_plans(self):
+        for changes, expected in (({"requires_clarification": True, "plan_reply_example": "Clarify scope"}, "awaiting_plan"),
+                                  ({"tests": [], "plan_reply_example": "Specify tests"}, "awaiting_plan"),
+                                  ({"files": ["other/private.py"]}, "analysis_failed")):
+            with self.subTest(changes=changes):
+                self.setUp()
+                self.github.current["labels"] = [{"name": "ai-auto"}]
+                self.analyzer.analyze.return_value.update(changes)
+                state = self.opened()
+                self.assertEqual(state["status"], expected)
+                self.assertIsNone(state["approval"])
+                self.engine.assert_not_called()
+
+    def test_ai_auto_uses_current_labels_after_analysis(self):
+        self.github.current["labels"] = [{"name": "ai-auto"}]
+        def remove_label(*args):
+            self.github.current["labels"] = []
+            return copy.deepcopy(PLAN)
+        self.analyzer.analyze.side_effect = remove_label
+        state = self.opened()
+        self.assertEqual(state["status"], "awaiting_approval")
+        self.assertIsNone(state["approval"])
+        self.engine.assert_not_called()
+
+    def test_adding_ai_auto_alone_starts_a_new_issue(self):
+        self.github.current["labels"] = [{"name": "ai-auto"}]
+        event = {"action": "labeled", "label": {"name": "ai-auto"},
+                 "repository": {"full_name": "example/sample"}, "issue": self.github.issue(1)}
+        state = self.controller.handle("issues", event, defer_execution=True)
+        self.assertEqual(state["status"], "approved")
+        self.analyzer.analyze.assert_called_once()
+        self.engine.assert_not_called()
+
+    def test_ai_auto_in_issue_body_does_not_authorize_execution(self):
+        self.github.current["labels"] = [{"name": "ai-plan"}]
+        self.github.current["body"] += " ai-auto"
+        self.assertEqual(self.opened()["status"], "awaiting_approval")
+        self.engine.assert_not_called()
+
+    def test_ai_auto_removal_at_each_execution_boundary_invalidates_approval(self):
+        for target in ("codex", "validation", "publication", "publication_check"):
+            with self.subTest(target=target):
+                self.setUp()
+                self.github.current["labels"] = [{"name": "ai-auto"}]
+                def remove_during_pipeline(*args, **kwargs):
+                    report = {"config_sha256": self.controller.config_hash, "final_status": "completed"}
+                    for stage in ("codex", "validation", "publication", "publication_check"):
+                        if stage == target: self.github.current["labels"] = []
+                        try:
+                            kwargs["stage_callback"](stage, report)
+                        except ExecutionError as exc:
+                            return {**report, "final_status": exc.status}
+                    return report
+                self.engine.side_effect = remove_during_pipeline
+                state = self.opened()
+                self.assertEqual(state["status"], "awaiting_approval", state)
+                self.assertIsNone(state["approval"])
+                self.assertIn("approval_invalidated", [item["status"] for item in state["history"]])
+                self.assertNotIn("completed", [item["status"] for item in state["history"]])
+
+    def test_removed_ai_auto_or_changed_plan_blocks_deferred_execution(self):
+        for change in ("label", "plan", "body", "ticket"):
+            with self.subTest(change=change):
+                self.setUp()
+                self.github.current["labels"] = [{"name": "ai-auto"}]
+                event = {"action": "opened", "repository": {"full_name": "example/sample"},
+                         "issue": self.github.issue(1)}
+                state = self.controller.handle("issues", event, defer_execution=True)
+                self.assertEqual(state["status"], "approved")
+                if change == "label": self.github.current["labels"] = []
+                elif change == "plan":
+                    next(item for item in self.github.records if item["id"] == state["plan_comment_id"])["body"] += " changed"
+                elif change == "body": self.github.current["body"] += " changed"
+                else:
+                    state["approval"]["comment_id"] += 1
+                    self.controller.persist("approved")
+                self.new_controller().handle("issues", event, execute_plan=state["plan_id"])
+                self.engine.assert_not_called()
+
+    def test_unrelated_label_event_does_not_start_analysis_or_auto_approval(self):
+        self.github.current["labels"] = [{"name": "ai-auto"}, {"name": "bug"}]
+        event = {"action": "labeled", "label": {"name": "bug"},
+                 "repository": {"full_name": "example/sample"}, "issue": self.github.issue(1)}
+        self.assertEqual(self.controller.handle("issues", event)["status"], "ignored")
+        self.analyzer.analyze.assert_not_called()
+        self.engine.assert_not_called()
+
     def test_reject_is_persistent_and_never_calls_engine(self):
         self.opened()
         state = self.controller.handle("issue_comment", self.github.event("/reject"))
@@ -434,6 +566,29 @@ class ControllerTests(unittest.TestCase):
             self.assertEqual(subject.main(["--config", str(self.fixture.path), "--results-dir", str(self.fixture.results)]), 1)
         api.assert_not_called()
 
+    def test_main_outputs_auto_approval_once_and_executes_in_a_separate_actions_step(self):
+        self.github.current["labels"] = [{"name": "ai-auto"}]
+        event_path = self.fixture.base / "event.json"
+        output_path = self.fixture.base / "output.txt"
+        event_path.write_text(json.dumps({"action": "opened", "repository": {"full_name": "example/sample"},
+                                         "issue": self.github.issue(1)}), encoding="utf-8")
+        env = {"GITHUB_ACTIONS": "true", "GITHUB_EVENT_PATH": str(event_path),
+               "GITHUB_EVENT_NAME": "issues", "GITHUB_REPOSITORY": "example/sample",
+               "GITHUB_OUTPUT": str(output_path), "WORKFLOW_STATE_KEY": KEY.decode(), "WORKFLOW_BOT_LOGIN": BOT}
+        args = ["--config", str(self.fixture.path), "--repo-root", str(self.fixture.root),
+                "--results-dir", str(self.fixture.results)]
+        with patch.dict(os.environ, env), patch.object(subject, "IssueGitHub", return_value=self.github), patch.object(
+                subject, "PlanAnalyzer", return_value=self.analyzer), patch.object(
+                subject.orchestrator, "execute_workflow", self.engine), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(subject.main(args + ["--defer-execution"]), 0)
+            self.assertTrue(output_path.is_file(), "Automatic approval must emit an Actions execution ticket")
+            plan_id = output_path.read_text().strip().split("=", 1)[1]
+            output_path.write_text("")
+            self.assertEqual(subject.main(args + ["--defer-execution"]), 0)
+            self.assertEqual(output_path.read_text(), "")
+            self.assertEqual(subject.main(args + ["--execute-plan", plan_id]), 0)
+        self.engine.assert_called_once()
+
     def test_main_reports_repository_mismatch_before_analysis(self):
         self.fixture.config["repository"] = {"provider": "github", "owner": "example-owner",
                                               "name": "example-repository"}
@@ -650,6 +805,28 @@ class IntegratedIssueTests(unittest.TestCase):
         self.assertRegex(result["publication"]["branch"], r"^ai_feature/\d{2}\.\d{2}\.\d{2}/JunSuHeo/로그인-화면-개선$")
         self.assertFalse(result["publication"]["attempted"])
         self.assertEqual([call["operation"] for call in remote.calls].count("pr_create"), 1)
+
+    def test_ai_auto_reaches_real_orchestrator_and_safe_issue_branch_without_human_approval(self):
+        self.fixture.config["publishing"].update(branch_template="feature/ai/{date}/{approver}/{issue_title}",
+                                                 manual_branch_template="ai/{project_id}/{run_id}")
+        self.fixture.write_config()
+        self.github.current["labels"] = [{"name": "ai-auto"}]
+        self.controller = subject.IssueController(self.fixture.config_path, self.fixture.root, self.fixture.results,
+                                                  self.github, KEY, BOT, analyzer=self.analyzer)
+        remote = SimulatedGitHubCLI()
+        before = self.fixture.git.run("status", "--porcelain")
+        with patch.object(GitHubCLI, "preflight", side_effect=AssertionError("No real gh")):
+            state = self.controller.handle("issues", {"action": "opened", "repository": {"full_name": "example/sample"},
+                                                      "issue": self.github.issue(1)}, adapter=test_publish.Worker(),
+                                           test_executor=test_publish.Tests(), simulation_github=remote)
+        self.assertEqual(state["status"], "completed", state)
+        result = json.loads(Path(state["execution"]["workflow_result_path"]).read_text())
+        self.assertEqual(result["approved_issue"]["approver"], "ai-auto")
+        self.assertEqual(result["validation_status"], "passed")
+        self.assertRegex(result["publication"]["branch"], r"^feature/ai/\d{2}\.\d{2}\.\d{2}/ai-auto/Update-sample$")
+        self.assertEqual([call["operation"] for call in remote.calls].count("pr_create"), 1)
+        self.assertFalse(result["publication"]["attempted"])
+        self.assertEqual(self.fixture.git.run("status", "--porcelain"), before)
 
     def test_failed_tests_are_commented_before_draft_creation_and_do_not_rerun(self):
         self.fixture.config["pr_policy"]["allow_draft_on_failure"] = True

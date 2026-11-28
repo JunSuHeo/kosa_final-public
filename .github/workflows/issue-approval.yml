@@ -1,8 +1,8 @@
-name: Issue analysis and human approval
+name: Issue analysis and approval
 
 on:
   issues:
-    types: [opened, edited]
+    types: [opened, edited, labeled]
   issue_comment:
     types: [created]
 
@@ -19,7 +19,8 @@ jobs:
     if: >-
       vars.WORKFLOW_ISSUES_ENABLED == 'true' &&
       !github.event.issue.pull_request &&
-      contains(github.event.issue.labels.*.name, 'ai-plan') &&
+      (contains(github.event.issue.labels.*.name, 'ai-plan') ||
+       contains(github.event.issue.labels.*.name, 'ai-auto')) &&
       (github.event_name == 'issues' ||
        (github.event.comment.user.type == 'User' &&
         (contains(github.event.comment.body, '/approve') ||
@@ -62,7 +63,7 @@ jobs:
             exit 1
           fi
           echo "Codex CLI $actual_version is ready."
-      - name: Analyze or verify the human command
+      - name: Analyze or verify approval
         id: intake
         shell: bash
         env:

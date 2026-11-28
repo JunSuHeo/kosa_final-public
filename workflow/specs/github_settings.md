@@ -13,7 +13,7 @@
 3. Repository의 **Settings → Actions → General**에서 GitHub Actions 사용이 허용되는지 확인합니다. 조직 정책이 Repository 설정보다 우선할 수 있습니다.
 4. 다른 설정을 먼저 준비하고 사전 점검한 뒤 `WORKFLOW_ISSUES_ENABLED`를 활성화합니다.
 
-Workflow가 다루는 이벤트는 `issues.opened`, `issues.edited`, `issue_comment.created`입니다. Issue 댓글에는 단독 `/approve`, 단독 `/reject` 또는 `/plan <결정사항>` 명령을 사용할 수 있습니다. Pull Request 대화는 제외합니다. concurrency group은 Repository와 Issue 번호 단위로 실행을 직렬화합니다.
+Workflow가 다루는 이벤트는 `issues.opened`, `issues.edited`, `issues.labeled`, `issue_comment.created`입니다. `ai-plan` 또는 `ai-auto` 라벨로 시작합니다. `ai-auto`만 있어도 동작하며 준비된 계획을 자동 실행 승인합니다. 질문이 있으면 `/plan <결정사항>` 답변을 기다리고 해결되면 자동 승인합니다. `ai-plan`만 있으면 단독 `/approve` 댓글로 실행을 승인합니다. 단독 `/reject`와 `/plan <수정사항>`도 사용할 수 있습니다. Pull Request 대화는 제외합니다. concurrency group은 Repository와 Issue 번호 단위로 실행을 직렬화합니다.
 
 ## 2. Repository Variables
 
@@ -83,7 +83,7 @@ Issue Branch template은 다음 설정을 사용합니다.
 "manual_branch_template": "ai/{project_id}/{run_id}"
 ```
 
-`date`는 실행 시작일의 한국 시간 `YY.MM.DD`, `approver`는 승인자의 GitHub login, `issue_title`은 브랜치에 안전하도록 정리한 Issue 제목입니다. 수동 CLI는 `manual_branch_template`을 사용합니다. 같은 Issue 규칙 이름의 Branch/PR이 있으면 덮어쓰지 않고 중단합니다.
+`date`는 실행 시작일의 한국 시간 `YY.MM.DD`, `approver`는 수동 승인자의 GitHub login 또는 자동 승인의 `ai-auto`, `issue_title`은 브랜치에 안전하도록 정리한 Issue 제목입니다. 수동 CLI는 `manual_branch_template`을 사용합니다. 같은 Issue 규칙 이름의 Branch/PR이 있으면 덮어쓰지 않고 중단합니다.
 
 ## 6. 최초 활성화 전 검사
 
@@ -114,6 +114,6 @@ python3 -B -m workflow.runtime.validate_config \
 
 ## 7. 운영 중 확인 및 복구
 
-Issue 등록 후 계획 댓글과 `AI 작업 상태`를 확인합니다. `awaiting_plan`이면 계획 댓글의 예시를 참고해 `/plan <결정사항>`으로 답합니다. `awaiting_approval`에서도 `/plan <수정사항>`으로 계획을 다시 작성하도록 요청할 수 있습니다. 코드 생성을 시작하려면 `awaiting_approval`에서 새 댓글에 `/approve`만 작성합니다. 앞뒤 공백과 줄바꿈은 허용합니다. 두 명령의 작성자는 실제 저장소 쓰기 권한을 가져야 합니다. Issue 제목·본문이나 계획이 수정되면 다시 분석과 승인이 필요합니다.
+Issue 등록 또는 라벨 추가 후 계획 댓글과 `AI 작업 상태`를 확인합니다. `awaiting_plan`이면 계획 댓글의 예시를 참고해 `/plan <결정사항>`으로 답합니다. `ai-auto`는 준비된 계획을 자동 승인합니다. `awaiting_approval`에서도 `/plan <수정사항>`으로 계획을 다시 작성하도록 요청할 수 있습니다. `ai-plan`만 있는 Issue의 코드 생성을 시작하려면 `awaiting_approval`에서 새 댓글에 `/approve`만 작성합니다. 앞뒤 공백과 줄바꿈은 허용합니다. 두 명령의 작성자는 실제 저장소 쓰기 권한을 가져야 합니다. Issue 제목·본문이나 계획이 수정되면 다시 분석과 승인이 필요합니다. 자동 승인 후 `ai-auto`가 제거되면 후속 실행·게시 경계에서 차단합니다.
 
 Job이 실행되지 않으면 GitHub Actions 화면의 event run, 기본 브랜치의 workflow, 활성화 변수, Repository/Organization Actions 정책 및 runner labels를 확인합니다. Job은 시작했지만 중단된 경우 서명된 Issue 상태 댓글과 runner 결과, 원격 Branch/PR을 대조하고 자동 중복 실행하지 않습니다. 상세 상태와 복구 한계는 [Issue 실행 운영 안내](../runtime/ISSUE_APPROVAL.md)를 참고합니다.
