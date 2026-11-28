@@ -176,6 +176,10 @@ function ChangeReview({
       item?.id || edge?.source,
     );
   };
+  const firstWarning = warnings.find((issue) => issue.target !== "implementation") ?? warnings[0];
+  const firstWarningText = firstWarning?.target === "prd"
+    ? snapshot.prd.assumptions[0] || firstWarning.message
+    : firstWarning?.message;
   const guides: { tab: Tab; title: string; description: string }[] = [
     {
       tab: "prd",
@@ -366,7 +370,7 @@ function ChangeReview({
           )}
           {proposal && (
             <>
-              <h4>업무상 확인해 주세요</h4>
+              <h4 id="business-review-warnings" tabIndex={-1}>업무상 확인해 주세요</h4>
               {warnings
                 .filter((x) => x.target !== "implementation")
                 .map((issue, index) => (
@@ -510,6 +514,19 @@ function ChangeReview({
       )}
       {proposal && (
         <div className="decision-footer">
+          {firstWarning && (
+            <div className="decision-warning">
+              <strong>확인 사항 {warnings.length}개</strong>
+              <p>{firstWarningText}</p>
+              <button className="text-button" onClick={() => {
+                const heading = document.getElementById("business-review-warnings");
+                heading?.focus({ preventScroll: true });
+                heading?.scrollIntoView({ block: "start" });
+              }}>
+                확인 사항 모두 보기
+              </button>
+            </div>
+          )}
           {warnings.length > 0 && (
             <label className="ack">
               <input

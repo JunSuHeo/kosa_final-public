@@ -16,3 +16,43 @@
 @media (max-width: 760px) {
   .journey-stage, .export-guide, .draft-conflict { padding: 10px 14px; }
 }
+
+.decision-footer > .decision-warning {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.decision-warning p {
+  margin: 4px 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.review-return-mobile {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .studio[data-wire-review="true"] :is(.workspace-source, .journey-stage, .export-guide, .version-bar) {
+    display: none;
+  }
+  .studio[data-wire-review="true"] .review-document-bar {
+    flex-wrap: nowrap;
+  }
+  .studio[data-wire-review="true"] .review-document-bar button:not(:last-child),
+  .studio[data-wire-review="true"] .review-return-desktop {
+    display: none;
+  }
+  .studio[data-wire-review="true"] .review-return-mobile {
+    display: inline;
+  }
+  .wire-canvas .wire-single {
+    padding-inline: 12px;
+  }
+  .wire-sheet {
+    zoom: var(--mobile-wire-scale, 1);
+    transform: none !important;
+  }
+}

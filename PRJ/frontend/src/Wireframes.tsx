@@ -317,6 +317,9 @@ export default function Wireframes({
   const [showSource, setShowSource] = useState(false);
   const [blockId, setBlockId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(85);
+  const [fit, setFit] = useState(85);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
   const [preview, setPreview] = useState(false);
   const [properties, setProperties] = useState(() => window.innerWidth > 900);
   useEffect(() => {
@@ -341,6 +344,20 @@ export default function Wireframes({
   const sourcePreview = screen ? screenPreviews?.[screen.id] : undefined;
   const displayingSource = !!sourcePreview && showSource && !editing;
   const block = screen?.blocks.find((b) => b.id === blockId);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const page = sheetRef.current?.firstElementChild as HTMLElement | null;
+    if (!canvas || !page) return;
+    const measure = () => {
+      if (canvas.clientWidth && page.offsetWidth) {
+        setFit(Math.min(85, (canvas.clientWidth - 24) / page.offsetWidth * 100));
+      }
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [screen?.id, screen?.device, displayingSource]);
   const index = snapshot.screens.findIndex((s) => s.id === selected);
   const pick = (id: string) => {
     setSelected(id);
@@ -478,7 +495,7 @@ export default function Wireframes({
         </div>
       </div>
       <div className="wire-workspace">
-        <div className="wire-canvas dot-background">
+        <div className="wire-canvas dot-background" ref={canvasRef}>
           {!screen ? (
             <>
               <div className="wire-gallery-heading">
@@ -548,10 +565,12 @@ export default function Wireframes({
                 >
                   <div
                     className="wire-sheet"
+                    ref={sheetRef}
                     style={{
+                      "--mobile-wire-scale": Math.max(0.25, (fit + zoom - 85) / 100),
                       transform: `scale(${zoom / 100})`,
                       transformOrigin: "top center",
-                    }}
+                    } as CSSProperties}
                   >
                     <WirePage
                       screen={screen}
