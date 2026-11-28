@@ -67,6 +67,40 @@ async function setup(page: Page, options: { pending?: boolean; empty?: boolean; 
   return state;
 }
 
+test("상태 조회가 느려도 새로고침 없이 완료된 초안을 표시한다", async ({ page }) => {
+  const state = await setup(page);
+  let sentRunning = false;
+  let pending = 0;
+  let maxPending = 0;
+  await page.route(`**/api/projects/${A}`, async route => {
+    const job = state.jobs.at(-1);
+    if (!job) return route.fulfill({ json: state.all[A] });
+    const jobDetails = { ...job, questions: [], partial: {} };
+    if (!sentRunning) {
+      sentRunning = true;
+      return route.fulfill({
+        json: { ...state.all[A], job: { ...jobDetails, status: "running", stage: "prd" } },
+      });
+    }
+    const bundle = {
+      ...state.all[A],
+      job: { ...jobDetails, status: "waiting_review", stage: "done" },
+      proposal: { id: "generated", base_version: 1, candidate: snapshot("생성이 끝난 초안"), issues: [], diff: [], summary: "초안" },
+    };
+    pending++;
+    maxPending = Math.max(maxPending, pending);
+    await new Promise(resolve => setTimeout(resolve, 1800));
+    pending--;
+    await route.fulfill({ json: bundle });
+  });
+
+  await page.locator(".draft-action").click();
+  await expect(page.getByRole("button", { name: "AI 실행 취소" })).toBeVisible();
+  await expect(page.locator(".review-chat-card")).toHaveAttribute("data-proposal-id", "generated");
+  await expect(page.getByRole("button", { name: "AI 실행 취소" })).toHaveCount(0);
+  expect(maxPending).toBe(1);
+});
+
 test("확인본에서 직접 편집하여 보관 중인 초안을 덮어쓸 수 없다", async ({ page }) => {
   const state = await setup(page, { pending: true });
   await page.getByRole("button", { name: "현업 확인본 v1", exact: true }).click();

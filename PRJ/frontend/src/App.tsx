@@ -176,12 +176,12 @@ export default function App() {
     const data = await api<Project[]>("/api/projects");
     if (request === generationRequest.current) setProjects(data);
   }, []);
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (signal?: AbortSignal) => {
     const id = idRef.current;
     if (!id) return;
     const request = ++generationRequest.current;
-    const result = await api<Bundle>(`/api/projects/${id}`);
-    if (idRef.current !== id || request !== generationRequest.current) return;
+    const result = await api<Bundle>(`/api/projects/${id}`, undefined, undefined, signal);
+    if (signal?.aborted || idRef.current !== id || request !== generationRequest.current) return;
     setBundle(result);
     setTitle(result.project.title);
     if (result.proposal?.id && result.proposal.id !== proposalRef.current) {
@@ -263,9 +263,22 @@ export default function App() {
       bundle?.job?.status === "awaiting_answers"
     )
       return;
-    const timer = setInterval(() => refresh().catch(handleError), 1300);
-    return () => clearInterval(timer);
-  }, [projectId, authed, busy, bundle?.job?.status, refresh, handleError]);
+    const controller = new AbortController();
+    // Starting another refresh before this one settles would discard its response.
+    async function poll() {
+      try {
+        await refresh(controller.signal);
+      } catch (error) {
+        if (!controller.signal.aborted) handleError(error);
+      }
+      if (!controller.signal.aborted) timer = window.setTimeout(poll, 1300);
+    }
+    let timer = window.setTimeout(poll, 1300);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [projectId, authed, identity?.account.id, busy, bundle?.job?.id, bundle?.job?.status, refresh, handleError]);
   useEffect(() => {
     const back = () => {
       idRef.current = projectFromURL();
