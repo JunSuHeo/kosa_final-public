@@ -46,5 +46,6 @@
 
 - 승인된 1~3번을 구현했다. 격리 점검은 코딩 후에 수행하고 테스트 실패·실행 불가 후 일반 PR 생성 조건을 유지했다.
 - 실패 시 `isolation_stage`, `return_code`, `stdout`, `stderr`로 다음 원인을 확인할 수 있다. 격리 점검의 종료 코드는 실제 백엔드 테스트의 종료 코드와 구분한다.
-- 실제 macOS 샌드박스·모델·DB·PR 게시는 미실행이다. macOS 초기화 및 백엔드 테스트 성공은 아직 보장하지 않는다.
-- 구현 후 사용자가 PR 게시를 추가 요청했다. 변경을 커밋·푸시하고 최신 `origin/main`을 기준으로 일반 PR을 전달한다. 테스트 제외 요청은 유지한다.
+- 실제 macOS 샌드박스·모델·DB 검증은 미실행이다. macOS 초기화 및 백엔드 테스트 성공은 아직 보장하지 않는다.
+- 구현 후 사용자가 PR 게시를 추가 요청했다. 최신 `origin/main` (`ac62cbd`)에 충돌 없이 rebase하고 구현 커밋 `1b38a74`를 푸시했다. 테스트 제외 요청은 유지했다.
+- [PR #29](https://github.com/JunSuHeo/kosa_final-public/pull/29): `fix/macos-sandbox-diagnostics` → `main`, 일반 PR (`isDraft=false`), 생성 후 `OPEN` 상태를 GitHub CLI로 확인했다. PR 본문에 정적 확인과 자동 테스트·macOS 검증 미실행을 기록했다.
