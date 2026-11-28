@@ -1,7 +1,7 @@
 # Workflow 소스 민감정보 차단 제거
 
 - 날짜: 2026-11-28 (Asia/Seoul)
-- 상태: 완료 (로컬 수정·오프라인 검증)
+- 상태: 완료 (수정·오프라인 검증 및 PR #23 게시)
 - 담당 팀원: SW (`.agent-local.md` 기준)
 - 참여 AI 에이전트·담당 범위: Codex, 원인 조사·런타임 수정·회귀 검증
 - 공동 작업의 대표 기록·관련 팀원 기록: 해당 없음
@@ -59,7 +59,7 @@
 ## 결과·인계
 
 - 완료 내용: 소스·컨텍스트·파일명 스캔 차단 제거, 문서 갱신, 회귀 및 전체 오프라인 검증 완료.
-- 미확인·남은 작업: 커밋·Push·PR·병합과 원격 macOS Actions 재실행은 수행하지 않았다. 수정된 런타임을 기준 브랜치에 반영한 뒤 실패한 Issue의 opened/edited 이벤트를 재실행해야 한다. 재분석 후 별도 `/approve`를 기다리는 기존 승인 절차는 적용된다.
+- 미확인·남은 작업: 병합과 원격 macOS Actions 재실행은 수행하지 않았다. PR을 기준 브랜치에 반영한 뒤 실패한 Issue의 opened/edited 이벤트를 재실행해야 한다. 재분석 후 별도 `/approve`를 기다리는 기존 승인 절차는 적용된다.
 - 다른 에이전트 기록·정제한 로그 링크: [PR 검토](agents/review.md).
 
 ## PR 준비 (후속 요청)
@@ -69,3 +69,9 @@
 - 참여 AI 에이전트 추가: Codex 검토 에이전트 `review_sensitive_gate_pr`, 읽기 전용 diff·계약·회귀 검토. 구현과 테스트 실행은 기존 Codex가 담당한다.
 - 별도 검토에서 발견한 CLI 파일명 출력 마스킹과 아키텍처 문서 불일치를 반영했다. 처음 복사한 8개 파일에 `run.py`와 검토 기록을 추가했다.
 - 최신 main 기반 최종 오프라인 검증 270개와 diff 검사가 통과했다. 커밋·Push·PR 생성을 진행한다.
+
+## PR 게시·인계
+
+- 사용자 후속 요청에 따라 구현 커밋 `073b28b`를 `fix/remove-sensitive-content-gate` 브랜치로 Push하고 [PR #23](https://github.com/JunSuHeo/kosa_final-public/pull/23)을 `main` 대상으로 생성했다.
+- 대상 저장소는 `JunSuHeo/kosa_final-public`이며 일반 PR이다. 실제 서비스·DB·모델 호출이나 실패한 Issue Actions 재실행은 수행하지 않았다.
+- PR 피드백 작업 공간은 `/tmp/kosa-remove-sensitive-gate-20261128`에 유지한다. 원래 checkout의 기존 브랜치와 사용자 스킬 스크립트 변경은 그대로 보존했다.
