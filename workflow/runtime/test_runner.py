@@ -138,15 +138,15 @@ class IsolatedTestProcess:
         )
         rules = ["(version 1)", "(deny default)", "(allow process-exec)", "(allow process-fork)",
                  "(allow sysctl-read)"]
-        rules.extend(f"(allow file-read* (subpath {self._profile_path(Path(value))}))"
+        rules.extend(f"(allow file-read* file-map-executable (subpath {self._profile_path(Path(value))}))"
                      for value in allowed_reads if Path(value).exists())
         rules.append('(allow file-read-metadata (literal "/") (literal "/opt") (literal "/Library") '
                      '(literal "/tmp") (literal "/private/tmp") (subpath "/opt/homebrew") '
                      '(literal "/private") (literal "/private/var") (subpath "/private/var/folders"))')
         rules.append(f"(allow file-read-metadata (literal {self._profile_path(root.parent)}) "
                      f"(literal {self._profile_path(scratch.parent)}))")
-        rules.append(f"(allow file-read* (subpath {self._profile_path(root)}))")
-        rules.append(f"(allow file-read* (subpath {self._profile_path(scratch)}))")
+        rules.append(f"(allow file-read* file-map-executable (subpath {self._profile_path(root)}))")
+        rules.append(f"(allow file-read* file-map-executable (subpath {self._profile_path(scratch)}))")
         rules.append(f"(allow file-write* (subpath {self._profile_path(root)}))")
         rules.append(f"(allow file-write* (subpath {self._profile_path(scratch)}))")
         rules.append(f"(deny file-read* (subpath {self._profile_path(host_home)}))")
@@ -191,7 +191,9 @@ class IsolatedTestProcess:
                                        "reason": f"macOS sandbox isolation prerequisite is unavailable at {stage}; the configured test was not started."}
             return False
         probe = (
-            "import os, socket, sys\n"
+            "import sys\n"
+            "print('workflow-isolation-stage=python_imports', file=sys.stderr, flush=True)\n"
+            "import os, socket\n"
             "def stage(name):\n"
             "    print('workflow-isolation-stage=' + name, file=sys.stderr, flush=True)\n"
             "workspace, temporary, host_home = sys.argv[1:4]\n"
@@ -284,7 +286,12 @@ class IsolatedTestProcess:
         if result["status"] == "passed":
             stage = "unexpected_output"
         reason = f"macOS sandbox isolation probe failed at {stage}; the configured test was not started."
-        if result.get("reason"):
+        return_code = result["return_code"]
+        if isinstance(return_code, int) and return_code < 0:
+            signal_name = next((value.name for value in signal.Signals if value.value == -return_code),
+                               f"signal {-return_code}")
+            reason += f" The isolation process terminated by {signal_name}."
+        elif result.get("reason"):
             reason += " " + result["reason"]
         self._isolation_failure = {**result, "status": "unavailable", "isolation_stage": stage, "reason": reason}
         return False

@@ -97,6 +97,8 @@ Issue 승인 워크플로의 백엔드 검사는 `../workflow/config/projects/pr
 
 macOS의 검증 복사본·격리 점검·테스트 scratch는 `/private/tmp` 아래에 생성하고 실제 경로로 정규화한다. 격리 점검 실패의 단계(`isolation_stage`)와 점검 종료 코드·정제된 출력은 실행 결과와 이슈 댓글에 남긴다. 점검은 코딩 후에 수행하며 PRJ의 테스트 실패·실행 불가 후 일반 PR 게시 정책은 유지한다.
 
+macOS 실행 로더에 필요한 `file-map-executable`은 기존 읽기 허용 경로와 검증 복사본·scratch에만 추가 허용한다. Python 본문 진입은 `python_imports`로 표시하고 음수 점검 종료 코드는 `SIGABRT` 같은 신호 이름으로 사유에 기록한다.
+
 UI·API·worker 통합 검증은 다음을 사용한다.
 
 ```sh
