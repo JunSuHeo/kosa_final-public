@@ -1889,16 +1889,6 @@ textarea::placeholder {
   justify-content: space-between;
   gap: 12px;
 }
-.login-emblem {
-  display: inline-grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  margin-top: 36px;
-  background: #eff5ff;
-  color: #2563eb;
-  border-radius: 15px;
-}
 .hplan-login h1 {
   margin: 20px 0 10px;
   color: #172033;
@@ -2103,9 +2093,6 @@ textarea::placeholder {
   }
   .hplan-login .brand strong {
     font-size: 20px;
-  }
-  .login-emblem {
-    margin-top: 28px;
   }
 }
 

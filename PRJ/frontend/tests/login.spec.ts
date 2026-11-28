@@ -23,6 +23,7 @@ test("로그인 전에는 계정과 업무 데이터를 표시하지 않고 빈 
   await expect(
     page.getByRole("heading", { name: "업무 기획을 시작해 보세요" }),
   ).toBeVisible();
+  await expect(form.locator(".login-emblem")).toHaveCount(0);
   await expect(form).not.toContainText("테스트 환경");
   await expect(form).not.toContainText("admin");
   await expect(form).not.toContainText(password);
@@ -121,9 +122,12 @@ test("모바일 로그인과 로그아웃 후 직접 프로젝트 주소 재진�
     );
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/?project=${project.id}`);
+  const form = page.getByRole("form", { name: "로그인", exact: true });
+  await expect(form).toBeVisible();
   await expect(
-    page.getByRole("form", { name: "로그인", exact: true }),
+    form.getByRole("heading", { name: "업무 기획을 시작해 보세요" }),
   ).toBeVisible();
+  await expect(form.locator(".login-emblem")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
     390,
   );

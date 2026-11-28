@@ -4,7 +4,6 @@ import {
   Eye,
   EyeOff,
   LoaderCircle,
-  LockKeyhole,
 } from "lucide-react";
 import { Brand } from "./BusinessHome";
 
@@ -56,9 +55,6 @@ export default function Login({
           <div className="login-brand-row">
             <Brand />
           </div>
-          <span className="login-emblem" aria-hidden="true">
-            <LockKeyhole size={25} />
-          </span>
           <h1>업무 기획을 시작해 보세요</h1>
           <p className="login-description">
             업무에 필요한 변화를 함께 정리해요.
