@@ -98,6 +98,66 @@ test("오입력은 ID를 유지하고 비밀번호를 지우며 표시 전환·E
   ).toBeVisible();
 });
 
+test("비밀번호 입력 중 Caps Lock 상태를 안내한다", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const form = page.getByRole("form", { name: "로그인", exact: true });
+  const id = form.getByLabel("아이디", { exact: true });
+  const pw = form.getByLabel("비밀번호", { exact: true });
+  const status = form.getByRole("status");
+  const hint = "Caps Lock이 켜져 있습니다";
+  const capsOn = { key: "CapsLock", modifierCapsLock: true };
+  const capsOff = { key: "CapsLock", modifierCapsLock: false };
+
+  await id.fill("wrong");
+  await id.dispatchEvent("keydown", capsOn);
+  await expect(status).toBeEmpty();
+  await pw.focus();
+  await expect(status).toBeEmpty();
+  await pw.press("Shift+A");
+  await expect(pw).toHaveValue("A");
+  await expect(status).toBeEmpty();
+
+  await pw.dispatchEvent("keydown", capsOn);
+  await expect(status).toHaveText(hint);
+  await expect(pw).toHaveAccessibleDescription(hint);
+  await pw.dispatchEvent("keyup", capsOff);
+  await expect(status).toBeEmpty();
+  await expect(pw).not.toHaveAttribute("aria-describedby");
+
+  await pw.fill(password);
+  await pw.dispatchEvent("keydown", capsOn);
+  await expect(status).toHaveText(hint);
+  await form.getByRole("button", { name: "비밀번호 보기", exact: true }).click();
+  await expect(status).toBeEmpty();
+  await expect(pw).toHaveAttribute("type", "text");
+  await pw.focus();
+  await expect(status).toBeEmpty();
+  await pw.dispatchEvent("keyup", capsOn);
+  await expect(status).toHaveText(hint);
+  await expect(pw).toHaveValue(password);
+
+  await pw.press("Enter");
+  const error = form.getByRole("alert");
+  await expect(error).toContainText("ID 또는 비밀번호를 확인해 주세요");
+  await expect(pw).toBeFocused();
+  await pw.dispatchEvent("keydown", capsOn);
+  await expect(pw).toHaveAccessibleDescription(
+    /ID 또는 비밀번호를 확인해 주세요.*Caps Lock이 켜져 있습니다/,
+  );
+
+  const hintBox = (await status.boundingBox())!;
+  const toggleBox = (await form
+    .getByRole("button", { name: "비밀번호 보기", exact: true })
+    .boundingBox())!;
+  const errorBox = (await error.boundingBox())!;
+  expect(hintBox.y).toBeGreaterThanOrEqual(toggleBox.y + toggleBox.height);
+  expect(errorBox.y).toBeGreaterThanOrEqual(hintBox.y + hintBox.height);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    390,
+  );
+});
+
 test("모바일 로그인과 로그아웃 후 직접 프로젝트 주소 재진입을 확인한다", async ({
   page,
   request,
