@@ -285,7 +285,7 @@ def main(argv: list[str] | None = None) -> int:
     from .orchestrator import execute_workflow
     report = execute_workflow(args.config, args.task, args.repo_root, args.results_dir,
                               publish_mode=args.publish_mode, issue=args.issue)
-    print(json.dumps(report, ensure_ascii=True, indent=2))
+    print(workspace.redact(json.dumps(report, ensure_ascii=True, indent=2)))
     return 0 if report["final_status"] == "completed" else 1
 
 

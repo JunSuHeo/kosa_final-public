@@ -12,3 +12,4 @@ SW가 AI와 진행한 작업의 계획·판단 요약·변경·검증·인계를
 - [2026-11-23 macOS 임시 검증 경로의 path_violation 수정](2026-11-23-macos-validation-path/README.md)
 - [2026-11-24 테스트 실패 보고 후 Draft PR 게시](2026-11-24-test-failure-draft-pr/README.md)
 - [2026-11-28 보호 규칙 없는 저장소와 테스트 실패의 일반 PR 허용](2026-11-28-ordinary-pr-policy/README.md)
+- [2026-11-28 Workflow 소스 민감정보 차단 제거](2026-11-28-remove-sensitive-content-gate/README.md)
