@@ -367,10 +367,10 @@ def judge(results: list[dict[str, Any]]) -> tuple[str, list[str]]:
     return "passed", []
 
 
-def allow_failure_draft(config: dict[str, Any], validation: dict[str, Any]) -> bool:
+def allow_failure_publication(config: dict[str, Any], validation: dict[str, Any]) -> bool:
     results = validation.get("tests", {}).get("unit", []) + validation.get("tests", {}).get("e2e", [])
     status, reasons = judge(results)
-    return (config["pr_policy"]["allow_draft_on_failure"]
+    return ((config["pr_policy"]["allow_draft_on_failure"] or config["pr_policy"].get("allow_pr_on_failure", False))
             and validation.get("scope_status") == "passed" and validation.get("status") == "failed"
             and status == "failed" and validation.get("errors") == reasons
             and any(result["status"] in ("failed", "timeout", "unavailable") for result in results))

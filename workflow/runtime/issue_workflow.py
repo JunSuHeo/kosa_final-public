@@ -101,14 +101,15 @@ def exit_failure(diagnostic):
 
 
 def test_failure_comment(report):
+    pr_kind = "Draft PR" if report.get("draft_on_test_failure", True) else "일반 PR"
     failures = [{key: check.get(key) for key in ("kind", "id", "status", "return_code", "command", "reason", "stdout", "stderr")}
                 for group in ("unit", "e2e") for check in report["validation"]["tests"][group]
                 if check["status"] in ("failed", "timeout", "unavailable")]
     details = workspace.redact(json.dumps(failures, ensure_ascii=False, indent=2))
     truncated = len(details) > 6000
     details = html.escape(details[:6000]).replace("@", "&#64;")
-    return ("### 테스트 실패 · Draft PR 검토 필요\n\n"
-            "다음 테스트가 실패하거나 실행되지 못했습니다. 결과를 실패로 기록하고 Draft PR 게시를 진행합니다.\n\n"
+    return (f"### 테스트 실패 · {pr_kind} 검토 필요\n\n"
+            f"다음 테스트가 실패하거나 실행되지 못했습니다. 결과를 실패로 기록하고 {pr_kind} 게시를 진행합니다.\n\n"
             f"<pre>{details}</pre>\n"
             + ("\n출력 일부를 생략했습니다. 전체 결과는 러너의 result.json에 저장됩니다.\n" if truncated else ""))
 
@@ -479,7 +480,8 @@ class IssueController:
             except Exception as exc:
                 raise ExecutionError("approval_invalidated", "Issue, plan or approval can no longer be verified.") from exc
             if name in ("validation", "publication"):
-                message = test_failure_comment(report) if name == "publication" and report.get("draft_on_test_failure") else None
+                message = test_failure_comment(report) if name == "publication" and report.get(
+                    "publish_on_test_failure", report.get("draft_on_test_failure")) else None
                 self.persist("validating" if name == "validation" else "publishing", message)
 
         try:
@@ -505,11 +507,12 @@ class IssueController:
         elif status == "execution_failed" and isinstance(final, str) and re.fullmatch(r"[a-z_]{1,64}", final):
             self.state["failure_diagnostic"] = {"reason": final}
         message = None
-        if status == "completed" and result.get("draft_on_test_failure"):
-            message = "테스트 검증은 실패로 기록했습니다. 검토용 Draft PR 게시 단계를 완료했습니다."
+        if status == "completed" and result.get("publish_on_test_failure", result.get("draft_on_test_failure")):
+            pr_kind = "Draft PR" if result.get("publication", {}).get("draft", True) else "일반 PR"
+            message = f"테스트 검증은 실패로 기록했습니다. 검토용 {pr_kind} 게시 단계를 완료했습니다."
             pr_url = (result.get("publication") or {}).get("pr_url")
             if pr_url:
-                message += f"\n\n[Draft PR 확인]({pr_url})"
+                message += f"\n\n[{pr_kind} 확인]({pr_url})"
         self.persist(status, message)
         return self.state
 

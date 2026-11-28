@@ -169,6 +169,24 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result["final_status"], "validation_failed")
         self.assert_publication_not_run(result)
 
+    def test_regular_failure_policy_reaches_pr_and_preserves_failed_and_skipped_checks(self):
+        self.fixture.config["pr_policy"].update(allow_draft_on_failure=True, allow_pr_on_failure=True, require_branch_protection=False)
+        self.fixture.config["publishing"]["draft"] = False
+        self.fixture.write_config()
+        self.test_process = TraceTests("failed")
+        result = self.execute()
+        self.assertEqual(result["workflow_status"], "completed_simulation", result)
+        self.assertEqual(result["validation_status"], "failed")
+        self.assertTrue(result["publish_on_test_failure"])
+        self.assertFalse(result["draft_on_test_failure"])
+        self.assertFalse(next(call["draft"] for call in self.github.calls if call["operation"] == "pr_create"))
+        self.assertFalse(next(call["require_branch_protection"] for call in self.github.calls if call["operation"] == "repository_check"))
+        self.assertEqual(len(self.test_process.calls), 1)
+        self.assertEqual(result["validation"]["tests"]["e2e"][0]["status"], "not_run")
+        sealed = json.loads(Path(result["result_path"]).read_text())
+        self.assertEqual(sealed["final_status"], "validation_failed")
+        self.assertEqual(sealed["validation_status"], "failed")
+
     def test_optional_e2e_skip_is_legitimate_and_visible(self):
         self.fixture.config["tests"]["e2e"][0].update(required=False, run_if="never", skip_reason="Optional scenario not applicable")
         self.fixture.write_config()

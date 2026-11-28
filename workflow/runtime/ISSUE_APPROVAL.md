@@ -11,7 +11,7 @@ Issue 등록은 읽기 전용 요구사항 분석과 계획 댓글 작성까지�
 | `workspace.py` | 허용 경로의 별도 inode 복사, 보호 파일 제외, 내용/경로/링크 검사. 분석도 이 파일 복사와 inventory를 사용하며 Branch나 Git metadata를 만들지 않는다. |
 | `run.execute_request()` | 설정 고정 → Codex → 변경 수집 → 독립 검증 → `result.json`. 선택적 `issue_context`, `stage_callback`만 추가했다. |
 | `test_runner.validate_workspace()` | 별도 후보 복사본과 OS별 Bubblewrap/Seatbelt sandbox에서 설정된 Unit/E2E를 실행한다. |
-| `publish.publish()` | sealed evidence, 기준 Git tree, 기존 사용자 변경, 원격 권한, 사람 리뷰 Branch protection을 검사한다. 승인 이후 별도 Git 저장소에서 Commit/Branch를 준비한다. 선택적 `publication_guard`를 추가했다. |
+| `publish.publish()` | sealed evidence, 기준 Git tree, 기존 사용자 변경, 원격 권한, 설정에 따른 사람 리뷰 Branch protection을 검사한다. 승인 이후 별도 Git 저장소에서 Commit/Branch를 준비한다. 선택적 `publication_guard`를 추가했다. |
 | `orchestrator.execute_workflow()` | 기존 생성·검증 및 게시 함수를 연결한다. Issue context와 단계 callback을 전달하고 승인 무효화 오류를 보존한다. |
 | `evidence.py` | 원자적인 외부 JSON 저장과 체크섬을 재사용한다. 체크섬은 로컬 사용자 위조에 대한 서명이 아니다. 원격 Issue journal에는 별도로 HMAC을 적용했다. |
 | `github_adapter.GitHubCLI` | 기존 gh CLI 경계, 제한된 환경, 고정된 오류 메시지와 PR 게시 인증을 재사용했다. Issue 전용 subclass와 게시 전용 토큰 선택을 추가했다. |
@@ -53,7 +53,7 @@ Issue 등록은 읽기 전용 요구사항 분석과 계획 댓글 작성까지�
 
 기본 흐름은 `received → analyzing → awaiting_approval → approved → executing → validating → publishing → completed`다. `received`와 `analyzing`은 내부 이력에만 기록하고 GitHub 댓글을 남기지 않는다. 추가 질문이 있으면 분석 뒤 `awaiting_plan`으로 이동한다. `/plan`으로 재분석해 준비된 계획을 게시하면 `awaiting_approval`에서 새 `/approve`를 기다린다. 이전 버전에서 게시한 대기 중 계획도 `/plan`으로 이어갈 수 있다. 거부는 `rejected`, 실패는 `analysis_failed`, `approval_invalidated`, `execution_failed`, `validation_failed`, `publishing_failed`로 구분한다.
 
-PRJ의 `pr_policy.allow_draft_on_failure=true` 정책에서는 테스트 실패·시간 초과·실행 불가 후에도 `publishing`으로 넘어간다. 이때 PR 게시 전에 상태 댓글에 실패 검사 ID·명령·상태·종료 코드·사유·stdout·stderr를 표시한다. 비밀값과 HTML·멘션 문법을 가리고 출력은 6,000자로 제한한다. 실패한 검증 근거는 유지하며 PR은 Draft로 생성한다. 완료 댓글에도 실패한 검증과 Draft 게시를 명시하고, 실제 게시가 확인되면 PR 링크를 포함한다. 서명된 실행 상태의 `validation_status`로 검증 성공 여부를 확인한다.
+PRJ의 `pr_policy.allow_pr_on_failure=true`, `publishing.draft=false` 정책에서는 테스트 실패·시간 초과·실행 불가 후에도 `publishing`으로 넘어가 일반 PR을 생성한다. 이때 PR 게시 전에 상태 댓글에 실패 검사 ID·명령·상태·종료 코드·사유·stdout·stderr를 표시한다. 비밀값과 HTML·멘션 문법을 가리고 출력은 6,000자로 제한한다. 실패한 검증 근거는 유지한다. 완료 댓글에도 실패한 검증과 실제 PR 유형을 명시하고, 실제 게시가 확인되면 PR 링크를 포함한다. 기존 `allow_draft_on_failure=true`만 있는 프로젝트는 실패 후 Draft를 강제한다. 서명된 실행 상태의 `validation_status`로 검증 성공 여부를 확인한다.
 
 계획에는 UUID, Issue 번호, 제목/본문 SHA-256 snapshot, 분석 시각, version, 승인 상태를 포함한다. 별도의 bot journal 댓글은 전체 상태, 계획, 계획 댓글 ID/본문 해시, 설정 파일 해시, 승인자·승인 시각·승인 댓글 ID, 최근 100개 전이 및 실행 결과 경로를 저장한다. 이전 journal 댓글은 보존되어 전체 과거 이력을 확인할 수 있다. 같은 상태를 기존 원자적 evidence 저장으로 `<results-dir>/issues/<UUID>/issue.json`에도 기록한다. 실제 엔진 결과는 기존 `<results-dir>/<run UUID>/result.json`, `workflow.json`에 승인 Issue 데이터를 포함한다.
 
@@ -80,12 +80,12 @@ Snapshot은 `{title, body}`의 정렬된 JSON에 SHA-256을 적용한다. 없는
 | `WORKFLOW_BASE_BRANCH` | 설정의 `base_branch`와 같은 기존 신뢰 Branch. workflow 파일은 Issue 이벤트를 받는 기본 Branch에도 존재해야 한다. |
 | Secret `WORKFLOW_STATE_KEY` | 최소 32바이트의 무작위 private key. 분석/승인과 실행 단계에서 같은 값을 사용한다. 값은 댓글에 저장하지 않는다. 교체 시 기존 서명 상태를 자동으로 승인하지 않는다. |
 | Secret `AI_WORKSPACE_API_KEY` | 기존 Codex 설정의 `ai_workspace` 제공자가 사용하는 인증 키. 분석·실행 단계에만 제공하며, Codex가 실행하는 셸 명령에서는 제외한다. `~/.codex/config.toml`의 제공자 설정은 유지하고 키 값은 설정 JSON·로그·댓글에 기록하지 않는다. |
-| Secret `WORKFLOW_PUBLISH_TOKEN` | 해당 저장소로 제한한 GitHub App 또는 fine-grained 토큰. Contents read/write, Pull requests read/write, 기존 게시 엔진의 Branch protection 조회를 위한 Administration read와 repository metadata 접근 권한이 필요하다. 자동 병합 권한/우회를 설정하지 않는다. |
+| Secret `WORKFLOW_PUBLISH_TOKEN` | 해당 저장소로 제한한 GitHub App 또는 fine-grained 토큰. Contents read/write, Pull requests read/write와 repository metadata 접근 권한이 필요하다. `require_branch_protection=true`이면 protection 조회용 Administration read도 필요하다. 자동 병합 권한/우회를 설정하지 않는다. |
 | Actions `GITHUB_TOKEN` | workflow의 `contents: read`, `issues: write`. Issue API와 상태 댓글에만 사용한다. 게시 토큰은 실행 단계에서만 제공한다. |
 | Runner labels | `[self-hosted, macOS, ARM64, workflow-isolated]`. Codex 실행과 POSIX 게시 잠금을 지원한다. 활성 검사는 macOS `sandbox-exec`로 격리하며, 격리 도구가 없거나 점검에 실패하면 host 실행 없이 차단한다. |
 | Backend 검사 도구 | 시스템 PATH의 `uv`, Python 3.12 이상과 PostgreSQL 서버·클라이언트 도구가 필요하다. macOS Homebrew의 versioned PostgreSQL 경로도 지원한다. `prj.json`의 백엔드는 `required: true`, `run_if: always`이며 Actions가 승인 후 기준 checkout에서 오프라인 캐시를 준비한다. E2E는 기존 명시적 미실행 정책을 유지한다. |
 | Runner 격리 | Issue 작업 전용의 일회성 격리 runner를 사용하고, Codex 로그인 외 민감한 파일이 HOME 등에 남지 않도록 운영한다. 기존 어댑터의 읽기 경계 한계를 아래 참고한다. |
-| Branch protection | 기존 게시 엔진은 최소 한 명의 사람 리뷰, 관리자 적용, 리뷰 bypass 없음 등을 API로 확인한다. Repository 설정을 코드가 변경하지 않는다. |
+| Branch protection | `require_branch_protection=true`(생략 시 기본값)이면 최소 한 명의 사람 리뷰, 관리자 적용, 리뷰 bypass 없음을 API로 확인한다. PRJ는 false로 조회를 생략한다. 보호 규칙이 없으면 GitHub가 병합 전 리뷰·검사 통과를 강제하지 않는다. Repository 설정을 코드가 변경하지 않는다. |
 | 커밋 작성자 | `publishing.commit_author`에 자동화 커밋의 이름과 이메일을 설정한다. 생략하면 checkout의 로컬 Git `user.name`과 `user.email`을 사용하며 머신의 전역 설정은 읽지 않는다. |
 | 결과 보존 | runner 임시 결과는 없어질 수 있다. 원격 journal로 상태를 복구하지만 후보/검증 근거를 장기 보존하려면 접근이 제한된 외부 저장 위치와 보존 정책이 필요하다. |
 
@@ -124,6 +124,8 @@ python3 -B -m unittest discover -s workflow/runtime/tests -p 'test_*.py'
 소스의 민감정보 검사는 `workspace.py`의 파일별 허용 목록에서 검토된 표현만 예외로 처리한다. 계정 소스의 토큰 변수 참조와 비밀번호 파일 입력, 계정 테스트의 고정된 모의 데이터도 해당 파일과 정확한 표현이 일치할 때만 허용한다. 다른 값·다른 파일에는 이 예외를 적용하지 않으며, 환경변수에 등록된 비밀값은 허용 목록보다 먼저 검사한다. 문서·이슈·로그의 값 가리기 규칙은 동일하게 유지한다.
 
 Actions 로그에서 `publishing_failed`가 나오면 `publication`의 `operation`, `reason`, 가능한 경우 `http_status`를 확인한다. `prepare_git_commit`의 `commit_identity_missing`은 GitHub API를 호출하기 전에 커밋 작성자가 누락된 경우다. `get_branch_protection`의 `403`은 게시 토큰의 `Administration: Read` 권한을, `404`는 토큰의 저장소 접근과 `Settings → Branches`의 classic branch protection 설정을 확인한다. Rulesets만 설정한 경우 기존 게시 엔진의 classic protection 조회를 충족하지 않는다. `attempted: false`는 Push나 PR 생성을 시도하기 전에 차단되었음을 뜻한다.
+
+보호 조회 진단은 `require_branch_protection=true`인 프로젝트에 해당한다. PRJ의 false 정책에서는 protection API를 호출하지 않지만 저장소 식별·Push 권한·기준 SHA는 확인한다. `/approve`와 게시 직전의 승인 재확인도 계속 적용한다.
 
 GitHub Issue 변경과 Git Push/PR 생성은 서로 다른 서비스 작업이므로 하나의 원자적 트랜잭션으로 묶을 수 없다. 각 외부 작업 직전에 다시 검사하지만 검사 직후의 극히 짧은 변경 경쟁을 완전히 없애지는 못한다. 이미 Push한 뒤 PR 직전 요구사항이 바뀌면 PR을 차단하고 기존 게시 journal에 외부 작업 이력을 남긴다. 자동으로 Branch를 삭제하거나 다시 Push하지 않는다.
 

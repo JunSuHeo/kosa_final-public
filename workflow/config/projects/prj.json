@@ -49,6 +49,8 @@
   "pr_policy": {
     "target_branch": "main",
     "allow_draft_on_failure": true,
+    "allow_pr_on_failure": true,
+    "require_branch_protection": false,
     "require_human_approval": true,
     "allow_auto_merge": false
   },
@@ -56,7 +58,7 @@
     "remote": "origin",
     "branch_template": "feature/ai/{date}/{approver}/{issue_title}",
     "manual_branch_template": "ai/{project_id}/{run_id}",
-    "draft": true,
+    "draft": false,
     "commit_author": {
       "name": "github-actions[bot]",
       "email": "41898282+github-actions[bot]@users.noreply.github.com"
@@ -69,7 +71,7 @@
   },
   "notes": [
     "Product configuration. Writes are scoped to PRJ; project instructions, credentials and repository controls remain protected by the runtime.",
-    "The PostgreSQL-backed PRJ backend test is required on every approved execution. Failures, timeouts and unavailable checks are reported on the Issue and permit only a Draft PR for human review. Linux uses Bubblewrap and macOS uses sandbox-exec with an isolated studio_test cluster and an offline dependency cache prepared from the base checkout.",
+    "The PostgreSQL-backed PRJ backend test is required on every approved execution. Failures, timeouts and unavailable checks are reported on the Issue and permit a regular PR for human review while preserving failed validation. Branch protection is not required for publication; repository identity, push permission and base SHA are still verified. Linux uses Bubblewrap and macOS uses sandbox-exec with an isolated studio_test cluster and an offline dependency cache prepared from the base checkout.",
     "Browser E2E requires an API/web/PostgreSQL stack and Playwright browser. It is recorded as explicitly skipped until a dedicated isolated service runner is implemented.",
     "Codex CLI version 0.171.0 is pinned in this configuration and checked against the runner's installed CLI before a task executes.",
     "gpt-6.2-sol is configured as the project model. Codex CLI user configuration is loaded; the project model and runtime safety options remain explicit. Account/model availability is checked by the CLI at execution time; do not record credentials in configuration or logs.",

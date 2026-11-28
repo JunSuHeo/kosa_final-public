@@ -67,7 +67,7 @@ class GitHubCLI:
         # Never --show-token or auth-status JSON (JSON mode may exit 0 on failure).
         self.call(["auth", "status", "--hostname", "github.com"], cwd, "authentication_failed")
 
-    def check_repository(self, repository, branch, base_sha, cwd):
+    def check_repository(self, repository, branch, base_sha, cwd, *, require_branch_protection=True):
         operation = "get_repository"
         try:
             data = json.loads(self.call(["api", "repos/" + repository, "--method", "GET"], cwd, "authentication_failed"))
@@ -78,6 +78,8 @@ class GitHubCLI:
             branch_data = json.loads(self.call(["api", endpoint, "--method", "GET"], cwd))
             if branch_data["commit"]["sha"] != base_sha:
                 raise ExecutionError("base_mismatch", "The remote base branch differs from the validated baseline. Run generation and validation again.")
+            if not require_branch_protection:
+                return
             operation = "get_branch_protection"
             protection = json.loads(self.call(["api", endpoint + "/protection", "--method", "GET"], cwd))
             reviews = protection.get("required_pull_request_reviews") or {}

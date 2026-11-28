@@ -93,14 +93,14 @@ def load_verified(result_path, config_path, root):
     if report["run_id"] != directory.name or report["result_path"] != str(result_path):
         raise ExecutionError("untrusted_result", "Run ID or evidence location is inconsistent.")
     validation = report["validation"]
-    failure_draft = test_runner.allow_failure_draft(config, validation)
-    expected_status = "failed" if failure_draft else "passed"
-    expected_errors = [{"status": "validation_failed", "message": message} for message in validation["errors"]] if failure_draft else []
-    if (report["final_status"] != ("validation_failed" if failure_draft else "completed")
+    failure_allowed = test_runner.allow_failure_publication(config, validation)
+    expected_status = "failed" if failure_allowed else "passed"
+    expected_errors = [{"status": "validation_failed", "message": message} for message in validation["errors"]] if failure_allowed else []
+    if (report["final_status"] != ("validation_failed" if failure_allowed else "completed")
             or report["codex_status"] != "succeeded" or report["validation_status"] != expected_status
             or report["errors"] != expected_errors):
         raise ExecutionError("validation_blocked", "Generation and validation evidence do not satisfy the publishing policy.")
-    if validation["status"] != expected_status or validation["scope_status"] != "passed" or (validation["errors"] and not failure_draft):
+    if validation["status"] != expected_status or validation["scope_status"] != "passed" or (validation["errors"] and not failure_allowed):
         raise ExecutionError("validation_blocked", "Independent validation is missing, failed or inconsistent.")
     all_tests = []
     blocking_failure = False
@@ -120,7 +120,7 @@ def load_verified(result_path, config_path, root):
                 raise ExecutionError("validation_blocked", "Unknown test status.")
             if result["status"] == "passed" and (type(result["return_code"]) is not int or result["return_code"] != 0):
                 raise ExecutionError("validation_blocked", "A passed test lacks a successful process exit code.")
-            stopped_after_failure = (failure_draft and blocking_failure
+            stopped_after_failure = (failure_allowed and blocking_failure
                                      and result.get("reason") == "A previous blocking test failed; later checks were not run.")
             if result["status"] == "not_run" and test_runner._skip(test, report["changes"]) is None and not stopped_after_failure:
                 raise ExecutionError("validation_blocked", "A test was skipped without an applicable project policy.")
@@ -134,7 +134,7 @@ def load_verified(result_path, config_path, root):
             if ((result["required"] and result["status"] != "passed")
                     or (result["status"] in ("failed", "unavailable", "timeout") and result["on_failure"] == "block")):
                 blocking_failure = True
-    if test_runner.judge(all_tests)[0] != "passed" and not failure_draft:
+    if test_runner.judge(all_tests)[0] != "passed" and not failure_allowed:
         raise ExecutionError("validation_blocked", "Mandatory tests or optional blocking checks did not pass.")
     baseline_raw = private_file(directory / "baseline.json")
     if hashlib.sha256(baseline_raw).hexdigest() != report["baseline_sha256"]:
@@ -199,7 +199,7 @@ def pr_text(config, report, issue=None):
         # Treat task/output as data, suppress image attachment and mention syntax.
         return html.escape(str(value)).replace("!", "&#33;").replace("[", "&#91;").replace("@", "&#64;")
     title = f"[{config['project_id']}] " + " ".join(report["task"].split())[:100]
-    summary = ("Draft for human review: independent tests did not pass."
+    summary = ("PR for human review: independent tests did not pass."
                if report["validation_status"] != "passed" else "Verified automation changes for " + escape(config["project_id"]))
     body = ["## Summary", summary,
             "", "## User request", escape(report["task"]), "", "## Changed files"]
@@ -335,7 +335,8 @@ def publish(result_path, config_path, root, *, execute=False, issue=None, github
             raise ExecutionError("publication_conflict", "A previous external publication attempt is unresolved. Do not retry until its branch and PR state have been reconciled.")
         config, report, baseline, candidate = load_verified(result_path, config_path, root)
         outcome["run_id"] = report["run_id"]
-        outcome["draft"] = config["publishing"]["draft"] or report["validation_status"] != "passed"
+        outcome["draft"] = config["publishing"]["draft"] or (
+            report["validation_status"] != "passed" and not config["pr_policy"].get("allow_pr_on_failure", False))
         url = remote_url(config, root)
         branch = branch_name(config, report["run_id"], report)
         outcome["branch"] = branch
@@ -381,7 +382,8 @@ def publish(result_path, config_path, root, *, execute=False, issue=None, github
             gh.preflight(checkout)
             repo = config["repository"]["owner"] + "/" + config["repository"]["name"]
             operation = "check_repository"
-            gh.check_repository(repo, config["base_branch"], baseline["git"]["base_sha"], checkout)
+            gh.check_repository(repo, config["base_branch"], baseline["git"]["base_sha"], checkout,
+                                require_branch_protection=config["pr_policy"].get("require_branch_protection", True))
             operation = "check_remote_refs"
             if not simulate:
                 git = authenticated_git(checkout, prepared, gh)

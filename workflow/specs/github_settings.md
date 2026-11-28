@@ -38,15 +38,15 @@ Issue 이벤트를 받는 기본 브랜치에도 workflow 파일이 있어야 �
 
 Workflow에 선언한 기본 `GITHUB_TOKEN` 권한은 `contents: read`, `issues: write`입니다. Issue 조회, 계획/상태 댓글, 승인 댓글 조회에 사용합니다. 게시용 Secret은 승인된 실행 단계에만 전달됩니다.
 
-게시 엔진은 원격 저장소 identity, Collaborator 권한, Branch protection을 조회하고 검증 결과를 새 Branch에 Push한 뒤 PR을 만듭니다. 토큰 종류와 조직 설정마다 API 접근 가능 범위가 다르므로 아래 권한을 최소 후보로 검토하고, 실제 API 확인을 수행해야 합니다.
+게시 엔진은 원격 저장소 identity, Collaborator 권한, 기준 SHA와 설정에 따른 Branch protection을 확인하고 검증한 후보를 새 Branch에 Push한 뒤 PR을 만듭니다. 토큰 종류와 조직 설정마다 API 접근 가능 범위가 다르므로 아래 권한을 최소 후보로 검토하고, 실제 API 확인을 수행해야 합니다.
 
 - **Contents: Read and write** — 새 게시 브랜치 생성 및 Push
 - **Pull requests: Read and write** — 기존 PR 조회 및 새 PR 생성
-- **Administration: Read** — classic Branch protection 설정 조회
+- **Administration: Read** — `pr_policy.require_branch_protection=true`일 때 classic Branch protection 조회에 필요. PRJ는 false이므로 이 조회 권한을 요구하지 않음
 - **Metadata: Read-only** — Repository 식별. 일반적으로 자동 부여되는 기본 읽기 권한
 - **Collaborator/멤버 권한 조회** — 승인자의 저장소 `admin`, `maintain`, `write` 권한을 확인하는 API 접근
 
-실제 API가 요청한 Collaborator 권한 또는 보호 규칙을 확인할 수 없으면 fail closed로 멈춥니다. `Administration: Write`, auto-merge 권한이나 Branch protection 우회 권한은 부여하지 않습니다. 사용 중인 PAT/App이 이 저장소의 Branch protection 응답 형식을 지원하는지 관리자 계정으로 먼저 확인하세요.
+실제 API가 요청한 Collaborator 권한을 확인할 수 없으면 fail closed로 멈춥니다. 보호 규칙을 요구하는 프로젝트에서는 보호 조회 오류·불충분한 규칙도 차단합니다. `Administration: Write`, auto-merge 권한이나 Branch protection 우회 권한은 부여하지 않습니다. 보호 규칙을 요구할 때는 사용 중인 PAT/App이 protection 응답을 조회할 수 있는지 확인하세요.
 
 ## 4. macOS ARM64 self-hosted runner
 
@@ -72,9 +72,9 @@ Issue 본문은 외부 사용자가 제출하는 입력이므로 개인 개발 P
 
 ## 5. 보호 브랜치 및 사람의 최종 리뷰
 
-프로젝트의 기준 및 PR 대상 Branch(두 설정 모두 `main`)에 사람 승인 리뷰어 최소 1명을 요구하고 관리자에게도 규칙이 적용되도록 설정합니다. review bypass가 있거나 병합 전에 사람이 검토하지 않아도 되는 설정은 게시 엔진의 요구와 맞지 않습니다. `WORKFLOW_PUBLISH_TOKEN`으로 protection을 조회할 수 있는지도 확인합니다.
+`pr_policy.require_branch_protection`은 생략 시 true입니다. true인 프로젝트는 기준 및 PR 대상 Branch에 사람 리뷰 최소 1명, 관리자 적용, 리뷰 우회 금지의 classic protection을 설정하고 `WORKFLOW_PUBLISH_TOKEN`으로 조회할 수 있어야 합니다. PRJ는 false로 설정하여 보호 규칙 없이 게시합니다. 이 경우 GitHub가 병합 전에 사람 리뷰나 테스트 통과를 강제하지 않습니다.
 
-현재 게시 설정은 `draft: true`여서 PR을 Draft로 만듭니다. Workflow는 자동 merge하지 않습니다. 사람은 Draft를 검토하고 필요할 때 일반 PR로 전환한 뒤 직접 병합합니다.
+PRJ는 `publishing.draft=false`, `pr_policy.allow_pr_on_failure=true`로 테스트 실패·시간 초과·실행 불가에도 일반 PR을 만듭니다. 실패 상태와 결과는 Issue 댓글·PR 본문에 남깁니다. 새 실패 정책을 생략하면 false이고 기존 `allow_draft_on_failure=true`만 있을 때는 실패 후 Draft를 강제합니다. Workflow는 자동 merge하지 않습니다. `/approve`는 구현 실행 승인이고 최종 검토와 병합은 사람이 수행합니다.
 
 Issue Branch template은 다음 설정을 사용합니다.
 
@@ -105,7 +105,7 @@ python3 -B -m workflow.runtime.validate_config \
 - [ ] 프로젝트 경로·쓰기 허용 범위·설계 문서·테스트가 의도한 제품만 대상으로 함
 - [ ] `WORKFLOW_STATE_KEY`, 제한된 `WORKFLOW_PUBLISH_TOKEN` 등록
 - [ ] 기본 `GITHUB_TOKEN` 권한이 workflow에 선언한 값으로 제한됨
-- [ ] 승인 사용자 Collaborator API, 보호 Branch 조회와 PR 권한을 실제 token으로 확인함
+- [ ] 승인 사용자 Collaborator API와 PR 권한, 보호 규칙을 요구하는 프로젝트의 보호 Branch 조회를 실제 token으로 확인함
 - [ ] runner labels, CLI 로그인, 모델/version, Git/gh, macOS sandbox capability와 제품 테스트를 확인함
 - [ ] 실행 결과가 임시 runner에서 사라질 경우 복구 담당자와 보존 정책을 결정함
 - [ ] 설정 적용을 검토한 뒤 `WORKFLOW_ISSUES_ENABLED` 활성화

@@ -686,13 +686,40 @@ class IntegratedIssueTests(unittest.TestCase):
         coding.assert_not_called()
         publishing.assert_not_called()
 
+    def test_failed_tests_are_reported_before_regular_pr_without_draft_instructions(self):
+        self.fixture.config["pr_policy"].update(allow_pr_on_failure=True, require_branch_protection=False)
+        self.fixture.config["publishing"]["draft"] = False
+        self.fixture.write_config()
+        self.controller = subject.IssueController(self.fixture.config_path, self.fixture.root, self.fixture.results,
+                                                  self.github, KEY, BOT, analyzer=self.analyzer)
+        self.controller.handle("issues", {"action": "opened", "repository": {"full_name": "example/sample"},
+                                          "issue": self.github.issue(1)})
+        remote = SimulatedGitHubCLI()
+        original = remote.create_pr
+        def create_after_comment(*args):
+            comments = [comment["body"] for comment in self.github.records if "### 테스트 실패" in comment["body"]]
+            self.assertEqual(len(comments), 1)
+            self.assertIn("failed", comments[0])
+            self.assertIn("일반 PR", comments[0])
+            self.assertNotIn("Draft PR", comments[0])
+            return original(*args)
+        with patch.object(remote, "create_pr", side_effect=create_after_comment), patch.object(
+                GitHubCLI, "preflight", side_effect=AssertionError("No real gh")):
+            state = self.controller.handle("issue_comment", self.github.event(), adapter=test_publish.Worker(),
+                                           test_executor=test_publish.Tests("failed"), simulation_github=remote)
+        self.assertEqual(state["status"], "completed", state)
+        self.assertEqual(state["execution"]["validation_status"], "failed")
+        self.assertFalse(next(call["draft"] for call in remote.calls if call["operation"] == "pr_create"))
+        self.assertIn("일반 PR", self.github.records[-1]["body"])
+        self.assertNotIn("Draft PR", self.github.records[-1]["body"])
+
     def test_issue_edit_during_remote_checks_blocks_push_and_pr_creation(self):
         self.controller.handle("issues", {"action": "opened", "repository": {"full_name": "example/sample"},
                                           "issue": self.github.issue(1)})
         remote = SimulatedGitHubCLI()
         original = remote.check_repository
-        def change_issue(*args):
-            original(*args)
+        def change_issue(*args, **kwargs):
+            original(*args, **kwargs)
             self.github.current["title"] += " changed"
         remote.check_repository = change_issue
         with patch.object(GitHubCLI, "preflight", side_effect=AssertionError("No real gh")):

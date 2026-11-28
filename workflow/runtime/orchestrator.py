@@ -25,7 +25,8 @@ def execute_workflow(config_path: Path, task: str, repo_root: Path, results_dir:
                   workflow_mode=publish_mode, workflow_status="failed", workflow_result_path=None,
                   publication={"status": "not_run", "attempted": False, "pr_url": None})
     if ((generation["final_status"] == "completed" and generation["validation_status"] == "passed")
-            or (generation["final_status"] == "validation_failed" and generation.get("draft_on_test_failure"))):
+            or (generation["final_status"] == "validation_failed"
+                and generation.get("publish_on_test_failure", generation.get("draft_on_test_failure")))):
         stage = {"name": "publication", "status": "running", "started_at": run._now(), "ended_at": None}
         result["stages"].append(stage)
         # Pass only sealed evidence to the existing publisher. Simulated adapters

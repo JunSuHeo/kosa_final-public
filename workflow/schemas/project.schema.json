@@ -74,10 +74,12 @@
       "properties": {
         "target_branch": {"$ref": "#/$defs/branch"},
         "allow_draft_on_failure": {"type": "boolean"},
+        "allow_pr_on_failure": {"type": "boolean", "description": "Allow test failures to be published with the configured publishing.draft value. Defaults to false."},
+        "require_branch_protection": {"type": "boolean", "description": "Require verified classic human-review branch protection before publishing. Defaults to true."},
         "require_human_approval": {"type": "boolean", "const": true},
         "allow_auto_merge": {"type": "boolean", "const": false}
       },
-      "description": "Ordinary PRs require all mandatory checks to pass. Draft exceptions must be explicit. Approval and merge remain human responsibilities. Actual branch protection is verified later."
+      "description": "Failed-test publication and disabling branch protection must be explicit. Approval and merge remain human responsibilities. Repository identity, push permission and base SHA are always verified."
     },
     "publishing": {
       "type": "object",

@@ -69,7 +69,7 @@ Issue workflow가 실행되려면 기본 브랜치에 workflow와 런타임 코�
 | 제품 `PRJ/` | `workflow/config/projects/prj.json` |
 | 테스트용 `sandbox/` | `workflow/config/projects/sandbox.json` |
 
-Issue 등록 시 먼저 분석 계획을 댓글로 올립니다. 저장소 `Write` 권한이 있는 사람이 `/approve`를 댓글로 남겨야 코드 생성·검증 단계로 진행하며, 검증과 게시 조건을 통과하면 Draft PR을 만듭니다. 실행 상태와 오류는 GitHub의 **Actions** 탭과 해당 Issue 댓글에서 확인합니다.
+Issue 등록 시 먼저 분석 계획을 댓글로 올립니다. 저장소 `Write` 권한이 있는 사람이 `/approve`를 댓글로 남겨야 코드 생성·검증 단계로 진행합니다. PR 유형과 테스트 실패 게시 여부는 프로젝트 정책을 따르며, PRJ는 보호 규칙 없이 실패 결과를 기록한 뒤 일반 PR을 만듭니다. 정책의 기본값과 권한 전제는 [게시 안내](../runtime/PUBLISHING.md)를 확인하세요. 실행 상태와 오류는 GitHub의 **Actions** 탭과 해당 Issue 댓글에서 확인합니다.
 
 ## 5. PRJ 테스트 제한
 
