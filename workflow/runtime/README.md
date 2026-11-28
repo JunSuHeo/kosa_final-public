@@ -69,6 +69,8 @@ Linux/WSL에서는 Bubblewrap(`bwrap`), macOS x86_64/ARM64에서는 Seatbelt 기
 
 Linux 검증은 시스템 런타임(`/usr`, `/bin`, `/lib`, `/lib64`, `/etc/alternatives`, `/etc/ld.so.cache`)만 읽기 전용으로 제공한다. 테스트 복사본만 `/workspace`에 쓰기 가능하게 마운트하고 HOME·TMPDIR를 임시 경로로 둔 뒤 환경 변수를 비운다. PID·network namespace와 capability 제한을 적용한다. macOS에서는 시스템 runtime 경로, 검증 snapshot, private HOME/TMPDIR만 허용하는 Seatbelt profile을 적용하고 host home과 network 접근을 차단한다. 두 환경 모두 원본 checkout, Codex 인증 파일, host 서비스에 접근하지 않는다.
 
+macOS는 파일 읽기와 실행 가능한 메모리 매핑을 별도로 검사한다. 기존 읽기 허용 경로와 검증 snapshot·scratch에 `file-map-executable`을 함께 허용해 Python 실행 파일, framework/dylib 및 오프라인 설치된 확장 모듈을 로드한다. 전체 파일시스템이나 host HOME의 읽기·쓰기 권한은 추가하지 않는다.
+
 `uv` 검사는 가상환경과 캐시를 샌드박스의 `/tmp`에 만든다. 검사마다 새 임시 공간을 사용하며, `/workspace`에 생긴 링크와 입력 파일 변경은 기존대로 차단한다.
 
 `prj-backend-check`는 Linux와 macOS에서 임시 `studio_test` PostgreSQL로 백엔드 pytest를 실행한다. PRJ 설정은 `required: true`, `run_if: always`, `on_failure: block`이다. 러너의 시스템 PATH에 `uv`와 Python 3.12 이상, PostgreSQL 서버·클라이언트 도구가 필요하다. PostgreSQL 도구는 PATH 외에도 Linux의 `/usr/lib/postgresql/*/bin`, macOS Homebrew의 `/opt/homebrew/opt/postgresql@*/bin` 및 `/usr/local/opt/postgresql@*/bin`에서 찾는다. 실행 중 도구를 설치하거나 서비스 DB에 연결하지 않는다.
@@ -87,6 +89,8 @@ WORKFLOW_PRJ_TESTS=1 WORKFLOW_PRJ_UV_CACHE=/absolute/prepared/uv-cache \
 테스트 프로세스의 종료 코드, 소요 시간, stdout·stderr를 수집한다. 시간 초과·완료 시 남은 하위 프로세스도 정리한다. 각 출력은 메모리에서 256 KiB로 제한하고 비밀정보를 가린 뒤 결과에 저장한다. 한도를 초과한 스트림은 전체 생략하고 증거 수집 불가로 `unavailable` 처리한다. 원문 로그를 디스크에 따로 저장하지 않는다.
 
 macOS 격리 점검이 실패하면 검사 결과는 `unavailable`이며 `isolation_stage`에 마지막 점검 단계를 기록한다. 초기화, `workspace_write`, `scratch_write`, `host_home_block`, `network_block`, 사용자 조회, 캐시 읽기·쓰기 차단, PostgreSQL 소켓·외부 소켓 차단을 구분한다. 점검 프로세스의 종료 코드·소요 시간·정제된 stdout/stderr를 보존하며, 이때의 종료 코드는 백엔드 테스트가 아닌 격리 점검의 결과다. `reason`에도 실제 테스트가 시작되지 않았음을 명시한다. 실패 결과와 단계는 이슈 댓글에 전달한다. 격리 점검은 기존대로 코딩 후 검증 단계에서 수행하며, 실패 후 일반 PR 허용 정책을 변경하지 않는다.
+
+Python 본문 진입 직후 `python_imports`를 먼저 기록한 뒤 `os`·`socket`을 import한다. `initialization` 상태에서 종료하면 이 표시에도 도달하지 못한 것이며, `python_imports`는 Python 본문 진입 후 import 단계에서 중단된 경우다. 음수 종료 코드는 `reason`에 `SIGABRT` 등 신호 이름으로 표시한다. 신호 이름만으로 어떤 파일이나 권한이 거부됐는지 확정하지 않는다.
 
 종료 코드 0을 성공 근거로 사용하되 `Ran 0 tests`, `no tests ran/collected/found` 보고는 실패로 처리한다. 임의 테스트 도구의 실제 테스트 수를 모두 판별할 수 있는 것은 아니다. 테스트가 삭제·완화되었는지, 의미 있는 시나리오를 검증하는지는 사람의 diff 검토가 필요하다. 실행 중 입력 파일이 변경·삭제되거나 후보 내용이 외부에서 바뀌면 결과를 무효화한다. 검사 스크립트가 일시적으로 검사를 우회한 뒤 복구하는 행위까지 해시 비교로 탐지할 수는 없다.
 
