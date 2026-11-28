@@ -114,6 +114,7 @@ class IsolatedTestProcess:
         self.executable = None
         self.error = None
         self.checked = False
+        self._isolation_failure = None
 
     @staticmethod
     def _profile_path(path: Path) -> str:
@@ -142,6 +143,8 @@ class IsolatedTestProcess:
         rules.append('(allow file-read-metadata (literal "/") (literal "/opt") (literal "/Library") '
                      '(literal "/tmp") (literal "/private/tmp") (subpath "/opt/homebrew") '
                      '(literal "/private") (literal "/private/var") (subpath "/private/var/folders"))')
+        rules.append(f"(allow file-read-metadata (literal {self._profile_path(root.parent)}) "
+                     f"(literal {self._profile_path(scratch.parent)}))")
         rules.append(f"(allow file-read* (subpath {self._profile_path(root)}))")
         rules.append(f"(allow file-read* (subpath {self._profile_path(scratch)}))")
         rules.append(f"(allow file-write* (subpath {self._profile_path(root)}))")
@@ -177,23 +180,34 @@ class IsolatedTestProcess:
         return [self.executable, "-f", str(profile_path), *argv], environment, workdir
 
     def _macos_isolation_ready(self, *, prj_cache: Path | None = None) -> bool:
+        self._isolation_failure = None
         python = shutil.which("python3", path=SYSTEM_PATH)
         host_home = Path.home().resolve()
+        result = {"status": "unavailable", "return_code": None, "duration_seconds": 0,
+                  "stdout": "", "stderr": "", "reason": None}
         if python is None or not host_home.is_dir():
+            stage = "python_lookup" if python is None else "host_home"
+            self._isolation_failure = {**result, "isolation_stage": stage,
+                                       "reason": f"macOS sandbox isolation prerequisite is unavailable at {stage}; the configured test was not started."}
             return False
         probe = (
             "import os, socket, sys\n"
+            "def stage(name):\n"
+            "    print('workflow-isolation-stage=' + name, file=sys.stderr, flush=True)\n"
             "workspace, temporary, host_home = sys.argv[1:4]\n"
-            "for directory in (workspace, temporary):\n"
+            "for name, directory in (('workspace_write', workspace), ('scratch_write', temporary)):\n"
+            "    stage(name)\n"
             "    path = os.path.join(directory, '.sandbox-probe')\n"
             "    with open(path, 'x', encoding='utf-8') as stream: stream.write('ok')\n"
             "    os.unlink(path)\n"
+            "stage('host_home_block')\n"
             "try:\n"
             "    with os.scandir(host_home): pass\n"
             "except PermissionError:\n"
             "    pass\n"
             "else:\n"
             "    raise SystemExit(31)\n"
+            "stage('network_block')\n"
             "try:\n"
             "    with socket.socket() as connection: connection.bind(('127.0.0.1', 0))\n"
             "except PermissionError:\n"
@@ -203,16 +217,20 @@ class IsolatedTestProcess:
         )
         if prj_cache is not None:
             probe += (
+                "stage('user_lookup')\n"
                 "import pwd\n"
                 "pwd.getpwuid(os.getuid())\n"
+                "stage('cache_read')\n"
                 "tag = os.path.join(sys.argv[4], 'CACHEDIR.TAG')\n"
                 "with open(tag, 'rb') as stream: stream.read(1)\n"
+                "stage('cache_write_block')\n"
                 "try:\n"
                 "    with open(tag, 'wb'): pass\n"
                 "except PermissionError:\n"
                 "    pass\n"
                 "else:\n"
                 "    raise SystemExit(33)\n"
+                "stage('postgresql_socket')\n"
                 "directory = os.path.join(temporary, 'pg-socket')\n"
                 "os.mkdir(directory)\n"
                 "path = os.path.join(directory, 'probe')\n"
@@ -222,6 +240,7 @@ class IsolatedTestProcess:
                 "    with socket.socket(socket.AF_UNIX) as client: client.connect(path)\n"
                 "    connection, _ = server.accept()\n"
                 "    connection.close()\n"
+                "stage('external_socket_block')\n"
                 "try:\n"
                 "    with socket.socket(socket.AF_UNIX) as client: client.connect(sys.argv[5])\n"
                 "except PermissionError:\n"
@@ -229,27 +248,46 @@ class IsolatedTestProcess:
                 "else:\n"
                 "    raise SystemExit(34)\n"
             )
-        with tempfile.TemporaryDirectory(prefix="workflow-sandbox-probe-" if prj_cache is None else "wpg-",
-                                         dir=None if prj_cache is None else "/tmp") as temporary:
-            scratch = Path(temporary) / "sandbox"
-            scratch.mkdir(mode=0o700)
-            root = Path(temporary) / "workspace"
-            root.mkdir(mode=0o700)
-            argv = [python, "-c", probe, str(root), str(scratch / "tmp"), str(host_home)]
-            outside_socket = None
-            if prj_cache is not None:
-                outside_path = Path(temporary) / "outside-socket"
-                outside_socket = socket.socket(socket.AF_UNIX)
-                outside_socket.bind(str(outside_path))
-                outside_socket.listen(1)
-                argv.extend([str(prj_cache), str(outside_path)])
-            try:
-                command, environment, workdir = self._macos_command(root, ".", argv, scratch, prj_cache=prj_cache)
-                result = _process(command, 10, cwd=workdir, env=environment)
-            finally:
-                if outside_socket is not None:
-                    outside_socket.close()
-        return result["status"] == "passed" and not result["stdout"]
+        stage = "initialization"
+        try:
+            with tempfile.TemporaryDirectory(prefix="workflow-sandbox-probe-" if prj_cache is None else "wpg-",
+                                             dir="/private/tmp") as temporary:
+                base = Path(temporary).resolve()
+                scratch = base / "sandbox"
+                scratch.mkdir(mode=0o700)
+                root = base / "workspace"
+                root.mkdir(mode=0o700)
+                argv = [python, "-c", probe, str(root), str(scratch / "tmp"), str(host_home)]
+                outside_socket = None
+                try:
+                    if prj_cache is not None:
+                        stage = "external_socket_setup"
+                        outside_path = base / "outside-socket"
+                        outside_socket = socket.socket(socket.AF_UNIX)
+                        outside_socket.bind(str(outside_path))
+                        outside_socket.listen(1)
+                        argv.extend([str(prj_cache), str(outside_path)])
+                    stage = "initialization"
+                    command, environment, workdir = self._macos_command(root, ".", argv, scratch, prj_cache=prj_cache)
+                    result = _process(command, 10, cwd=workdir, env=environment)
+                finally:
+                    if outside_socket is not None:
+                        outside_socket.close()
+        except (OSError, ValueError) as exc:
+            result.update(status="unavailable", reason="The macOS isolation probe could not be prepared or cleaned up.")
+            result["stderr"] += workspace.redact(f"\n{type(exc).__name__}: {exc}")
+        if result["status"] == "passed" and not result["stdout"]:
+            return True
+        stages = re.findall(r"(?m)^workflow-isolation-stage=([a-z_]+)$", result["stderr"])
+        if stages:
+            stage = stages[-1]
+        if result["status"] == "passed":
+            stage = "unexpected_output"
+        reason = f"macOS sandbox isolation probe failed at {stage}; the configured test was not started."
+        if result.get("reason"):
+            reason += " " + result["reason"]
+        self._isolation_failure = {**result, "status": "unavailable", "isolation_stage": stage, "reason": reason}
+        return False
 
     def _command(self, root: Path, cwd: str, argv: list[str], *, prj_cache: Path | None = None) -> list[str]:
         command = [self.executable, "--unshare-all", "--die-with-parent", "--new-session", "--cap-drop", "ALL"]
@@ -295,6 +333,8 @@ class IsolatedTestProcess:
             elif sys.platform == "darwin" and not self._macos_isolation_ready():
                 self.error = "macOS sandbox isolation could not be initialized or failed its access checks."
         if self.error:
+            if self._isolation_failure is not None:
+                return dict(self._isolation_failure)
             return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
                     "stdout": "", "stderr": "", "reason": self.error}
         prj_check = command["program"] == "prj-backend-check"
@@ -306,6 +346,8 @@ class IsolatedTestProcess:
             cache = cache.resolve()
             if sys.platform == "darwin":
                 if not self._macos_isolation_ready(prj_cache=cache):
+                    if self._isolation_failure is not None:
+                        return dict(self._isolation_failure)
                     return {"status": "unavailable", "return_code": None, "duration_seconds": 0,
                             "stdout": "", "stderr": "", "reason": "macOS PostgreSQL socket or cache isolation failed its access checks."}
             else:
@@ -319,8 +361,8 @@ class IsolatedTestProcess:
         if sys.platform == "darwin":
             # Keep PostgreSQL Unix socket paths below Darwin's 104-byte limit.
             with tempfile.TemporaryDirectory(prefix="wpg-" if prj_check else "workflow-test-sandbox-",
-                                             dir="/tmp" if prj_check else None) as temporary:
-                scratch = Path(temporary)
+                                             dir="/private/tmp") as temporary:
+                scratch = Path(temporary).resolve()
                 if prj_check:
                     test_argv = ["/bin/bash", str(scratch.resolve() / "prj_backend_check.sh")]
                 sandbox_command, environment, workdir = self._macos_command(
@@ -399,7 +441,8 @@ def validate_workspace(candidate: Path, config: dict[str, Any], before: dict[str
         content = workspace.inventory(candidate)
         validation["candidate_sha256"] = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
         executor = executor if executor is not None else IsolatedTestProcess()
-        with tempfile.TemporaryDirectory(prefix="workflow-validation-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="workflow-validation-",
+                                         dir="/private/tmp" if sys.platform == "darwin" else None) as temporary:
             root = (Path(temporary) / "workspace").resolve()
             shutil.copytree(candidate, root, symlinks=True)
             if workspace.inventory(root) != content:

@@ -102,7 +102,7 @@ def exit_failure(diagnostic):
 
 def test_failure_comment(report):
     pr_kind = "Draft PR" if report.get("draft_on_test_failure", True) else "일반 PR"
-    failures = [{key: check.get(key) for key in ("kind", "id", "status", "return_code", "command", "reason", "stdout", "stderr")}
+    failures = [{key: check.get(key) for key in ("kind", "id", "status", "return_code", "command", "isolation_stage", "reason", "stdout", "stderr")}
                 for group in ("unit", "e2e") for check in report["validation"]["tests"][group]
                 if check["status"] in ("failed", "timeout", "unavailable")]
     details = workspace.redact(json.dumps(failures, ensure_ascii=False, indent=2))
